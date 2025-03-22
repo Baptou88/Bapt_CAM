@@ -21,13 +21,19 @@ class CreateDrillGeometryCommand:
                 'ToolTip': "Créer une nouvelle géométrie de perçage"}
 
     def IsActive(self):
-        """La commande est active si un document est ouvert"""
-        return App.ActiveDocument is not None
+        """La commande est active si un projet CAM est sélectionné"""
+        sel = Gui.Selection.getSelection()
+        if not sel:
+            return False
+        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject"
 
     def Activated(self):
         """Créer une nouvelle géométrie de perçage"""
-        # Créer l'objet
-        obj = App.ActiveDocument.addObject("App::FeaturePython", "DrillGeometry")
+        # Obtenir le projet CAM sélectionné
+        project = Gui.Selection.getSelection()[0]
+        
+        # Créer l'objet avec le bon type pour avoir une Shape
+        obj = App.ActiveDocument.addObject("Part::FeaturePython", "DrillGeometry")
         
         # Ajouter la fonctionnalité
         drill = BaptGeometry.DrillGeometry(obj)
@@ -35,6 +41,11 @@ class CreateDrillGeometryCommand:
         # Ajouter le ViewProvider
         if obj.ViewObject:
             BaptGeometry.ViewProviderDrillGeometry(obj.ViewObject)
+            obj.ViewObject.ShapeColor = (1.0, 0.0, 0.0)  # Rouge
+        
+        # Ajouter au groupe Geometry
+        geometry_group = project.Proxy.getGeometryGroup(project)
+        geometry_group.addObject(obj)
         
         # Recomputer
         App.ActiveDocument.recompute()
@@ -80,7 +91,7 @@ class BaptCommand:
     """Ma première commande"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(os.path.dirname(__file__), "resources", "icons", "BaptWorkbench.svg"),
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
                 'MenuText': "Ma Commande",
                 'ToolTip': "Description de ma commande"}
 

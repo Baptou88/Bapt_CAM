@@ -11,24 +11,54 @@ class CamProject:
         obj.Proxy = self
         self.Type = "CamProject"
         
-        # Origine du projet
-        obj.addProperty("App::PropertyVector", "Origin", "Project Setup", "Project origin point")
+        if not hasattr(obj, "Origin"):
+            # Origine du projet
+            obj.addProperty("App::PropertyVector", "Origin", "Project Setup", "Project origin point")
+            obj.Origin = App.Vector(0,0,0)
         
-        # Dimensions du brut
-        obj.addProperty("App::PropertyLength", "StockLength", "Stock", "Length of stock material")
-        obj.addProperty("App::PropertyLength", "StockWidth", "Stock", "Width of stock material")
-        obj.addProperty("App::PropertyLength", "StockHeight", "Stock", "Height of stock material")
+        if not hasattr(obj, "StockLength"):
+            # Dimensions du brut
+            obj.addProperty("App::PropertyLength", "StockLength", "Stock", "Length of stock material")
+            obj.StockLength = 100.0
+            
+        if not hasattr(obj, "StockWidth"):
+            obj.addProperty("App::PropertyLength", "StockWidth", "Stock", "Width of stock material")
+            obj.StockWidth = 100.0
+            
+        if not hasattr(obj, "StockHeight"):
+            obj.addProperty("App::PropertyLength", "StockHeight", "Stock", "Height of stock material")
+            obj.StockHeight = 20.0
         
-        # Plan de travail
-        obj.addProperty("App::PropertyEnumeration", "WorkPlane", "Project Setup", "Working plane")
-        obj.WorkPlane = ["XY", "XZ", "YZ"]
+        if not hasattr(obj, "WorkPlane"):
+            # Plan de travail
+            obj.addProperty("App::PropertyEnumeration", "WorkPlane", "Project Setup", "Working plane")
+            obj.WorkPlane = ["XY", "XZ", "YZ"]
+            obj.WorkPlane = "XY"  # Valeur par défaut
+
+        # Créer le groupe Geometry
+        self.createGeometryGroup(obj)
+
+    def onDocumentRestored(self, obj):
+        """Appelé lors de la restauration du document"""
+        self.__init__(obj)
+
+    def createGeometryGroup(self, obj):
+        """Crée le groupe Geometry s'il n'existe pas"""
+        for item in obj.Group:
+            if item.Name == "Geometry":
+                return item
         
-        # Définir les valeurs par défaut
-        obj.Origin = App.Vector(0,0,0)
-        obj.StockLength = 100.0
-        obj.StockWidth = 100.0
-        obj.StockHeight = 20.0
-        obj.WorkPlane = "XY"
+        # Créer un nouveau groupe Geometry
+        geometry_group = App.ActiveDocument.addObject("App::DocumentObjectGroup", "Geometry")
+        obj.addObject(geometry_group)
+        return geometry_group
+
+    def getGeometryGroup(self, obj):
+        """Obtient ou crée le groupe Geometry"""
+        for item in obj.Group:
+            if item.Name == "Geometry":
+                return item
+        return self.createGeometryGroup(obj)
 
     def createStock(self, obj):
         """Crée l'objet stock"""
@@ -59,6 +89,10 @@ class CamProject:
     def execute(self, obj):
         """Crée ou met à jour la représentation visuelle du brut"""
         try:
+            # S'assurer que toutes les propriétés existent
+            if not hasattr(obj, "WorkPlane") or not hasattr(obj, "StockLength"):
+                return
+                
             # Créer une boîte représentant le brut
             if obj.WorkPlane == "XY":
                 box = Part.makeBox(obj.StockLength, obj.StockWidth, obj.StockHeight, obj.Origin)

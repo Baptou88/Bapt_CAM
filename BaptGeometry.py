@@ -14,9 +14,8 @@ class DrillGeometry:
         # Référence aux faces sélectionnées
         obj.addProperty("App::PropertyLinkSubList", "DrillFaces", "Drill", "Selected drill faces")
         
-        # Liste des positions de perçage (en lecture seule)
+        # Liste des positions de perçage
         obj.addProperty("App::PropertyVectorList", "DrillPositions", "Drill", "Drill positions")
-        obj.setEditorMode("DrillPositions", 1)  # en lecture seule
         
         # Diamètre des perçages (détecté automatiquement)
         obj.addProperty("App::PropertyLength", "DrillDiameter", "Drill", "Detected drill diameter")
@@ -25,11 +24,21 @@ class DrillGeometry:
         # Profondeur des perçages (détectée automatiquement)
         obj.addProperty("App::PropertyLength", "DrillDepth", "Drill", "Detected drill depth")
         obj.setEditorMode("DrillDepth", 1)  # en lecture seule
+        
+        # Taille des sphères de visualisation
+        obj.addProperty("App::PropertyLength", "MarkerSize", "Display", "Size of position markers")
+        obj.MarkerSize = 2.0  # 2mm par défaut
+        
+        # Couleur des sphères
+        obj.addProperty("App::PropertyColor", "MarkerColor", "Display", "Color of position markers")
+        obj.MarkerColor = (1.0, 0.0, 0.0)  # Rouge par défaut
 
     def onChanged(self, obj, prop):
         """Appelé quand une propriété est modifiée"""
         if prop == "DrillFaces":
             self.updateDrillParameters(obj)
+        elif prop in ["DrillPositions", "MarkerSize"]:
+            self.execute(obj)
 
     def updateDrillParameters(self, obj):
         """Met à jour les paramètres de perçage en fonction des faces sélectionnées"""
@@ -68,8 +77,27 @@ class DrillGeometry:
             obj.DrillDepth = list(depths)[0]
 
     def execute(self, obj):
-        """Ne rien faire lors de la reconstruction"""
-        pass
+        """Mettre à jour la représentation visuelle"""
+        if not obj.DrillPositions:
+            obj.Shape = Part.Shape()  # Shape vide
+            return
+
+        # Créer une sphère pour chaque position
+        spheres = []
+        radius = obj.MarkerSize / 2.0  # Rayon = moitié de la taille
+        
+        for pos in obj.DrillPositions:
+            sphere = Part.makeSphere(radius, pos)
+            spheres.append(sphere)
+        
+        # Fusionner toutes les sphères
+        if spheres:
+            compound = Part.makeCompound(spheres)
+            obj.Shape = compound
+
+    def onDocumentRestored(self, obj):
+        """Appelé lors de la restauration du document"""
+        self.__init__(obj)
 
     def __getstate__(self):
         """Sérialisation"""
