@@ -10,6 +10,37 @@ import FreeCADGui as Gui
 import os
 from PySide import QtCore, QtGui
 import BaptCamProject
+import BaptGeometry
+
+class CreateDrillGeometryCommand:
+    """Commande pour créer une géométrie de perçage"""
+
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Drilling.svg"),
+                'MenuText': "Nouvelle géométrie de perçage",
+                'ToolTip': "Créer une nouvelle géométrie de perçage"}
+
+    def IsActive(self):
+        """La commande est active si un document est ouvert"""
+        return App.ActiveDocument is not None
+
+    def Activated(self):
+        """Créer une nouvelle géométrie de perçage"""
+        # Créer l'objet
+        obj = App.ActiveDocument.addObject("App::FeaturePython", "DrillGeometry")
+        
+        # Ajouter la fonctionnalité
+        drill = BaptGeometry.DrillGeometry(obj)
+        
+        # Ajouter le ViewProvider
+        if obj.ViewObject:
+            BaptGeometry.ViewProviderDrillGeometry(obj.ViewObject)
+        
+        # Recomputer
+        App.ActiveDocument.recompute()
+        
+        # Message de confirmation
+        App.Console.PrintMessage("Géométrie de perçage créée. Sélectionnez les faces cylindriques.\n")
 
 class CreateCamProjectCommand:
     """Commande pour créer un nouveau projet CAM"""
@@ -49,7 +80,7 @@ class BaptCommand:
     """Ma première commande"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
+        return {'Pixmap': os.path.join(os.path.dirname(__file__), "resources", "icons", "BaptWorkbench.svg"),
                 'MenuText': "Ma Commande",
                 'ToolTip': "Description de ma commande"}
 
@@ -64,3 +95,4 @@ class BaptCommand:
 # Enregistrer les commandes
 Gui.addCommand('Bapt_Command', BaptCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
+Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())

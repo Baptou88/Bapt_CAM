@@ -1,7 +1,9 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
+import os
 from FreeCAD import Base
+import BaptTaskPanel  # Import direct du module
 
 class CamProject:
     def __init__(self, obj):
@@ -92,23 +94,42 @@ class ViewProviderCamProject:
         self.Object = vobj.Object
         
     def getIcon(self):
-        """Retourne l'icône du projet CAM"""
-        return ":/icons/Tree_Part.svg"
+        """Retourne l'icône"""
+        return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg")
         
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""
         self.Object = vobj.Object
 
+    def setupContextMenu(self, vobj, menu):
+        """Configuration du menu contextuel"""
+        action = menu.addAction("Edit")
+        action.triggered.connect(lambda: self.setEdit(vobj))
+        return True
+
     def updateData(self, obj, prop):
         """Appelé quand une propriété de l'objet est modifiée"""
-        return
+        pass
 
     def onChanged(self, vobj, prop):
         """Appelé quand une propriété du ViewProvider est modifiée"""
-        return
+        pass
 
     def doubleClicked(self, vobj):
-        """Gérer le double-clic sur l'objet"""
+        """Gérer le double-clic"""
+        self.setEdit(vobj)
+        return True
+
+    def setEdit(self, vobj, mode=0):
+        """Ouvrir l'éditeur"""
+        panel = BaptTaskPanel.CamProjectTaskPanel(vobj.Object)
+        Gui.Control.showDialog(panel)
+        return True
+
+    def unsetEdit(self, vobj, mode=0):
+        """Fermer l'éditeur"""
+        if Gui.Control.activeDialog():
+            Gui.Control.closeDialog()
         return True
 
     def __getstate__(self):
