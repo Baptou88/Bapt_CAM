@@ -5,7 +5,7 @@ InitGui.py for Bapt Workbench
 This file is executed when FreeCAD starts up and loads your workbench
 """
 
-import FreeCAD
+import FreeCAD as App
 import FreeCADGui as Gui
 from FreeCADGui import Workbench
 import os
@@ -14,7 +14,7 @@ class BaptWorkbench (Workbench):
     def __init__(self):
         self.__class__.MenuText = "Bapt"
         self.__class__.ToolTip = "Bapt Workbench"
-        self.__class__.Icon = os.path.join(FreeCAD.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg")
+        self.__class__.Icon = os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg")
 
     def Initialize(self):
         """This function is executed when the workbench is first activated.
@@ -37,3 +37,7 @@ class BaptWorkbench (Workbench):
         return "Gui::PythonWorkbench"
 
 Gui.addWorkbench(BaptWorkbench())
+
+# Register preferences
+from BaptPreferences import BaptPreferencesPage
+Gui.addPreferencePage(BaptPreferencesPage, "Bapt")
