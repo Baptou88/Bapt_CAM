@@ -100,6 +100,7 @@ class CreateHotReloadCommand:
             from importlib import reload
             reload(BaptCamProject)
             reload(BaptGeometry)
+            reload(BaptTaskPanel)
             reload(BaptDrillTaskPanel)  
             reload(BaptCommands)
             reload(BaptPreferences)

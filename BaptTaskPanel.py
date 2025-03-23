@@ -7,6 +7,9 @@ class CamProjectTaskPanel:
         # Garder une référence à l'objet
         self.obj = obj
         
+        #debug
+        App.Console.PrintMessage("CamProjectTaskPanel initialized\n")
+        
         # Créer l'interface utilisateur
         self.form = QtGui.QWidget()
         self.form.setWindowTitle("Edit CAM Project")
@@ -23,6 +26,7 @@ class CamProjectTaskPanel:
         for spinBox in [self.originX, self.originY, self.originZ]:
             spinBox.setRange(-10000, 10000)
             spinBox.setDecimals(2)
+
         originLayout = QtGui.QHBoxLayout()
         originLayout.addWidget(self.originX)
         originLayout.addWidget(self.originY)
@@ -46,6 +50,8 @@ class CamProjectTaskPanel:
         self.stockLength.setRange(0, 10000)
         self.stockLength.setDecimals(2)
         self.stockLength.setSuffix(" mm")
+        
+        self.stockLength.setValue(obj.StockLength)  # Mettre la valeur initiale
         stockLayout.addRow("Length:", self.stockLength)
         
         # Width
@@ -53,6 +59,8 @@ class CamProjectTaskPanel:
         self.stockWidth.setRange(0, 10000)
         self.stockWidth.setDecimals(2)
         self.stockWidth.setSuffix(" mm")
+        
+        self.stockWidth.setValue(obj.StockWidth)  
         stockLayout.addRow("Width:", self.stockWidth)
         
         # Height
@@ -60,7 +68,28 @@ class CamProjectTaskPanel:
         self.stockHeight.setRange(0, 10000)
         self.stockHeight.setDecimals(2)
         self.stockHeight.setSuffix(" mm")
+        
+        self.stockHeight.setValue(obj.StockHeight)  
         stockLayout.addRow("Height:", self.stockHeight)
+        
+        # Stock Origin
+        self.stockOriginX = QtGui.QDoubleSpinBox()
+        self.stockOriginY = QtGui.QDoubleSpinBox()
+        self.stockOriginZ = QtGui.QDoubleSpinBox()
+        for spinBox in [self.stockOriginX, self.stockOriginY, self.stockOriginZ]:
+            spinBox.setRange(-10000, 10000)
+            spinBox.setDecimals(2)
+        
+        stockOriginLayout = QtGui.QHBoxLayout()
+        stockOriginLayout.addWidget(self.stockOriginX)
+        stockOriginLayout.addWidget(self.stockOriginY)
+        stockOriginLayout.addWidget(self.stockOriginZ)
+        stockLayout.addRow("Stock Origin (X,Y,Z):", stockOriginLayout)
+
+        # Initialiser les valeurs
+        self.stockOriginX.setValue(obj.StockOrigin.x)
+        self.stockOriginY.setValue(obj.StockOrigin.y)
+        self.stockOriginZ.setValue(obj.StockOrigin.z)
         
         stockGroup.setLayout(stockLayout)
         layout.addWidget(stockGroup)
@@ -76,6 +105,37 @@ class CamProjectTaskPanel:
         self.stockLength.setValue(obj.StockLength)
         self.stockWidth.setValue(obj.StockWidth)
         self.stockHeight.setValue(obj.StockHeight)
+        self.stockOriginX.setValue(obj.StockOrigin.x)
+        self.stockOriginY.setValue(obj.StockOrigin.y)
+        self.stockOriginZ.setValue(obj.StockOrigin.z)
+
+        self.originX.valueChanged.connect(lambda: self.updateVisual())
+        self.originY.valueChanged.connect(lambda: self.updateVisual())
+        self.originZ.valueChanged.connect(lambda: self.updateVisual())
+
+        self.stockOriginX.valueChanged.connect(lambda: self.updateVisual())
+        self.stockOriginY.valueChanged.connect(lambda: self.updateVisual())
+        self.stockOriginZ.valueChanged.connect(lambda: self.updateVisual())
+
+        self.stockHeight.valueChanged.connect(lambda: self.updateVisual())
+
+        self.stockWidth.valueChanged.connect(lambda: self.updateVisual())
+
+        self.stockLength.valueChanged.connect(lambda: self.updateVisual())
+        # debug
+        App.Console.PrintMessage("CamProjectTaskPanel initialized\n")
+
+    def updateVisual(self):
+        """Met à jour la représentation visuelle"""
+        # debug
+        App.Console.PrintMessage("CamProjectTaskPanel updateVisual\n")
+        self.obj.Origin = App.Vector(self.originX.value(), self.originY.value(), self.originZ.value())
+        self.obj.WorkPlane = self.workPlane.currentText()
+        self.obj.StockLength = self.stockLength.value()
+        self.obj.StockWidth = self.stockWidth.value()
+        self.obj.StockHeight = self.stockHeight.value()
+        self.obj.StockOrigin = App.Vector(self.stockOriginX.value(), self.stockOriginY.value(), self.stockOriginZ.value())
+        self.obj.Document.recompute()
 
     def accept(self):
         """Appelé quand l'utilisateur clique sur OK"""
@@ -91,6 +151,11 @@ class CamProjectTaskPanel:
         self.obj.StockLength = self.stockLength.value()
         self.obj.StockWidth = self.stockWidth.value()
         self.obj.StockHeight = self.stockHeight.value()
+        
+        # Mettre à jour l'origine du stock
+        self.obj.StockOrigin = App.Vector(self.stockOriginX.value(),
+                                        self.stockOriginY.value(),
+                                        self.stockOriginZ.value())
         
         # Recompute
         self.obj.Document.recompute()

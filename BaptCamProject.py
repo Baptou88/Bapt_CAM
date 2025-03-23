@@ -35,6 +35,11 @@ class CamProject:
             obj.WorkPlane = ["XY", "XZ", "YZ"]
             obj.WorkPlane = "XY"  # Valeur par défaut
 
+        # Propriétés pour la position d'origine du brut
+        if not hasattr(obj, "StockOrigin"):
+            obj.addProperty("App::PropertyVector", "StockOrigin", "Stock", "position of stock origin")
+            obj.StockOrigin = App.Vector(0,0,0)
+        
         # Créer le groupe Geometry
         self.createGeometryGroup(obj)
 
@@ -95,11 +100,11 @@ class CamProject:
                 
             # Créer une boîte représentant le brut
             if obj.WorkPlane == "XY":
-                box = Part.makeBox(obj.StockLength, obj.StockWidth, obj.StockHeight, obj.Origin)
+                box = Part.makeBox(obj.StockLength, obj.StockWidth, obj.StockHeight, obj.StockOrigin)
             elif obj.WorkPlane == "XZ":
-                box = Part.makeBox(obj.StockLength, obj.StockHeight, obj.StockWidth, obj.Origin)
+                box = Part.makeBox(obj.StockLength, obj.StockHeight, obj.StockWidth, obj.StockOrigin)
             else:  # YZ
-                box = Part.makeBox(obj.StockHeight, obj.StockLength, obj.StockWidth, obj.Origin)
+                box = Part.makeBox(obj.StockHeight, obj.StockLength, obj.StockWidth, obj.StockOrigin)
             
             # Obtenir ou créer le stock et mettre à jour sa forme
             stock = self.getStock(obj)
@@ -110,7 +115,8 @@ class CamProject:
 
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        if prop in ["StockLength", "StockWidth", "StockHeight", "Origin", "WorkPlane"]:
+        #App.Console.PrintMessage("Change property: " + str(obj.Name) + " " + str(prop) + "\n")
+        if prop in ["StockLength", "StockWidth", "StockHeight", "Origin", "WorkPlane", "StockOrigin"]:
             self.execute(obj)
 
     def __getstate__(self):
