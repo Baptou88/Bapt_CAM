@@ -87,6 +87,52 @@ class CreateCamProjectCommand:
         # Message de confirmation
         App.Console.PrintMessage("Projet CAM créé avec succès!\n")
 
+class CreateContourGeometryCommand:
+    """Commande pour créer une géométrie de contour"""
+
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Contour.svg"),
+                'MenuText': "Nouvelle géométrie de contour",
+                'ToolTip': "Créer une nouvelle géométrie de contour pour l'usinage"}
+
+    def IsActive(self):
+        """La commande est active si un projet CAM est sélectionné"""
+        sel = Gui.Selection.getSelection()
+        if not sel:
+            return False
+        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject"
+
+    def Activated(self):
+        """Créer une nouvelle géométrie de contour"""
+        # Obtenir le projet CAM sélectionné
+        project = Gui.Selection.getSelection()[0]
+        
+        # Créer l'objet avec le bon type pour avoir une Shape
+        obj = App.ActiveDocument.addObject("Part::FeaturePython", "ContourGeometry")
+        
+        # Ajouter la fonctionnalité
+        contour = BaptGeometry.ContourGeometry(obj)
+        
+        # Ajouter au groupe Geometry
+        geometry_group = project.Proxy.getGeometryGroup(project)
+        geometry_group.addObject(obj)
+        
+        # Ajouter le ViewProvider
+        if obj.ViewObject:
+            BaptGeometry.ViewProviderContourGeometry(obj.ViewObject)
+            obj.ViewObject.LineColor = (1.0, 0.0, 0.0)  # Rouge
+            obj.ViewObject.PointColor = (1.0, 0.0, 0.0)  # Rouge
+            obj.ViewObject.LineWidth = 2.0  # Largeur de ligne plus grande
+            obj.ViewObject.PointSize = 4.0  # Taille des points plus grande
+        
+        # Message de confirmation
+        App.Console.PrintMessage("Géométrie de contour créée. Sélectionnez les arêtes pour le contour.\n")
+        
+        # Ouvrir le panneau de tâches pour l'édition
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(obj)
+        Gui.ActiveDocument.setEdit(obj.Name)
+
 class CreateHotReloadCommand:
     def GetResources(self):
         return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
@@ -135,4 +181,5 @@ class BaptCommand:
 Gui.addCommand('Bapt_Command', BaptCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
 Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
+Gui.addCommand('Bapt_CreateContourGeometry', CreateContourGeometryCommand())
 Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())
