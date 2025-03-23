@@ -87,6 +87,33 @@ class CreateCamProjectCommand:
         # Message de confirmation
         App.Console.PrintMessage("Projet CAM créé avec succès!\n")
 
+class CreateHotReloadCommand:
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
+                'MenuText': "Hot Reload",
+                'ToolTip': "Recharge les modules Bapt"}
+    def IsActive(self):
+        return App.ActiveDocument is not None
+    def Activated(self):
+        """Recharge les modules Bapt"""
+        try:    
+            from importlib import reload
+            reload(BaptCamProject)
+            reload(BaptGeometry)
+            reload(BaptDrillTaskPanel)  
+            reload(BaptCommands)
+            reload(BaptPreferences)
+            reload(BaptWorkbench)   
+        except:
+            pass
+
+        # Recomputer
+        App.ActiveDocument.recompute()
+        # Message de confirmation
+        App.Console.PrintMessage("hot Reload avec Succes!\n")
+
+
+
 class BaptCommand:
     """Ma première commande"""
 
@@ -107,3 +134,4 @@ class BaptCommand:
 Gui.addCommand('Bapt_Command', BaptCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
 Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
+Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())

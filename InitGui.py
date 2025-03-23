@@ -20,7 +20,7 @@ class BaptWorkbench (Workbench):
         """This function is executed when the workbench is first activated.
         It is executed once in a FreeCAD session."""
         import BaptCommands
-        self.list = ["Bapt_CreateCamProject", "Bapt_Command", "Bapt_CreateDrillGeometry"]  # Ajout de la nouvelle commande
+        self.list = ["Bapt_CreateCamProject", "Bapt_Command", "Bapt_CreateDrillGeometry", "Bapt_CreateHotReload"]  # Ajout de la nouvelle commande
         self.appendToolbar("Bapt Tools", self.list)
         self.appendMenu("Bapt", self.list)
 

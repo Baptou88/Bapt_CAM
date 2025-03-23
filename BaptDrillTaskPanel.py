@@ -27,6 +27,18 @@ class DrillGeometryTaskPanel:
         autoGroup.setLayout(autoLayout)
         layout.addWidget(autoGroup)
         
+        # Groupe pour la sélection
+        selectionGroup = QtGui.QGroupBox("Selection")
+        selectionLayout = QtGui.QVBoxLayout()
+        
+        # Bouton pour ajouter la sélection
+        addSelectionButton = QtGui.QPushButton("Add Selected Face")
+        addSelectionButton.clicked.connect(self.addSelectedFace)
+        selectionLayout.addWidget(addSelectionButton)
+        
+        selectionGroup.setLayout(selectionLayout)
+        layout.addWidget(selectionGroup)
+        
         # Groupe pour la liste des perçages
         drillGroup = QtGui.QGroupBox("Drill Positions")
         drillLayout = QtGui.QVBoxLayout()
@@ -59,6 +71,31 @@ class DrillGeometryTaskPanel:
         drillGroup.setLayout(drillLayout)
         layout.addWidget(drillGroup)
 
+    def addSelectedFace(self):
+        """Ajouter la face sélectionnée"""
+        sel = Gui.Selection.getSelectionEx()
+        new_faces = []
+        
+        # Collecter toutes les faces sélectionnées
+        for selObj in sel:
+            for subname in selObj.SubElementNames:
+                if "Face" in subname:
+                    face = getattr(selObj.Object.Shape, subname)
+                    if face.Surface.TypeId == 'Part::GeomCylinder':
+                        # Créer un tuple (object, [subname]) pour PropertyLinkSubList
+                        new_faces.append((selObj.Object, [subname]))
+        
+        # Mettre à jour les faces
+        if new_faces:
+            current_faces = [(link, [sub]) for link, subs in (self.obj.DrillFaces or []) for sub in subs]
+            self.obj.DrillFaces = current_faces + new_faces
+            
+            # Mettre à jour la table
+            self.updateDrillTable()
+            
+            # Recompute
+            self.obj.Document.recompute()
+
     def updateDrillTable(self):
         """Mettre à jour la table des positions"""
         self.drillTable.setRowCount(0)
@@ -75,6 +112,12 @@ class DrillGeometryTaskPanel:
             deleteButton = QtGui.QPushButton("X")
             deleteButton.clicked.connect(lambda checked, r=row: self.deleteRow(r))
             self.drillTable.setCellWidget(row, 3, deleteButton)
+        
+        # Mettre à jour les labels des paramètres
+        if hasattr(self.obj, "DrillDiameter"):
+            self.drillDiameter.setText(f"{self.obj.DrillDiameter.Value:.2f} mm")
+        if hasattr(self.obj, "DrillDepth"):
+            self.drillDepth.setText(f"{self.obj.DrillDepth.Value:.2f} mm")
 
     def addPosition(self):
         """Ajouter une nouvelle position"""
