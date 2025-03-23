@@ -192,22 +192,14 @@ class ContourGeometry:
         if not hasattr(obj, "Edges"):
             obj.addProperty("App::PropertyLinkSubList", "Edges", "Contour", "Arêtes sélectionnées pour le contour")
         
-        # Propriétés pour les paramètres d'usinage
-        if not hasattr(obj, "ToolDiameter"):
-            obj.addProperty("App::PropertyLength", "ToolDiameter", "Tool", "Diamètre de l'outil")
-            obj.ToolDiameter = 6.0
+
+        if not hasattr(obj, "Zref"):
+            obj.addProperty("App::PropertyLength", "Zref", "Contour", "Hauteur de référence")
+            obj.Zref = 0.0
         
-        if not hasattr(obj, "CutDepth"):
-            obj.addProperty("App::PropertyLength", "CutDepth", "Cut", "Profondeur de coupe")
-            obj.CutDepth = 5.0
-        
-        if not hasattr(obj, "StepDown"):
-            obj.addProperty("App::PropertyLength", "StepDown", "Cut", "Profondeur par passe")
-            obj.StepDown = 2.0
-        
-        if not hasattr(obj, "Offset"):
-            obj.addProperty("App::PropertyLength", "Offset", "Contour", "Décalage du contour (positif = extérieur, négatif = intérieur)")
-            obj.Offset = 0.0
+        if not hasattr(obj, "Zfinal"):
+            obj.addProperty("App::PropertyLength", "Zfinal", "Contour", "Hauteur finale")
+            obj.Zfinal = 0.0
         
         if not hasattr(obj, "Direction"):
             obj.addProperty("App::PropertyEnumeration", "Direction", "Contour", "Direction d'usinage")
@@ -219,7 +211,7 @@ class ContourGeometry:
     
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        if prop in ["Edges", "ToolDiameter", "Offset", "Direction"]:
+        if prop in ["Edges", "Zref", "Zfinal", "Direction"]:
             self.execute(obj)
     
     def execute(self, obj):
@@ -252,14 +244,19 @@ class ContourGeometry:
             
             # Créer un fil à partir des arêtes
             try:
-                # Trier les arêtes pour essayer de former un contour connecté
-                sorted_edges = Part.sortEdges(edges)
-                if sorted_edges:
-                    wire = Part.Wire(sorted_edges[0])
-                    App.Console.PrintMessage("Fil créé avec succès à partir des arêtes triées.\n")
-                else:
-                    wire = Part.Wire(edges)
-                    App.Console.PrintMessage("Fil créé avec succès à partir des arêtes non triées.\n")
+                adjusted_edges = []
+                for edge in edges:
+                    App.Console.PrintMessage(f"Traitement de l'arête: {edge}\n")
+                    adjusted_edge = edge.copy()
+                    for i, vertex in enumerate(adjusted_edge.Vertexes):
+                        App.Console.PrintMessage(f"Avant ajustement: {vertex.Point}\n")
+                        new_point = App.Vector(vertex.Point.x, vertex.Point.y, obj.Zref)
+                        adjusted_edge.Vertexes[i] = Part.Vertex(new_point)
+                        App.Console.PrintMessage(f"Après ajustement: {adjusted_edge.Vertexes[i].Point}\n")
+                        #TODO : à corriger
+                    adjusted_edges.append(adjusted_edge)
+                wire = Part.Wire(adjusted_edges)
+                App.Console.PrintMessage("Fil créé avec succès avec ajustement à Zref.\n")
             except Exception as e:
                 App.Console.PrintError(f"Impossible de créer un fil à partir des arêtes sélectionnées: {str(e)}\n")
                 # Essayer de créer une forme composite si le fil échoue
@@ -272,26 +269,9 @@ class ContourGeometry:
                     App.Console.PrintError(f"Impossible de créer une forme composite: {str(e2)}\n")
                     return
             
-            # Appliquer le décalage si nécessaire
-            if hasattr(obj, "Offset") and obj.Offset != 0:
-                try:
-                    # Vérifier si le fil est fermé
-                    if wire.isClosed():
-                        # Créer une face à partir du fil
-                        face = Part.Face(wire)
-                        # Décaler la face
-                        offset_face = face.makeOffset(obj.Offset)
-                        # Extraire le contour externe de la face décalée
-                        offset_wire = offset_face.OuterWire
-                        wire = offset_wire
-                        App.Console.PrintMessage(f"Décalage appliqué avec succès: {obj.Offset}.\n")
-                    else:
-                        App.Console.PrintWarning("Le fil n'est pas fermé, impossible d'appliquer un décalage.\n")
-                except Exception as e:
-                    App.Console.PrintError(f"Impossible d'appliquer le décalage au contour: {str(e)}\n")
-            
             # Créer une forme pour la visualisation
             obj.Shape = wire
+
             App.Console.PrintMessage("Forme mise à jour avec succès.\n")
             
         except Exception as e:
@@ -316,8 +296,8 @@ class ViewProviderContourGeometry:
         # Définir la couleur rouge pour le contour
         vobj.LineColor = (1.0, 0.0, 0.0)  # Rouge
         vobj.PointColor = (1.0, 0.0, 0.0)  # Rouge
-        vobj.LineWidth = 2.0  # Largeur de ligne plus grande
-        vobj.PointSize = 4.0  # Taille des points plus grande
+        vobj.LineWidth = 4.0  # Largeur de ligne plus grande
+        vobj.PointSize = 6.0  # Taille des points plus grande
     
     def getIcon(self):
         """Retourne l'icône"""
@@ -330,8 +310,8 @@ class ViewProviderContourGeometry:
         # Définir la couleur rouge pour le contour
         vobj.LineColor = (1.0, 0.0, 0.0)  # Rouge
         vobj.PointColor = (1.0, 0.0, 0.0)  # Rouge
-        vobj.LineWidth = 2.0  # Largeur de ligne plus grande
-        vobj.PointSize = 4.0  # Taille des points plus grande
+        vobj.LineWidth = 4.0  # Largeur de ligne plus grande
+        vobj.PointSize = 6.0  # Taille des points plus grande
     
     def updateData(self, obj, prop):
         """Appelé lorsqu'une propriété de l'objet est modifiée"""
@@ -352,6 +332,12 @@ class ViewProviderContourGeometry:
     def onChanged(self, vobj, prop):
         """Appelé lorsqu'une propriété du ViewProvider est modifiée"""
         pass
+    
+    def setupContextMenu(self, vobj, menu):
+        """Configuration du menu contextuel"""
+        action = menu.addAction("Edit")
+        action.triggered.connect(lambda: self.setEdit(vobj))
+        return True
     
     def setEdit(self, vobj, mode=0):
         """Appelé lorsque l'objet est édité"""

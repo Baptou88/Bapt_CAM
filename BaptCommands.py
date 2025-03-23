@@ -122,8 +122,8 @@ class CreateContourGeometryCommand:
             BaptGeometry.ViewProviderContourGeometry(obj.ViewObject)
             obj.ViewObject.LineColor = (1.0, 0.0, 0.0)  # Rouge
             obj.ViewObject.PointColor = (1.0, 0.0, 0.0)  # Rouge
-            obj.ViewObject.LineWidth = 2.0  # Largeur de ligne plus grande
-            obj.ViewObject.PointSize = 4.0  # Taille des points plus grande
+            obj.ViewObject.LineWidth = 4.0  # Largeur de ligne plus grande
+            obj.ViewObject.PointSize = 6.0  # Taille des points plus grande
         
         # Message de confirmation
         App.Console.PrintMessage("Géométrie de contour créée. Sélectionnez les arêtes pour le contour.\n")

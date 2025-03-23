@@ -34,13 +34,7 @@ class ContourTaskPanel:
         self.edgesLabel = QtGui.QLabel("Aucune arête sélectionnée")
         contourLayout.addRow("", self.edgesLabel)
         
-        # Offset
-        self.offset = QtGui.QDoubleSpinBox()
-        self.offset.setRange(-100, 100)
-        self.offset.setDecimals(2)
-        self.offset.setSuffix(" mm")
-        self.offset.setValue(obj.Offset)
-        contourLayout.addRow("Décalage:", self.offset)
+    
         
         # Direction
         self.direction = QtGui.QComboBox()
@@ -51,51 +45,37 @@ class ContourTaskPanel:
         contourGroup.setLayout(contourLayout)
         layout.addWidget(contourGroup)
         
-        # Groupe Outil
-        toolGroup = QtGui.QGroupBox("Outil")
-        toolLayout = QtGui.QFormLayout()
-        
-        # Diamètre de l'outil
-        self.toolDiameter = QtGui.QDoubleSpinBox()
-        self.toolDiameter.setRange(0.1, 100)
-        self.toolDiameter.setDecimals(2)
-        self.toolDiameter.setSuffix(" mm")
-        self.toolDiameter.setValue(obj.ToolDiameter)
-        toolLayout.addRow("Diamètre:", self.toolDiameter)
-        
-        toolGroup.setLayout(toolLayout)
-        layout.addWidget(toolGroup)
         
         # Groupe Coupe
-        cutGroup = QtGui.QGroupBox("Paramètres de coupe")
-        cutLayout = QtGui.QFormLayout()
+        contourGroup = QtGui.QGroupBox("Paramètres du contour")
+        contourLayout = QtGui.QFormLayout()
         
-        # Profondeur de coupe
-        self.cutDepth = QtGui.QDoubleSpinBox()
-        self.cutDepth.setRange(0.1, 100)
-        self.cutDepth.setDecimals(2)
-        self.cutDepth.setSuffix(" mm")
-        self.cutDepth.setValue(obj.CutDepth)
-        cutLayout.addRow("Profondeur:", self.cutDepth)
+        # Hauteur de référence
+        self.Zref = QtGui.QDoubleSpinBox()
+        self.Zref.setRange(0.1, 100)
+        self.Zref.setDecimals(2)
+        self.Zref.setSuffix(" mm")
+        self.Zref.setValue(obj.Zref)
+        contourLayout.addRow("Zref:", self.Zref)
         
-        # Profondeur par passe
-        self.stepDown = QtGui.QDoubleSpinBox()
-        self.stepDown.setRange(0.1, 100)
-        self.stepDown.setDecimals(2)
-        self.stepDown.setSuffix(" mm")
-        self.stepDown.setValue(obj.StepDown)
-        cutLayout.addRow("Passe:", self.stepDown)
+        # Hauteur final
+        self.Zfinal = QtGui.QDoubleSpinBox()
+        self.Zfinal.setRange(0.1, 100)
+        self.Zfinal.setDecimals(2)
+        self.Zfinal.setSuffix(" mm")
+        self.Zfinal.setValue(obj.Zfinal)
+        contourLayout.addRow("Zfinal:", self.Zfinal)
         
-        cutGroup.setLayout(cutLayout)
-        layout.addWidget(cutGroup)
+        contourGroup.setLayout(contourLayout)
+        layout.addWidget(contourGroup)
         
         # Mettre à jour l'affichage des arêtes sélectionnées
         self.updateEdgesLabel()
         
         # Connecter les signaux pour l'actualisation en temps réel
-        self.offset.valueChanged.connect(self.updateContour)
         self.direction.currentTextChanged.connect(self.updateContour)
-        self.toolDiameter.valueChanged.connect(self.updateContour)
+        self.Zref.valueChanged.connect(self.updateContour)
+        self.Zfinal.valueChanged.connect(self.updateContour)
         
         # Variable pour suivre l'état de sélection
         self.selectionMode = False
@@ -118,12 +98,20 @@ class ContourTaskPanel:
         self.selectionMode = True
         self.confirmSelectionButton.setEnabled(True)
         
+        # Récupérer la sélection actuelle
+        current_selection = Gui.Selection.getSelectionEx()
+        App.Console.PrintMessage(f"Sélection actuelle: {len(current_selection)} objets.\n")
+        
         # Demander à l'utilisateur de sélectionner des arêtes
         App.Console.PrintMessage("Sélectionnez les arêtes pour le contour, puis cliquez sur 'Confirmer la sélection'.\n")
         
         # Définir le mode de sélection pour les arêtes uniquement
         Gui.Selection.clearSelection()
         Gui.Selection.addSelectionGate("SELECT Part::Feature SUBELEMENT Edge")
+        
+        # Restaurer la sélection actuelle
+        for obj in current_selection:
+            Gui.Selection.addSelection(obj.Object)
         
         # Changer le texte du bouton
         self.selectEdgesButton.setText("Annuler la sélection")
@@ -187,19 +175,34 @@ class ContourTaskPanel:
     
     def updateContour(self):
         """Met à jour le contour en fonction des paramètres"""
-        self.obj.Offset = self.offset.value()
         self.obj.Direction = self.direction.currentText()
-        self.obj.ToolDiameter = self.toolDiameter.value()
         self.obj.Document.recompute()
     
     def accept(self):
         """Appelé quand l'utilisateur clique sur OK"""
+        #debug
+        App.Console.PrintMessage("Accepté\n")
         # Mettre à jour toutes les propriétés
-        self.obj.Offset = self.offset.value()
         self.obj.Direction = self.direction.currentText()
-        self.obj.ToolDiameter = self.toolDiameter.value()
-        self.obj.CutDepth = self.cutDepth.value()
-        self.obj.StepDown = self.stepDown.value()
+        
+        # Calculer le point le plus haut du contour
+        if hasattr(self.obj, "Edges") and self.obj.Edges:
+            highest_z = float('-inf')
+            for edge in self.obj.Edges:
+                for sub in edge[1]:
+                    face = edge[0].Shape.getElement(sub)
+                    for vertex in face.Vertexes:
+                        if vertex.Point.z > highest_z:
+                            highest_z = vertex.Point.z
+            #self.obj.Zref = highest_z
+        else:
+            App.Console.PrintWarning("Aucune arête sélectionnée, Zref non mis à jour.\n")
+        #debug
+        App.Console.PrintMessage(f"Zref mis à jour: {self.obj.Zref}\n")
+        
+        # Mettre à jour les autres propriétés
+        self.obj.Zref = self.Zref.value()
+        self.obj.Zfinal = self.Zfinal.value()
         
         # Recomputer
         self.obj.Document.recompute()
