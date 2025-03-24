@@ -11,6 +11,67 @@ import os
 from PySide import QtCore, QtGui
 import BaptCamProject
 import BaptGeometry
+import BaptMachiningCycle
+
+class CreateContourCommand:
+    """Commande pour créer un Contournage"""
+
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Contour.svg"),
+                'MenuText': "Nouveau Contournage",
+                'ToolTip': "Créer un nouveau contournage pour l'usinage"}
+
+    def IsActive(self):
+        """La commande est active si une geometrie de contour est sélectionné"""
+        sel = Gui.Selection.getSelection()
+        #debug
+        if sel:
+            App.Console.PrintMessage(f"Sélection: {sel[0].Name}\n")
+            if hasattr(sel[0], "Proxy"):
+                App.Console.PrintMessage(f"Type de Proxy: {sel[0].Proxy.Type}\n")
+        if not sel:
+            return False
+        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
+
+    def Activated(self):
+        """Créer un nouveau contournage"""
+        # Obtenir la géométrie de contour sélectionnée
+        contour_geometry = Gui.Selection.getSelection()[0]
+        
+        # Créer l'objet de contournage
+        obj = App.ActiveDocument.addObject("Part::FeaturePython", "Contournage")
+        
+        # Ajouter la fonctionnalité
+        contour = BaptMachiningCycle.ContournageCycle(obj)
+        
+        # Ajouter le ViewProvider
+        if obj.ViewObject:
+            BaptMachiningCycle.ViewProviderContournageCycle(obj.ViewObject)
+            obj.ViewObject.LineColor = (0.0, 0.0, 1.0)  # Bleu
+            obj.ViewObject.PointColor = (0.0, 0.0, 1.0)  # Bleu
+            obj.ViewObject.LineWidth = 2.0
+            obj.ViewObject.PointSize = 4.0
+        
+        # Lier à la géométrie du contour par son nom
+        obj.ContourGeometryName = contour_geometry.Name
+        
+        # Ajouter le contournage comme enfant de la géométrie du contour
+        # Si la géométrie du contour est un groupe (a l'extension Group)
+        if hasattr(contour_geometry, "Group"):
+            contour_geometry.addObject(obj)
+        # Sinon, essayer de l'ajouter au document
+        else:
+            # Trouver le groupe parent de la géométrie du contour
+            for parent in App.ActiveDocument.Objects:
+                if hasattr(parent, "Group") and contour_geometry in parent.Group:
+                    parent.addObject(obj)
+                    break
+        
+        # Recomputer
+        App.ActiveDocument.recompute()
+        
+        # Message de confirmation
+        App.Console.PrintMessage(f"Contournage créé et lié à {contour_geometry.Label}.\n")
 
 class CreateDrillGeometryCommand:
     """Commande pour créer une géométrie de perçage"""
@@ -109,6 +170,7 @@ class CreateContourGeometryCommand:
         
         # Créer l'objet avec le bon type pour avoir une Shape
         obj = App.ActiveDocument.addObject("Part::FeaturePython", "ContourGeometry")
+        #obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "ContourGeometry")
         
         # Ajouter la fonctionnalité
         contour = BaptGeometry.ContourGeometry(obj)
@@ -182,4 +244,5 @@ Gui.addCommand('Bapt_Command', BaptCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
 Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
 Gui.addCommand('Bapt_CreateContourGeometry', CreateContourGeometryCommand())
+Gui.addCommand('Bapt_CreateMachiningCycle', CreateContourCommand())
 Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())

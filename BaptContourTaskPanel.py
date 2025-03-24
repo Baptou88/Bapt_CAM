@@ -24,11 +24,15 @@ class ContourTaskPanel:
         selectionLayout.addWidget(self.selectEdgesButton)
         
         self.confirmSelectionButton = QtGui.QPushButton("Confirmer la sélection")
-        self.confirmSelectionButton.clicked.connect(self.confirmSelection)
+        
         self.confirmSelectionButton.setEnabled(False)  # Désactivé par défaut
         selectionLayout.addWidget(self.confirmSelectionButton)
         
         contourLayout.addRow("Arêtes:", selectionLayout)
+        
+        # Propriété IsClosed
+        self.isClosedLabel = QtGui.QLabel("Contour fermé: ")
+        contourLayout.addRow("", self.isClosedLabel)
         
         # Affichage des arêtes sélectionnées
         self.edgesLabel = QtGui.QLabel("Aucune arête sélectionnée")
@@ -73,6 +77,7 @@ class ContourTaskPanel:
         self.updateEdgesLabel()
         
         # Connecter les signaux pour l'actualisation en temps réel
+        self.confirmSelectionButton.clicked.connect(self.confirmSelection)
         self.direction.currentTextChanged.connect(self.updateContour)
         self.Zref.valueChanged.connect(self.updateContour)
         self.Zfinal.valueChanged.connect(self.updateContour)
@@ -91,7 +96,8 @@ class ContourTaskPanel:
             count += len(sub[1])
         
         self.edgesLabel.setText(f"{count} arête(s) sélectionnée(s)")
-    
+        self.isClosedLabel.setText(f"Contour fermé: {self.obj.IsClosed}")   
+        
     def selectEdges(self):
         """Permet à l'utilisateur de sélectionner des arêtes"""
         # Activer le mode de sélection

@@ -188,11 +188,13 @@ class ContourGeometry:
         obj.Proxy = self
         self.Type = "ContourGeometry"
         
+        # Transformer l'objet en groupe
+        obj.addExtension("App::GroupExtensionPython", None)
+        
         # Propriétés pour stocker les arêtes sélectionnées
         if not hasattr(obj, "Edges"):
             obj.addProperty("App::PropertyLinkSubList", "Edges", "Contour", "Arêtes sélectionnées pour le contour")
         
-
         if not hasattr(obj, "Zref"):
             obj.addProperty("App::PropertyLength", "Zref", "Contour", "Hauteur de référence")
             obj.Zref = 0.0
@@ -205,6 +207,11 @@ class ContourGeometry:
             obj.addProperty("App::PropertyEnumeration", "Direction", "Contour", "Direction d'usinage")
             obj.Direction = ["Horaire", "Anti-horaire"]
             obj.Direction = "Horaire"
+
+        #proprité read only pour savoir si un contour est fermé 
+        if not hasattr(obj, "IsClosed"):
+            obj.addProperty("App::PropertyBool", "IsClosed", "Contour", "Indique si le contour est fermé")
+            obj.IsClosed = False
         
         # Créer une forme vide
         obj.Shape = Part.Shape()
@@ -269,6 +276,12 @@ class ContourGeometry:
                     App.Console.PrintError(f"Impossible de créer une forme composite: {str(e2)}\n")
                     return
             
+            # Vérifier si le fil est fermé
+            if wire.isClosed():
+                obj.IsClosed = True
+            else:
+                obj.IsClosed = False
+            
             # Créer une forme pour la visualisation
             obj.Shape = wire
 
@@ -316,6 +329,18 @@ class ViewProviderContourGeometry:
     def updateData(self, obj, prop):
         """Appelé lorsqu'une propriété de l'objet est modifiée"""
         pass
+    
+    def claimChildren(self):
+        """Retourne les enfants de cet objet"""
+        children = []
+        # Récupérer tous les objets de contournage qui référencent cette géométrie par son nom
+        if self.Object:
+            doc = self.Object.Document
+            for obj in doc.Objects:
+                if hasattr(obj, "Proxy") and hasattr(obj.Proxy, "Type") and obj.Proxy.Type == "ContournageCycle":
+                    if hasattr(obj, "ContourGeometryName") and obj.ContourGeometryName == self.Object.Name:
+                        children.append(obj)
+        return children
     
     def getDisplayModes(self, vobj):
         """Retourne les modes d'affichage disponibles"""
