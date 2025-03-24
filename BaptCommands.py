@@ -56,15 +56,20 @@ class CreateContourCommand:
         obj.ContourGeometryName = contour_geometry.Name
         
         # Ajouter le contournage comme enfant de la géométrie du contour
-        # Si la géométrie du contour est un groupe (a l'extension Group)
-        if hasattr(contour_geometry, "Group"):
+        # Vérifier si la géométrie du contour est un groupe (a l'extension Group)
+        if hasattr(contour_geometry, "Group") and hasattr(contour_geometry, "addObject"):
+            # Ajouter directement à la géométrie du contour
             contour_geometry.addObject(obj)
-        # Sinon, essayer de l'ajouter au document
+            App.Console.PrintMessage(f"Contournage ajouté comme enfant de {contour_geometry.Label}\n")
         else:
+            # Si la géométrie n'est pas un groupe, essayer de l'ajouter au document
+            App.Console.PrintWarning(f"La géométrie {contour_geometry.Label} n'est pas un groupe, impossible d'ajouter le contournage comme enfant\n")
+            
             # Trouver le groupe parent de la géométrie du contour
             for parent in App.ActiveDocument.Objects:
                 if hasattr(parent, "Group") and contour_geometry in parent.Group:
                     parent.addObject(obj)
+                    App.Console.PrintMessage(f"Contournage ajouté comme enfant de {parent.Label}\n")
                     break
         
         # Recomputer

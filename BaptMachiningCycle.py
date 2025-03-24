@@ -215,11 +215,16 @@ class ContournageCycle:
             App.Console.PrintError(f"Erreur lors de la création du chemin d'usinage: {str(e)}\n")
     
     def __getstate__(self):
-        """Sérialisation"""
-        return None
+        """Appelé lors de la sauvegarde"""
+        return {
+            "Type": self.Type,
+            "ContourGeometryName": getattr(self.Object, "ContourGeometryName", "")
+        }
     
     def __setstate__(self, state):
-        """Désérialisation"""
+        """Appelé lors du chargement"""
+        if state:
+            self.Type = state.get("Type", "ContournageCycle")
         return None
 
 
@@ -314,8 +319,10 @@ class ViewProviderContournageCycle:
     
     def __getstate__(self):
         """Appelé lors de la sauvegarde"""
-        return None
+        return {"ObjectName": self.Object.Name if self.Object else None}
     
     def __setstate__(self, state):
         """Appelé lors du chargement"""
+        if state and "ObjectName" in state and state["ObjectName"]:
+            self.Object = FreeCAD.ActiveDocument.getObject(state["ObjectName"])
         return None

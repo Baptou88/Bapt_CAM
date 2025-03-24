@@ -336,10 +336,27 @@ class ViewProviderContourGeometry:
         # Récupérer tous les objets de contournage qui référencent cette géométrie par son nom
         if self.Object:
             doc = self.Object.Document
+            if not doc:
+                return children
+                
+            # Vérifier que l'objet a un nom valide
+            if not hasattr(self.Object, "Name") or not self.Object.Name:
+                return children
+                
             for obj in doc.Objects:
+                # Vérifier si l'objet est un cycle de contournage
                 if hasattr(obj, "Proxy") and hasattr(obj.Proxy, "Type") and obj.Proxy.Type == "ContournageCycle":
+                    # Vérifier si l'objet référence cette géométrie
                     if hasattr(obj, "ContourGeometryName") and obj.ContourGeometryName == self.Object.Name:
                         children.append(obj)
+                        
+            # Vérifier si l'objet a un groupe
+            if hasattr(self.Object, "Group"):
+                # Ajouter tous les objets du groupe qui ne sont pas déjà dans la liste
+                for obj in self.Object.Group:
+                    if obj not in children:
+                        children.append(obj)
+                        
         return children
     
     def getDisplayModes(self, vobj):
@@ -390,9 +407,11 @@ class ViewProviderContourGeometry:
         return True
     
     def __getstate__(self):
-        """Sérialisation"""
-        return None
+        """Appelé lors de la sauvegarde"""
+        return {"ObjectName": self.Object.Name if self.Object else None}
     
     def __setstate__(self, state):
-        """Désérialisation"""
+        """Appelé lors du chargement"""
+        if state and "ObjectName" in state and state["ObjectName"]:
+            self.Object = App.ActiveDocument.getObject(state["ObjectName"])
         return None
