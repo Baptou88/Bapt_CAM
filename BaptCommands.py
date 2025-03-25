@@ -74,8 +74,12 @@ class CreateCamProjectCommand:
         # Créer l'objet projet CAM
         obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "CamProject")
         
+        App.Console.PrintMessage("par ici\n")
+
         # Ajouter la fonctionnalité
         project = BaptCamProject.CamProject(obj)
+
+        App.Console.PrintMessage("par là\n")
         
         # Ajouter le ViewProvider
         if obj.ViewObject:
