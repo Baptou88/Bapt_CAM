@@ -9,7 +9,8 @@ from BaptPreferences import BaptPreferences
 
 class Tool:
     """Classe représentant un outil d'usinage"""
-    def __init__(self, id=None, name="", type="", diameter=0.0, length=0.0, flutes=0, material="", comment=""):
+    def __init__(self, id=None, name="", type="", diameter=0.0, length=0.0, flutes=0, material="", comment="",
+                 point_angle=118.0, torus_radius=0.0, thread_pitch=0.0):
         self.id = id
         self.name = name
         self.type = type
@@ -18,6 +19,11 @@ class Tool:
         self.flutes = flutes
         self.material = material
         self.comment = comment
+        
+        # Paramètres spécifiques aux types d'outils
+        self.point_angle = point_angle  # Angle de pointe pour les forets (en degrés)
+        self.torus_radius = torus_radius  # Rayon du tore pour les fraises toriques (en mm)
+        self.thread_pitch = thread_pitch  # Pas pour les tarauds (en mm)
     
     def to_dict(self):
         """Convertit l'outil en dictionnaire"""
@@ -29,7 +35,10 @@ class Tool:
             'length': self.length,
             'flutes': self.flutes,
             'material': self.material,
-            'comment': self.comment
+            'comment': self.comment,
+            'point_angle': self.point_angle,
+            'torus_radius': self.torus_radius,
+            'thread_pitch': self.thread_pitch
         }
     
     @classmethod
@@ -43,7 +52,10 @@ class Tool:
             length=data.get('length', 0.0),
             flutes=data.get('flutes', 0),
             material=data.get('material', ""),
-            comment=data.get('comment', "")
+            comment=data.get('comment', ""),
+            point_angle=data.get('point_angle', 118.0),
+            torus_radius=data.get('torus_radius', 0.0),
+            thread_pitch=data.get('thread_pitch', 0.0)
         )
 
 
@@ -72,19 +84,43 @@ class ToolDatabase:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Créer la table des outils si elle n'existe pas
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tools (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            type TEXT,
-            diameter REAL,
-            length REAL,
-            flutes INTEGER,
-            material TEXT,
-            comment TEXT
-        )
-        ''')
+        # Vérifier si la table existe déjà
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tools'")
+        table_exists = cursor.fetchone()
+        
+        if not table_exists:
+            # Créer la table des outils si elle n'existe pas
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tools (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                type TEXT,
+                diameter REAL,
+                length REAL,
+                flutes INTEGER,
+                material TEXT,
+                comment TEXT,
+                point_angle REAL DEFAULT 118.0,
+                torus_radius REAL DEFAULT 0.0,
+                thread_pitch REAL DEFAULT 0.0
+            )
+            ''')
+        else:
+            # Vérifier si les nouvelles colonnes existent, sinon les ajouter
+            try:
+                cursor.execute("SELECT point_angle FROM tools LIMIT 1")
+            except sqlite3.OperationalError:
+                cursor.execute("ALTER TABLE tools ADD COLUMN point_angle REAL DEFAULT 118.0")
+            
+            try:
+                cursor.execute("SELECT torus_radius FROM tools LIMIT 1")
+            except sqlite3.OperationalError:
+                cursor.execute("ALTER TABLE tools ADD COLUMN torus_radius REAL DEFAULT 0.0")
+            
+            try:
+                cursor.execute("SELECT thread_pitch FROM tools LIMIT 1")
+            except sqlite3.OperationalError:
+                cursor.execute("ALTER TABLE tools ADD COLUMN thread_pitch REAL DEFAULT 0.0")
         
         conn.commit()
         conn.close()
@@ -94,7 +130,7 @@ class ToolDatabase:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment FROM tools")
+        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch FROM tools")
         rows = cursor.fetchall()
         
         tools = []
@@ -107,7 +143,10 @@ class ToolDatabase:
                 length=row[4],
                 flutes=row[5],
                 material=row[6],
-                comment=row[7]
+                comment=row[7],
+                point_angle=row[8],
+                torus_radius=row[9],
+                thread_pitch=row[10]
             )
             tools.append(tool)
         
@@ -120,9 +159,10 @@ class ToolDatabase:
         cursor = conn.cursor()
         
         cursor.execute('''
-        INSERT INTO tools (name, type, diameter, length, flutes, material, comment)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (tool.name, tool.type, tool.diameter, tool.length, tool.flutes, tool.material, tool.comment))
+        INSERT INTO tools (name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (tool.name, tool.type, tool.diameter, tool.length, tool.flutes, tool.material, tool.comment, 
+              tool.point_angle, tool.torus_radius, tool.thread_pitch))
         
         # Récupérer l'ID généré
         tool.id = cursor.lastrowid
@@ -138,9 +178,10 @@ class ToolDatabase:
         
         cursor.execute('''
         UPDATE tools
-        SET name=?, type=?, diameter=?, length=?, flutes=?, material=?, comment=?
+        SET name=?, type=?, diameter=?, length=?, flutes=?, material=?, comment=?, point_angle=?, torus_radius=?, thread_pitch=?
         WHERE id=?
-        ''', (tool.name, tool.type, tool.diameter, tool.length, tool.flutes, tool.material, tool.comment, tool.id))
+        ''', (tool.name, tool.type, tool.diameter, tool.length, tool.flutes, tool.material, tool.comment,
+              tool.point_angle, tool.torus_radius, tool.thread_pitch, tool.id))
         
         conn.commit()
         conn.close()
@@ -313,9 +354,12 @@ class ToolDialog(QtGui.QDialog):
         self.setWindowTitle("Éditer un outil" if self.tool.id else "Ajouter un outil")
         self.setMinimumWidth(400)
         
+        # Afficher un message de débogage
+        App.Console.PrintMessage("Configuration de l'interface utilisateur pour l'outil\n")
+        
         layout = QtGui.QVBoxLayout(self)
         
-        # Formulaire
+        # Formulaire principal
         form_layout = QtGui.QFormLayout()
         
         # Nom
@@ -324,9 +368,12 @@ class ToolDialog(QtGui.QDialog):
         
         # Type (combobox)
         self.type_combo = QtGui.QComboBox()
-        self.type_combo.addItems(["Fraise", "Foret", "Taraud", "Autre"])
+        self.type_combo.addItems(["Fraise", "Fraise torique", "Foret", "Taraud", "Autre"])
         if self.tool.type:
-            self.type_combo.setCurrentText(self.tool.type)
+            index = self.type_combo.findText(self.tool.type)
+            if index >= 0:
+                self.type_combo.setCurrentIndex(index)
+        self.type_combo.currentIndexChanged.connect(self.update_specific_params)
         form_layout.addRow("Type:", self.type_combo)
         
         # Diamètre
@@ -363,6 +410,49 @@ class ToolDialog(QtGui.QDialog):
         
         layout.addLayout(form_layout)
         
+        # Groupe pour les paramètres spécifiques au type d'outil
+        self.specific_group = QtGui.QGroupBox("Paramètres spécifiques")
+        self.specific_layout = QtGui.QVBoxLayout(self.specific_group)
+        
+        # Créer des sous-layouts pour chaque type d'outil
+        # Layout pour les forets
+        self.drill_layout = QtGui.QFormLayout()
+        self.point_angle_spin = QtGui.QDoubleSpinBox()
+        self.point_angle_spin.setRange(90.0, 180.0)
+        self.point_angle_spin.setSingleStep(0.5)
+        self.point_angle_spin.setSuffix(" °")
+        self.point_angle_spin.setValue(self.tool.point_angle)
+        self.drill_layout.addRow("Angle de pointe:", self.point_angle_spin)
+        self.drill_widget = QtGui.QWidget()
+        self.drill_widget.setLayout(self.drill_layout)
+        self.specific_layout.addWidget(self.drill_widget)
+        
+        # Layout pour les fraises toriques
+        self.torus_layout = QtGui.QFormLayout()
+        self.torus_radius_spin = QtGui.QDoubleSpinBox()
+        self.torus_radius_spin.setRange(0.0, 50.0)
+        self.torus_radius_spin.setSingleStep(0.1)
+        self.torus_radius_spin.setSuffix(" mm")
+        self.torus_radius_spin.setValue(self.tool.torus_radius)
+        self.torus_layout.addRow("Rayon du tore:", self.torus_radius_spin)
+        self.torus_widget = QtGui.QWidget()
+        self.torus_widget.setLayout(self.torus_layout)
+        self.specific_layout.addWidget(self.torus_widget)
+        
+        # Layout pour les tarauds
+        self.tap_layout = QtGui.QFormLayout()
+        self.thread_pitch_spin = QtGui.QDoubleSpinBox()
+        self.thread_pitch_spin.setRange(0.1, 10.0)
+        self.thread_pitch_spin.setSingleStep(0.05)
+        self.thread_pitch_spin.setSuffix(" mm")
+        self.thread_pitch_spin.setValue(self.tool.thread_pitch)
+        self.tap_layout.addRow("Pas:", self.thread_pitch_spin)
+        self.tap_widget = QtGui.QWidget()
+        self.tap_widget.setLayout(self.tap_layout)
+        self.specific_layout.addWidget(self.tap_widget)
+        
+        layout.addWidget(self.specific_group)
+        
         # Boutons
         button_box = QtGui.QDialogButtonBox(
             QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel
@@ -370,6 +460,38 @@ class ToolDialog(QtGui.QDialog):
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
+        
+        # Initialiser l'affichage des paramètres spécifiques
+        self.update_specific_params()
+    
+    def update_specific_params(self):
+        """Met à jour l'affichage des paramètres spécifiques en fonction du type d'outil sélectionné"""
+        tool_type = self.type_combo.currentText()
+        App.Console.PrintMessage(f"Mise à jour des paramètres spécifiques pour le type: {tool_type}\n")
+        
+        # Masquer tous les widgets spécifiques
+        self.drill_widget.setVisible(False)
+        self.torus_widget.setVisible(False)
+        self.tap_widget.setVisible(False)
+        
+        # Afficher uniquement le widget pertinent pour le type d'outil sélectionné
+        if tool_type == "Foret":
+            App.Console.PrintMessage("Affichage des paramètres pour Foret\n")
+            self.drill_widget.setVisible(True)
+            self.specific_group.setVisible(True)
+        elif tool_type == "Fraise torique":
+            App.Console.PrintMessage("Affichage des paramètres pour Fraise torique\n")
+            self.torus_widget.setVisible(True)
+            self.specific_group.setVisible(True)
+        elif tool_type == "Taraud":
+            App.Console.PrintMessage("Affichage des paramètres pour Taraud\n")
+            self.tap_widget.setVisible(True)
+            self.specific_group.setVisible(True)
+        else:
+            # Masquer le groupe entier si aucun paramètre spécifique n'est applicable
+            self.specific_group.setVisible(False)
+        
+        App.Console.PrintMessage(f"Groupe de paramètres spécifiques visible: {self.specific_group.isVisible()}\n")
     
     def accept(self):
         """Valide les modifications"""
@@ -380,6 +502,13 @@ class ToolDialog(QtGui.QDialog):
         self.tool.flutes = self.flutes_spin.value()
         self.tool.material = self.material_edit.text()
         self.tool.comment = self.comment_edit.toPlainText()
+        
+        # Paramètres spécifiques
+        self.tool.point_angle = self.point_angle_spin.value()
+        self.tool.torus_radius = self.torus_radius_spin.value()
+        self.tool.thread_pitch = self.thread_pitch_spin.value()
+        
+        App.Console.PrintMessage(f"Outil enregistré avec les paramètres spécifiques: Angle={self.tool.point_angle}, Rayon={self.tool.torus_radius}, Pas={self.tool.thread_pitch}\n")
         
         super(ToolDialog, self).accept()
 
@@ -520,7 +649,18 @@ class ToolsManagerPanel:
             return
         
         row = selected[0].row()
-        tool = self.model.tools[row]
+        # Correction : utiliser filtered_tools au lieu de tools pour obtenir l'index correct
+        tool_index = self.model.filtered_tools[row].id
+        
+        # Récupérer l'outil complet depuis la base de données
+        tools = self.db.get_all_tools()
+        tool = next((t for t in tools if t.id == tool_index), None)
+        
+        if not tool:
+            App.Console.PrintError(f"Outil avec ID {tool_index} introuvable\n")
+            return
+        
+        App.Console.PrintMessage(f"Édition de l'outil: {tool.name}, Type: {tool.type}, Paramètres spécifiques: Angle={tool.point_angle}, Rayon={tool.torus_radius}, Pas={tool.thread_pitch}\n")
         
         dialog = ToolDialog(tool, parent=self.form)
         if dialog.exec_() == QtGui.QDialog.Accepted:
@@ -538,7 +678,7 @@ class ToolsManagerPanel:
             return
         
         row = selected[0].row()
-        tool = self.model.tools[row]
+        tool = self.model.filtered_tools[row]
         
         # Demander confirmation
         reply = QtGui.QMessageBox.question(

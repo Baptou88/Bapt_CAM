@@ -109,6 +109,7 @@ class CreateHotReloadCommand:
             reload(BaptDrillTaskPanel)  
             reload(BaptCommands)
             reload(BaptPreferences)
+            reload(BaptTools)  # Ajouter le module BaptTools
             reload(BaptWorkbench)   
         except:
             pass
