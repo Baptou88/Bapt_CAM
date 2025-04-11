@@ -11,6 +11,7 @@ import os
 from PySide import QtCore, QtGui
 import BaptCamProject
 import BaptGeometry
+import BaptTools
 
 class CreateDrillGeometryCommand:
     """Commande pour créer une géométrie de perçage"""
@@ -117,7 +118,23 @@ class CreateHotReloadCommand:
         # Message de confirmation
         App.Console.PrintMessage("hot Reload avec Succes!\n")
 
+class ToolsManagerCommand:
+    """Commande pour ouvrir le gestionnaire d'outils"""
 
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
+                'MenuText': "Gestionnaire d'outils",
+                'ToolTip': "Ouvrir le gestionnaire d'outils pour créer et éditer des outils"}
+
+    def IsActive(self):
+        """La commande est toujours active"""
+        return True
+
+    def Activated(self):
+        """Ouvrir le gestionnaire d'outils"""
+        panel = BaptTools.ToolsManagerPanel()
+        Gui.Control.showDialog(panel)
+        App.Console.PrintMessage("Gestionnaire d'outils ouvert.\n")
 
 class BaptCommand:
     """Ma première commande"""
@@ -140,3 +157,4 @@ Gui.addCommand('Bapt_Command', BaptCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
 Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
 Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())
+Gui.addCommand('Bapt_ToolsManager', ToolsManagerCommand())
