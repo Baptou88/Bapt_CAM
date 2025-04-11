@@ -42,12 +42,20 @@ class ContournageCycle:
     
     def execute(self, obj):
         """Mettre à jour le cycle d'usinage"""
-        App.Console.PrintMessage(f"Exécution du cycle de contournage avec diamètre d'outil: {obj.ToolDiameter} et profondeur de coupe: {obj.CutDepth}\n")
         
         # Vérifier si le nom de la géométrie du contour est défini
         if not hasattr(obj, "ContourGeometryName") or not obj.ContourGeometryName:
             App.Console.PrintError("Aucune géométrie de contour définie.\n")
             return
+        if not hasattr(obj, "ToolDiameter") or not obj.ToolDiameter:
+            App.Console.PrintError("Aucun diamètre d'outil défini.\n")
+            return
+
+        if not hasattr(obj,"CutDepth") or not obj.CutDepth:
+            App.Console.PrintError("Aucune profondeur de coupe définie.\n")
+            return
+        
+        App.Console.PrintMessage(f"Exécution du cycle de contournage avec diamètre d'outil: {obj.ToolDiameter} et profondeur de coupe: {obj.CutDepth}\n")
         
         # Récupérer la géométrie du contour par son nom
         doc = obj.Document
@@ -99,6 +107,61 @@ class ContournageCycle:
                     # Pour un décalage vers l'intérieur, la valeur est négative
                     offset_value = -offset if decalage_interieur else offset
                     
+                    # Normaliser et simplifier le wire avant de tenter le décalage
+                    try:
+                        # Vérifier l'orientation du wire
+                        is_clockwise = wire.isClockwise()
+                        App.Console.PrintMessage(f"Wire original est {'horaire' if is_clockwise else 'anti-horaire'}\n")
+                        
+                        # Réordonner les arêtes pour s'assurer qu'elles sont connectées correctement
+                        sorted_edges = Part.__sortEdges__(wire.Edges)
+                        
+                        # Simplifier le wire en fusionnant les segments colinéaires
+                        simplified_edges = []
+                        i = 0
+                        while i < len(sorted_edges):
+                            current_edge = sorted_edges[i]
+                            # Chercher des arêtes consécutives qui peuvent être fusionnées
+                            j = i + 1
+                            while j < len(sorted_edges):
+                                next_edge = sorted_edges[j]
+                                # Vérifier si les deux arêtes sont des lignes droites
+                                if (isinstance(current_edge.Curve, Part.Line) and 
+                                    isinstance(next_edge.Curve, Part.Line)):
+                                    # Vérifier si elles sont colinéaires
+                                    v1 = current_edge.Vertexes[1].Point.sub(current_edge.Vertexes[0].Point).normalize()
+                                    v2 = next_edge.Vertexes[1].Point.sub(next_edge.Vertexes[0].Point).normalize()
+                                    # Si les vecteurs sont parallèles (produit scalaire proche de 1 ou -1)
+                                    dot_product = abs(v1.dot(v2))
+                                    if dot_product > 0.999:  # Presque parallèles
+                                        # Fusionner les arêtes
+                                        start_point = current_edge.Vertexes[0].Point
+                                        end_point = next_edge.Vertexes[1].Point
+                                        current_edge = Part.makeLine(start_point, end_point)
+                                        j += 1
+                                        continue
+                                break
+                            simplified_edges.append(current_edge)
+                            i = j
+                        
+                        # Recréer le wire avec les arêtes simplifiées
+                        if simplified_edges:
+                            simplified_wire = Part.Wire(simplified_edges)
+                            # Vérifier si le wire simplifié est valide
+                            if simplified_wire.isClosed():
+                                wire = simplified_wire
+                                App.Console.PrintMessage(f"Wire simplifié créé avec {len(simplified_edges)} arêtes (original: {len(sorted_edges)})\n")
+                            else:
+                                App.Console.PrintMessage("Le wire simplifié n'est pas fermé, utilisation du wire original\n")
+                        
+                        # S'assurer que le wire a l'orientation correcte pour le décalage
+                        if (decalage_interieur and not is_clockwise) or (not decalage_interieur and is_clockwise):
+                            wire.reverse()
+                            App.Console.PrintMessage("Wire inversé pour correspondre à la direction de décalage\n")
+                    
+                    except Exception as e_prep:
+                        App.Console.PrintMessage(f"Erreur lors de la préparation du wire: {str(e_prep)}\n")
+                    
                     # Essayer d'abord avec makeOffset2D
                     try:
                         path_shape = wire.makeOffset2D(offset_value, fill=False, join=2, openResult = True, intersection=True)
@@ -107,19 +170,73 @@ class ContournageCycle:
                         App.Console.PrintMessage(f"makeOffset2D a échoué, tentative avec Wire.makeOffset: {str(e1)}\n")
                         # Si makeOffset2D échoue, essayer avec Wire.makeOffset
                         try:
-                            # Créer une face à partir du fil
-                            face = Part.Face(wire)
-                            # Créer un fil décalé
-                            offset_wire = face.makeOffset(offset_value)
-                            if isinstance(offset_wire, list):
-                                # Si plusieurs fils sont retournés, prendre le premier
-                                if offset_wire:
-                                    path_shape = offset_wire[0]
-                                else:
-                                    raise Exception("Aucun fil retourné par makeOffset")
+                            # Vérifier si le wire est fermé
+                            if wire.isClosed():
+                                # Créer une face à partir du fil
+                                try:
+                                    # Vérifier si le wire est planaire avant de créer une face
+                                    if wire.isPlanar():
+                                        face = Part.Face(wire)
+                                        # Créer un fil décalé
+                                        offset_wire = face.makeOffset(offset_value)
+                                        if isinstance(offset_wire, list):
+                                            # Si plusieurs fils sont retournés, prendre le premier
+                                            if offset_wire:
+                                                path_shape = offset_wire[0]
+                                            else:
+                                                raise Exception("Aucun fil retourné par makeOffset")
+                                        else:
+                                            path_shape = offset_wire
+                                        App.Console.PrintMessage(f"Décalage créé pour contour fermé avec Wire.makeOffset: {offset_value} mm\n")
+                                    else:
+                                        # Si le wire n'est pas planaire, projeter sur le plan XY
+                                        App.Console.PrintMessage("Wire non planaire détecté, projection sur le plan XY\n")
+                                        projected_edges = []
+                                        for edge in wire.Edges:
+                                            # Projeter chaque point de l'arête sur le plan XY (z=0)
+                                            if isinstance(edge.Curve, Part.Line):
+                                                # Pour les lignes droites
+                                                p1 = edge.Vertexes[0].Point
+                                                p2 = edge.Vertexes[1].Point
+                                                p1_proj = Base.Vector(p1.x, p1.y, 0)
+                                                p2_proj = Base.Vector(p2.x, p2.y, 0)
+                                                projected_edges.append(Part.makeLine(p1_proj, p2_proj))
+                                            else:
+                                                # Pour les courbes, échantillonner et projeter
+                                                points = edge.discretize(20)  # Échantillonner 20 points
+                                                projected_points = [Base.Vector(p.x, p.y, 0) for p in points]
+                                                if len(projected_points) >= 2:
+                                                    # Créer une B-spline à partir des points projetés
+                                                    projected_edges.append(Part.BSplineCurve(projected_points).toShape())
+                                        
+                                        # Créer un nouveau wire à partir des arêtes projetées
+                                        if projected_edges:
+                                            projected_wire = Part.Wire(Part.__sortEdges__(projected_edges))
+                                            if projected_wire.isClosed():
+                                                # Créer une face à partir du wire projeté
+                                                projected_face = Part.Face(projected_wire)
+                                                # Créer un fil décalé
+                                                offset_wire = projected_face.makeOffset(offset_value)
+                                                if isinstance(offset_wire, list):
+                                                    path_shape = offset_wire[0] if offset_wire else None
+                                                else:
+                                                    path_shape = offset_wire
+                                                App.Console.PrintMessage(f"Décalage créé pour contour projeté avec Wire.makeOffset: {offset_value} mm\n")
+                                            else:
+                                                raise Exception("Le wire projeté n'est pas fermé")
+                                        else:
+                                            raise Exception("Impossible de projeter les arêtes")
+                                except Exception as e2a:
+                                    # Si la création de face échoue, essayer directement avec wire.makeOffset
+                                    App.Console.PrintMessage(f"Création de face a échoué, tentative directe avec wire.makeOffset: {str(e2a)}\n")
+                                    offset_wire = wire.makeOffset(offset_value)
+                                    path_shape = offset_wire
+                                    App.Console.PrintMessage(f"Décalage créé pour contour fermé avec wire.makeOffset direct: {offset_value} mm\n")
                             else:
+                                # Pour un wire ouvert, utiliser directement makeOffset
+                                offset_wire = wire.makeOffset(offset_value)
                                 path_shape = offset_wire
-                            App.Console.PrintMessage(f"Décalage créé pour contour fermé avec Wire.makeOffset: {offset_value} mm\n")
+                                App.Console.PrintMessage(f"Décalage créé pour contour ouvert avec wire.makeOffset: {offset_value} mm\n")
                         except Exception as e2:
                             App.Console.PrintMessage(f"Wire.makeOffset a échoué, tentative avec approche manuelle: {str(e2)}\n")
                             # Si les deux méthodes échouent, utiliser l'approche manuelle
@@ -144,10 +261,15 @@ class ContournageCycle:
                                     offset_edge = Part.makeLine(offset_p1, offset_p2)
                                     offset_edges.append(offset_edge)
                                 else:
-                                    # Pour les courbes, essayer makeOffset
+                                    # Pour les courbes, convertir en Wire puis utiliser makeOffset
                                     try:
-                                        offset_edge = edge.makeOffset(offset_value)
-                                        offset_edges.append(offset_edge)
+                                        # Créer un Wire à partir de l'arête individuelle
+                                        temp_wire = Part.Wire([edge])
+                                        # Appliquer le décalage au Wire (qui a la méthode makeOffset)
+                                        offset_wire = temp_wire.makeOffset(offset_value)
+                                        # Ajouter les arêtes du wire décalé
+                                        for offset_edge in offset_wire.Edges:
+                                            offset_edges.append(offset_edge)
                                     except Exception as e3:
                                         App.Console.PrintError(f"Erreur lors du décalage d'une courbe: {str(e3)}\n")
                                         # En cas d'erreur, utiliser l'arête originale
@@ -190,11 +312,15 @@ class ContournageCycle:
                             offset_edge = Part.makeLine(offset_p1, offset_p2)
                             offset_edges.append(offset_edge)
                         else:
-                            # Pour les courbes, utiliser makeOffset
+                            # Pour les courbes, convertir en Wire puis utiliser makeOffset
                             try:
-                                offset_value = -offset if decalage_interieur else offset
-                                offset_edge = edge.makeOffset(offset_value)
-                                offset_edges.append(offset_edge)
+                                # Créer un Wire à partir de l'arête individuelle
+                                temp_wire = Part.Wire([edge])
+                                # Appliquer le décalage au Wire (qui a la méthode makeOffset)
+                                offset_wire = temp_wire.makeOffset(offset_value)
+                                # Ajouter les arêtes du wire décalé
+                                for offset_edge in offset_wire.Edges:
+                                    offset_edges.append(offset_edge)
                             except Exception as e:
                                 App.Console.PrintError(f"Erreur lors du décalage d'une courbe: {str(e)}\n")
                                 # En cas d'erreur, utiliser l'arête originale
@@ -324,5 +450,5 @@ class ViewProviderContournageCycle:
     def __setstate__(self, state):
         """Appelé lors du chargement"""
         if state and "ObjectName" in state and state["ObjectName"]:
-            self.Object = FreeCAD.ActiveDocument.getObject(state["ObjectName"])
+            self.Object = App.ActiveDocument.getObject(state["ObjectName"])
         return None

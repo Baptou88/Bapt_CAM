@@ -31,6 +31,7 @@ class CreateContourCommand:
                 App.Console.PrintMessage(f"Type de Proxy: {sel[0].Proxy.Type}\n")
         if not sel:
             return False
+        #return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
         return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
 
     def Activated(self):
@@ -143,6 +144,7 @@ class CreateCamProjectCommand:
         # Ajouter la fonctionnalité
         project = BaptCamProject.CamProject(obj)
         
+        App.Console.PrintMessage('vreation view provider\n')
         # Ajouter le ViewProvider
         if obj.ViewObject:
             BaptCamProject.ViewProviderCamProject(obj.ViewObject)
@@ -218,6 +220,7 @@ class CreateHotReloadCommand:
             reload(BaptCommands)
             reload(BaptPreferences)
             reload(BaptWorkbench)   
+            reload(BaptMachiningCycle)
         except:
             pass
 

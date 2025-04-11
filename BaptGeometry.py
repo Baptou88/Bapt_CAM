@@ -191,6 +191,9 @@ class ContourGeometry:
         # Transformer l'objet en groupe
         obj.addExtension("App::GroupExtensionPython", None)
         
+        # Permettre les références à des objets en dehors du groupe
+        obj.addExtension("App::LinkExtensionPython", None)
+        
         # Propriétés pour stocker les arêtes sélectionnées
         if not hasattr(obj, "Edges"):
             obj.addProperty("App::PropertyLinkSubList", "Edges", "Contour", "Arêtes sélectionnées pour le contour")
@@ -202,6 +205,10 @@ class ContourGeometry:
         if not hasattr(obj, "Zfinal"):
             obj.addProperty("App::PropertyLength", "Zfinal", "Contour", "Hauteur finale")
             obj.Zfinal = 0.0
+        
+        if not hasattr(obj, "DepthMode"):
+            obj.addProperty("App::PropertyString", "DepthMode", "Contour", "Mode de profondeur (Absolu ou Relatif)")
+            obj.DepthMode = "Absolu"
         
         if not hasattr(obj, "Direction"):
             obj.addProperty("App::PropertyEnumeration", "Direction", "Contour", "Direction d'usinage")
@@ -218,8 +225,77 @@ class ContourGeometry:
     
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        if prop in ["Edges", "Zref", "Zfinal", "Direction"]:
+        #if prop == "Zref":
+            #App.Console.PrintMessage('Message\n')
+            #App.Console.PrintMessage(f'{self.obj.Zref} {obj.Zref}\n')
+            #if obj.DepthMode == "Relatif":
+                # calcul la difference entre l'ancienne et la nouvelle valeur
+
+        if prop in ["Edges", "Zref", "Zfinal", "Direction", "DepthMode"]:
             self.execute(obj)
+    
+    def _create_adjusted_edges(self, edges, z_value):
+        """Crée des arêtes ajustées à une hauteur Z spécifique
+        
+        Args:
+            edges: Liste des arêtes d'origine
+            z_value: Valeur Z à appliquer
+            
+        Returns:
+            Liste des nouvelles arêtes ajustées
+        """
+        adjusted_edges = []
+        for edge in edges:
+            #App.Console.PrintMessage(f"Traitement de l'arête pour Z={z_value}: {edge}\n")
+            if isinstance(edge.Curve, Part.Line):
+                # Pour une ligne droite
+                p1 = edge.Vertexes[0].Point
+                p2 = edge.Vertexes[1].Point
+                # Créer de nouveaux points avec Z = z_value
+                new_p1 = App.Vector(p1.x, p1.y, z_value)
+                new_p2 = App.Vector(p2.x, p2.y, z_value)
+                # Créer une nouvelle ligne
+                new_edge = Part.makeLine(new_p1, new_p2)
+                adjusted_edges.append(new_edge)
+            elif isinstance(edge.Curve, Part.Circle):
+                # Pour un arc ou un cercle
+                circle = edge.Curve
+                center = circle.Center
+                new_center = App.Vector(center.x, center.y, z_value)
+                # Créer un nouvel axe Z
+                new_axis = App.Vector(0, 0, 1)
+                radius = circle.Radius
+                
+                # Créer un nouveau cercle
+                new_circle = Part.Circle(new_center, new_axis, radius)
+                
+                # Si c'est un arc (pas un cercle complet)
+                if edge.Curve.AngleXU != 0 or edge.Curve.AngleXV != 0:
+                    # Récupérer les angles de début et de fin
+                    first_param = edge.FirstParameter
+                    last_param = edge.LastParameter
+                    new_edge = Part.Edge(new_circle, first_param, last_param)
+                else:
+                    # Cercle complet
+                    new_edge = Part.Edge(new_circle)
+                
+                adjusted_edges.append(new_edge)
+            else:
+                # Pour les autres types de courbes, utiliser une approximation par points
+                points = []
+                for i in range(10):  # Utiliser 10 points pour l'approximation
+                    param = edge.FirstParameter + (edge.LastParameter - edge.FirstParameter) * i / 9
+                    point = edge.valueAt(param)
+                    new_point = App.Vector(point.x, point.y, z_value)
+                    points.append(new_point)
+                
+                # Créer une BSpline à partir des points
+                if len(points) >= 2:
+                    new_edge = Part.BSplineCurve()
+                    new_edge.interpolate(points)
+                    adjusted_edges.append(Part.Edge(new_edge))
+        
+        return adjusted_edges
     
     def execute(self, obj):
         """Mettre à jour la représentation visuelle du contour"""
@@ -249,26 +325,37 @@ class ContourGeometry:
             
             App.Console.PrintMessage(f"Nombre d'arêtes collectées: {len(edges)}\n")
             
-            # Créer un fil à partir des arêtes
+            # Créer des arêtes ajustées à la hauteur Zref et à Zfinal
+            adjusted_edges_zref = self._create_adjusted_edges(edges, obj.Zref)
+            adjusted_edges_zfinal = self._create_adjusted_edges(edges, obj.Zfinal)
+            
             try:
-                adjusted_edges = []
-                for edge in edges:
-                    App.Console.PrintMessage(f"Traitement de l'arête: {edge}\n")
-                    adjusted_edge = edge.copy()
-                    for i, vertex in enumerate(adjusted_edge.Vertexes):
-                        App.Console.PrintMessage(f"Avant ajustement: {vertex.Point}\n")
-                        new_point = App.Vector(vertex.Point.x, vertex.Point.y, obj.Zref)
-                        adjusted_edge.Vertexes[i] = Part.Vertex(new_point)
-                        App.Console.PrintMessage(f"Après ajustement: {adjusted_edge.Vertexes[i].Point}\n")
-                        #TODO : à corriger
-                    adjusted_edges.append(adjusted_edge)
-                wire = Part.Wire(adjusted_edges)
-                App.Console.PrintMessage("Fil créé avec succès avec ajustement à Zref.\n")
+                # Créer le fil à Zref
+                wire_zref = Part.Wire(adjusted_edges_zref)
+                
+                # Créer le fil à Zfinal
+                wire_zfinal = Part.Wire(adjusted_edges_zfinal)
+                
+                # Créer un compound contenant les deux fils
+                compound = Part.makeCompound([wire_zref, wire_zfinal])
+                obj.Shape = compound
+
+                
+                # Vérifier si le fil est fermé (utiliser le fil à Zref pour cette vérification)
+                if wire_zref.isClosed():
+                    obj.IsClosed = True
+                else:
+                    obj.IsClosed = False
+                
+                
+                
             except Exception as e:
                 App.Console.PrintError(f"Impossible de créer un fil à partir des arêtes sélectionnées: {str(e)}\n")
                 # Essayer de créer une forme composite si le fil échoue
                 try:
-                    compound = Part.makeCompound(edges)
+                    all_edges = adjusted_edges_zref
+                    all_edges.extend(adjusted_edges_zfinal)
+                    compound = Part.makeCompound(all_edges)
                     obj.Shape = compound
                     App.Console.PrintMessage("Forme composite créée à la place du fil.\n")
                     return
@@ -276,19 +363,17 @@ class ContourGeometry:
                     App.Console.PrintError(f"Impossible de créer une forme composite: {str(e2)}\n")
                     return
             
-            # Vérifier si le fil est fermé
-            if wire.isClosed():
-                obj.IsClosed = True
-            else:
-                obj.IsClosed = False
-            
-            # Créer une forme pour la visualisation
-            obj.Shape = wire
-
-            App.Console.PrintMessage("Forme mise à jour avec succès.\n")
-            
         except Exception as e:
             App.Console.PrintError(f"Erreur lors de l'exécution: {str(e)}\n")
+    
+    def getOutList(self, obj):
+        """Retourne la liste des objets référencés par cet objet"""
+        outlist = []
+        if hasattr(obj, "Edges") and obj.Edges:
+            for sub in obj.Edges:
+                if sub[0] not in outlist:
+                    outlist.append(sub[0])
+        return outlist
     
     def __getstate__(self):
         """Sérialisation"""
@@ -297,6 +382,7 @@ class ContourGeometry:
     def __setstate__(self, state):
         """Désérialisation"""
         return None
+
 
 class ViewProviderContourGeometry:
     """Classe pour gérer l'affichage des contours"""
