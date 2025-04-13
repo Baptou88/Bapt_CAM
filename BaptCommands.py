@@ -13,6 +13,73 @@ import BaptCamProject
 import BaptGeometry
 import BaptTools
 import BaptDrillOperation  # Importer le nouveau module
+import BaptMachiningCycle
+
+class CreateContourCommand:
+    """Commande pour créer un Contournage"""
+
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Contour.svg"),
+                'MenuText': "Nouveau Contournage",
+                'ToolTip': "Créer un nouveau contournage pour l'usinage"}
+
+    def IsActive(self):
+        """La commande est active si une geometrie de contour est sélectionné"""
+        sel = Gui.Selection.getSelection()
+        #debug
+        if sel:
+            App.Console.PrintMessage(f"Sélection: {sel[0].Name}\n")
+            if hasattr(sel[0], "Proxy"):
+                App.Console.PrintMessage(f"Type de Proxy: {sel[0].Proxy.Type}\n")
+        if not sel:
+            return False
+        #return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
+        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
+
+    def Activated(self):
+        """Créer un nouveau contournage"""
+        # Obtenir la géométrie de contour sélectionnée
+        contour_geometry = Gui.Selection.getSelection()[0]
+        
+        # Créer l'objet de contournage
+        obj = App.ActiveDocument.addObject("Part::FeaturePython", "Contournage")
+        
+        # Ajouter la fonctionnalité
+        contour = BaptMachiningCycle.ContournageCycle(obj)
+        
+        # Ajouter le ViewProvider
+        if obj.ViewObject:
+            BaptMachiningCycle.ViewProviderContournageCycle(obj.ViewObject)
+            obj.ViewObject.LineColor = (0.0, 0.0, 1.0)  # Bleu
+            obj.ViewObject.PointColor = (0.0, 0.0, 1.0)  # Bleu
+            obj.ViewObject.LineWidth = 2.0
+            obj.ViewObject.PointSize = 4.0
+        
+        # Lier à la géométrie du contour par son nom
+        obj.ContourGeometryName = contour_geometry.Name
+        
+        # Ajouter le contournage comme enfant de la géométrie du contour
+        # Vérifier si la géométrie du contour est un groupe (a l'extension Group)
+        if hasattr(contour_geometry, "Group") and hasattr(contour_geometry, "addObject"):
+            # Ajouter directement à la géométrie du contour
+            contour_geometry.addObject(obj)
+            App.Console.PrintMessage(f"Contournage ajouté comme enfant de {contour_geometry.Label}\n")
+        else:
+            # Si la géométrie n'est pas un groupe, essayer de l'ajouter au document
+            App.Console.PrintWarning(f"La géométrie {contour_geometry.Label} n'est pas un groupe, impossible d'ajouter le contournage comme enfant\n")
+            
+            # Trouver le groupe parent de la géométrie du contour
+            for parent in App.ActiveDocument.Objects:
+                if hasattr(parent, "Group") and contour_geometry in parent.Group:
+                    parent.addObject(obj)
+                    App.Console.PrintMessage(f"Contournage ajouté comme enfant de {parent.Label}\n")
+                    break
+        
+        # Recomputer
+        App.ActiveDocument.recompute()
+        
+        # Message de confirmation
+        App.Console.PrintMessage(f"Contournage créé et lié à {contour_geometry.Label}.\n")
 
 class CreateDrillGeometryCommand:
     """Commande pour créer une géométrie de perçage"""
@@ -82,6 +149,7 @@ class CreateCamProjectCommand:
 
         App.Console.PrintMessage("par là\n")
         
+        App.Console.PrintMessage('vreation view provider\n')
         # Ajouter le ViewProvider
         if obj.ViewObject:
             BaptCamProject.ViewProviderCamProject(obj.ViewObject)
@@ -91,6 +159,53 @@ class CreateCamProjectCommand:
         
         # Message de confirmation
         App.Console.PrintMessage("Projet CAM créé avec succès!\n")
+
+class CreateContourGeometryCommand:
+    """Commande pour créer une géométrie de contour"""
+
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Contour.svg"),
+                'MenuText': "Nouvelle géométrie de contour",
+                'ToolTip': "Créer une nouvelle géométrie de contour pour l'usinage"}
+
+    def IsActive(self):
+        """La commande est active si un projet CAM est sélectionné"""
+        sel = Gui.Selection.getSelection()
+        if not sel:
+            return False
+        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject"
+
+    def Activated(self):
+        """Créer une nouvelle géométrie de contour"""
+        # Obtenir le projet CAM sélectionné
+        project = Gui.Selection.getSelection()[0]
+        
+        # Créer l'objet avec le bon type pour avoir une Shape
+        obj = App.ActiveDocument.addObject("Part::FeaturePython", "ContourGeometry")
+        #obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "ContourGeometry")
+        
+        # Ajouter la fonctionnalité
+        contour = BaptGeometry.ContourGeometry(obj)
+        
+        # Ajouter au groupe Geometry
+        geometry_group = project.Proxy.getGeometryGroup(project)
+        geometry_group.addObject(obj)
+        
+        # Ajouter le ViewProvider
+        if obj.ViewObject:
+            BaptGeometry.ViewProviderContourGeometry(obj.ViewObject)
+            obj.ViewObject.LineColor = (1.0, 0.0, 0.0)  # Rouge
+            obj.ViewObject.PointColor = (1.0, 0.0, 0.0)  # Rouge
+            obj.ViewObject.LineWidth = 4.0  # Largeur de ligne plus grande
+            obj.ViewObject.PointSize = 6.0  # Taille des points plus grande
+        
+        # Message de confirmation
+        App.Console.PrintMessage("Géométrie de contour créée. Sélectionnez les arêtes pour le contour.\n")
+        
+        # Ouvrir le panneau de tâches pour l'édition
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(obj)
+        Gui.ActiveDocument.setEdit(obj.Name)
 
 class CreateHotReloadCommand:
     def GetResources(self):
@@ -113,6 +228,7 @@ class CreateHotReloadCommand:
             reload(BaptPreferences)
             reload(BaptTools)  # Ajouter le module BaptTools
             reload(BaptWorkbench)   
+            reload(BaptMachiningCycle)
         except:
             pass
 
@@ -210,6 +326,8 @@ class BaptCommand:
 Gui.addCommand('Bapt_Command', BaptCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
 Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
+Gui.addCommand('Bapt_CreateContourGeometry', CreateContourGeometryCommand())
+Gui.addCommand('Bapt_CreateMachiningCycle', CreateContourCommand())
 Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())
 Gui.addCommand('Bapt_ToolsManager', ToolsManagerCommand())
 Gui.addCommand('Bapt_CreateDrillOperation', CreateDrillOperationCommand())  # Ajouter la nouvelle commande

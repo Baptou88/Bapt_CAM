@@ -41,35 +41,30 @@ class CamProject:
             obj.StockOrigin = App.Vector(0,0,0)
         
         # Créer le groupe Geometry
-        self.createGeometryGroup(obj)
+        #self.getGeometryGroup(obj)
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
         self.__init__(obj)
 
-    def createGeometryGroup(self, obj):
-        """Crée le groupe Geometry s'il n'existe pas"""
+    def getGeometryGroup(self, obj):
+        """Obtient ou crée le groupe Geometry"""
+        # Chercher le groupe Geometry existant
         for item in obj.Group:
             if item.Name == "Geometry":
                 return item
         
-        # Créer un nouveau groupe Geometry
+        # Créer un nouveau groupe Geometry si non trouvé
         geometry_group = App.ActiveDocument.addObject("App::DocumentObjectGroup", "Geometry")
         obj.addObject(geometry_group)
         return geometry_group
-
-    def getGeometryGroup(self, obj):
-        """Obtient ou crée le groupe Geometry"""
-        for item in obj.Group:
-            if item.Name == "Geometry":
-                return item
-        return self.createGeometryGroup(obj)
 
     def createStock(self, obj):
         """Crée l'objet stock"""
         
         stock = App.ActiveDocument.addObject("Part::Feature", "Stock")
 
+        # stock = App.ActiveDocument.addObject("Part::FeaturePython", "Stock")
         # Ajouter le stock au groupe
         obj.addObject(stock)
         
@@ -81,6 +76,7 @@ class CamProject:
 
     def getStock(self, obj):
         """Obtient ou crée l'objet stock"""
+        App.Console.PrintMessage('getStock in camproject\n')
         stock = None
         if obj.Group:  # Chercher un stock existant dans le groupe
             for child in obj.Group:
@@ -96,9 +92,10 @@ class CamProject:
 
     def execute(self, obj):
         """Crée ou met à jour la représentation visuelle du brut"""
+        App.Console.PrintMessage('execute in camproject\n')
         try:
             # S'assurer que toutes les propriétés existent
-            if not hasattr(obj, "WorkPlane") or not hasattr(obj, "StockLength") or not hasattr(obj, "StockOrigin"):
+            if not hasattr(obj, "WorkPlane") or not hasattr(obj, "StockLength") or not hasattr(obj, "StockWidth") or not hasattr(obj, "StockHeight") or not hasattr(obj, "StockOrigin"):
                 return
                 
             # Créer une boîte représentant le brut
@@ -112,16 +109,15 @@ class CamProject:
             # Obtenir ou créer le stock et mettre à jour sa forme
             stock = self.getStock(obj)
             stock.Shape = box
-            
+            App.Console.PrintMessage('fin execute\n')
         except Exception as e:
             App.Console.PrintError(f"Error in execute: {str(e)}\n")
 
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        #App.Console.PrintMessage("Change property: " + str(obj.Name) + " " + str(prop) + "\n")
-        pass
-        # if prop in ["StockLength", "StockWidth", "StockHeight", "Origin", "WorkPlane", "StockOrigin"]:
-        #     self.execute(obj)
+        if prop in ["StockLength", "StockWidth", "StockHeight", "Origin", "WorkPlane", "StockOrigin"]:
+            App.Console.PrintMessage("Change property: " + str(obj.Name) + " " + str(prop) + "\n")
+            self.execute(obj)
 
     def __getstate__(self):
         """Sérialisation"""
