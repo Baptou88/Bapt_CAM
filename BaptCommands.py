@@ -5,15 +5,16 @@ BaptCommands.py
 Contient les commandes principales du workbench
 """
 
+import os
+
+import BaptCamProject
+import BaptDrillOperation
+import BaptGeometry
+import BaptMachiningCycle
+import BaptTools
 import FreeCAD as App
 import FreeCADGui as Gui
-import os
 from PySide import QtCore, QtGui
-import BaptCamProject
-import BaptGeometry
-import BaptTools
-import BaptDrillOperation  # Importer le nouveau module
-import BaptMachiningCycle
 
 class CreateContourCommand:
     """Commande pour créer un Contournage"""
@@ -27,10 +28,10 @@ class CreateContourCommand:
         """La commande est active si une geometrie de contour est sélectionné"""
         sel = Gui.Selection.getSelection()
         #debug
-        if sel:
-            App.Console.PrintMessage(f"Sélection: {sel[0].Name}\n")
-            if hasattr(sel[0], "Proxy"):
-                App.Console.PrintMessage(f"Type de Proxy: {sel[0].Proxy.Type}\n")
+        #if sel:
+            #App.Console.PrintMessage(f"Sélection: {sel[0].Name}\n")
+            #if hasattr(sel[0], "Proxy"):
+                #App.Console.PrintMessage(f"Type de Proxy: {sel[0].Proxy.Type}\n")
         if not sel:
             return False
         #return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
@@ -117,9 +118,11 @@ class CreateDrillGeometryCommand:
         
         # Recomputer
         App.ActiveDocument.recompute()
-        
-        # Message de confirmation
-        App.Console.PrintMessage("Géométrie de perçage créée. Sélectionnez les faces cylindriques.\n")
+
+        # Ouvrir l'éditeur
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+
 
 class CreateCamProjectCommand:
     """Commande pour créer un nouveau projet CAM"""
@@ -157,6 +160,10 @@ class CreateCamProjectCommand:
         # Recomputer
         App.ActiveDocument.recompute()
         
+        # Ouvrir l'éditeur
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+            
         # Message de confirmation
         App.Console.PrintMessage("Projet CAM créé avec succès!\n")
 
@@ -220,22 +227,27 @@ class CreateHotReloadCommand:
             from importlib import reload
             reload(BaptCamProject)
             reload(BaptGeometry)
-            reload(BaptTaskPanel)
-            reload(BaptDrillTaskPanel)
-            reload(BaptDrillOperation)
-            reload(BaptDrillOperationTaskPanel)  
-            reload(BaptCommands)
-            reload(BaptPreferences)
+            reload(BaptDrillOperation) 
             reload(BaptTools)  # Ajouter le module BaptTools
-            reload(BaptWorkbench)   
             reload(BaptMachiningCycle)
-        except:
+            import BaptContournageTaskPanel
+            reload(BaptContournageTaskPanel)
+            import BaptDrillTaskPanel
+            reload(BaptDrillTaskPanel)
+            import BaptToolsTaskPanel
+            reload(BaptToolsTaskPanel)
+            import BaptPreferences
+            reload(BaptPreferences)
+            # Message de confirmation
+            App.Console.PrintMessage("hot Reload avec Succes!\n")
+
+        except Exception as e:
+            App.Console.PrintError(f"Erreur lors du rechargement des modules: {str(e)}\n")
             pass
 
         # Recomputer
         App.ActiveDocument.recompute()
-        # Message de confirmation
-        App.Console.PrintMessage("hot Reload avec Succes!\n")
+        
 
 class ToolsManagerCommand:
     """Commande pour ouvrir le gestionnaire d'outils"""

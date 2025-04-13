@@ -41,7 +41,7 @@ class CamProject:
             obj.StockOrigin = App.Vector(0,0,0)
         
         # Créer le groupe Geometry
-        #self.getGeometryGroup(obj)
+        self.getGeometryGroup(obj)
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
@@ -76,7 +76,7 @@ class CamProject:
 
     def getStock(self, obj):
         """Obtient ou crée l'objet stock"""
-        App.Console.PrintMessage('getStock in camproject\n')
+        # App.Console.PrintMessage('getStock in camproject\n')
         stock = None
         if obj.Group:  # Chercher un stock existant dans le groupe
             for child in obj.Group:
@@ -84,7 +84,7 @@ class CamProject:
                     stock = child
                     break
         
-        App.Console.PrintMessage('getStock\n')
+        # App.Console.PrintMessage('getStock\n')
         if not stock:  # Créer un nouveau stock si nécessaire
             stock = self.createStock(obj)
         
@@ -92,7 +92,7 @@ class CamProject:
 
     def execute(self, obj):
         """Crée ou met à jour la représentation visuelle du brut"""
-        App.Console.PrintMessage('execute in camproject\n')
+        # App.Console.PrintMessage('execute in camproject\n')
         try:
             # S'assurer que toutes les propriétés existent
             if not hasattr(obj, "WorkPlane") or not hasattr(obj, "StockLength") or not hasattr(obj, "StockWidth") or not hasattr(obj, "StockHeight") or not hasattr(obj, "StockOrigin"):
@@ -109,7 +109,7 @@ class CamProject:
             # Obtenir ou créer le stock et mettre à jour sa forme
             stock = self.getStock(obj)
             stock.Shape = box
-            App.Console.PrintMessage('fin execute\n')
+            
         except Exception as e:
             App.Console.PrintError(f"Error in execute: {str(e)}\n")
 

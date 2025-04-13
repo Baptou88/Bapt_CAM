@@ -2,6 +2,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 import Part
 import os
+import math
 from FreeCAD import Base
 from PySide import QtCore, QtGui
 
@@ -51,10 +52,6 @@ class DrillOperation:
         if not hasattr(obj, "ShowPathLine"):
             obj.addProperty("App::PropertyBool", "ShowPathLine", "Display", "Show path line between holes")
             obj.ShowPathLine = True  # Activé par défaut
-            
-        if not hasattr(obj, "PathLineHeight"):
-            obj.addProperty("App::PropertyLength", "PathLineHeight", "Display", "Additional height of path line above holes")
-            obj.PathLineHeight = 10.0  # 10mm par défaut
             
         if not hasattr(obj, "PathLineColor"):
             obj.addProperty("App::PropertyColor", "PathLineColor", "Display", "Color of path line")
@@ -172,13 +169,22 @@ class DrillOperation:
             obj.Shape = Part.Shape()  # Shape vide
             return
         
-        # Créer une sphère pour chaque position
-        spheres = []
-        radius = 2.0  # Rayon fixe pour la visualisation
+        # Créer une représentation d'outil pour chaque position
+        tool_shapes = []
         
-        for pos in positions:
-            sphere = Part.makeSphere(radius, pos)
-            spheres.append(sphere)
+        # Récupérer les informations sur l'outil sélectionné
+        tool_info = self.getToolInfo(obj)
+        if not tool_info:
+            # Aucun outil sélectionné, utiliser une représentation par défaut
+            for pos in positions:
+                # Créer un cylindre simple comme représentation par défaut
+                cylinder = Part.makeCylinder(2.0, 10.0, pos, App.Vector(0, 0, -1))
+                tool_shapes.append(cylinder)
+        else:
+            # Créer une représentation réaliste de l'outil pour chaque position
+            for pos in positions:
+                tool_shape = self.createToolShape(pos, tool_info, obj)
+                tool_shapes.append(tool_shape)
         
         # Créer un fil qui relie tous les trous
         wires = []
@@ -186,24 +192,147 @@ class DrillOperation:
             points = []
             for pos in positions:
                 # Ajouter un point au-dessus de chaque trou avec la hauteur supplémentaire
-                elevated_pos = App.Vector(pos.x, pos.y, pos.z + obj.PathLineHeight.Value)
+                elevated_pos = App.Vector(pos.x, pos.y, pos.z + obj.SafeHeight.Value)
                 points.append(elevated_pos)
             
             # Créer une polyligne avec tous les points
             polyline = Part.makePolygon(points)
             wires.append(polyline)
         
-        # Fusionner les sphères et le fil
-        shapes = spheres + wires
+        # Fusionner les formes d'outils et le fil
+        shapes = tool_shapes + wires
         if shapes:
             compound = Part.makeCompound(shapes)
             obj.Shape = compound
+    
+    def getToolInfo(self, obj):
+        """Récupère les informations sur l'outil sélectionné"""
+        if obj.ToolId < 0:
+            return None
+            
+        try:
+            from BaptTools import ToolDatabase
+            
+            # Récupérer l'outil depuis la base de données
+            db = ToolDatabase()
+            tools = db.get_all_tools()
+            
+            for tool in tools:
+                if tool.id == obj.ToolId:
+                    return tool
+        except Exception as e:
+            App.Console.PrintError(f"Erreur lors de la récupération des informations de l'outil: {str(e)}\n")
+            
+        return None
+    
+    def createToolShape(self, position, tool, obj):
+        """Crée une représentation visuelle de l'outil en fonction de son type"""
+        # Calculer la profondeur finale en fonction du mode (absolu ou relatif)
+        if obj.DepthMode == "Absolute":
+            final_depth = obj.FinalDepth.Value
+        else:  # Relatif
+            final_depth = obj.ZReference.Value + obj.FinalDepth.Value
+        
+        # Position du fond du trou
+        bottom_pos = App.Vector(position.x, position.y, position.z - final_depth)
+        
+        # Diamètre de l'outil
+        diameter = tool.diameter
+        
+        # Longueur de l'outil (utiliser une valeur par défaut si non définie)
+        tool_length = tool.length if tool.length > 0 else 50.0
+        
+        # Créer une forme différente selon le type d'outil
+        if tool.type.lower() == "foret":
+            # Créer un foret avec une pointe conique
+            return self.createDrillBit(position, bottom_pos, diameter, tool_length, tool.point_angle)
+        elif tool.type.lower() == "taraud":
+            # Créer un taraud
+            return self.createTapBit(position, bottom_pos, diameter, tool_length, tool.thread_pitch)
+        elif tool.type.lower() == "fraise" or tool.type.lower() == "fraise torique":
+            # Créer une fraise
+            return self.createEndMill(position, bottom_pos, diameter, tool_length, tool.torus_radius)
+        else:
+            # Type d'outil inconnu, créer un cylindre simple
+            return self.createSimpleTool(position, bottom_pos, diameter, tool_length)
+    
+    def createDrillBit(self, top_pos, bottom_pos, diameter, length, point_angle):
+        """Crée une représentation d'un foret avec une pointe conique"""
+        # Calculer la hauteur de la pointe conique
+        point_height = diameter / (2 * math.tan(math.radians(point_angle / 2)))
+        
+        # profondeur du percage
+        depth = top_pos.z - bottom_pos.z
+        if depth <= point_height:
+            #- calcul du rayon
+            radius = math.tan(math.radians(point_angle / 2)) * depth
+            # Créer la pointe du foret (cône)
+            drill_bit = Part.makeCone(radius, 0, depth, top_pos, App.Vector(0, 0, -1))            
+            
+        else:
+            # Créer le corps du foret (cylindre)
+            body_length = top_pos.z - bottom_pos.z - point_height
+            body = Part.makeCylinder(diameter / 2, body_length, top_pos, App.Vector(0, 0, -1))
+            
+            # Créer la pointe du foret (cône)
+            tip = Part.makeCone(diameter / 2, 0, point_height, bottom_pos + App.Vector(0, 0, point_height), App.Vector(0, 0, -1))
+            
+            # Fusionner le corps et la pointe
+            drill_bit = body.fuse(tip)
+        return drill_bit
+    
+    def createTapBit(self, top_pos, bottom_pos, diameter, length, thread_pitch):
+        """Crée une représentation d'un taraud"""
+        # Créer le corps du taraud (cylindre)
+        body_pos = App.Vector(top_pos.x, top_pos.y, bottom_pos.z)
+        body = Part.makeCylinder(diameter / 2, length, body_pos, App.Vector(0, 0, 1))
+        
+        # Ajouter des rainures pour représenter les filets
+        # (Simplifié pour la visualisation)
+        tap_bit = body
+        
+        # Nombre de filets à représenter
+        num_threads = min(10, int(length / thread_pitch))
+        
+        # Créer des anneaux pour représenter les filets
+        for i in range(num_threads):
+            z_pos = bottom_pos.z + i * thread_pitch
+            ring_pos = App.Vector(top_pos.x, top_pos.y, z_pos)
+            ring = Part.makeTorus(diameter / 2, diameter / 10, ring_pos, App.Vector(0, 0, 1))
+            tap_bit = tap_bit.fuse(ring)
+        
+        return tap_bit
+    
+    def createEndMill(self, top_pos, bottom_pos, diameter, length, torus_radius = 0):
+        """Crée une représentation d'une fraise"""
+        # Créer le corps de la fraise (cylindre)
+        body_pos = App.Vector(top_pos.x, top_pos.y, bottom_pos.z)
+        body = Part.makeCylinder(diameter / 2, length, body_pos, App.Vector(0, 0, 1))
+        
+        # Si c'est une fraise torique, ajouter un arrondi au bout
+        if torus_radius > 0:
+            torus_pos = App.Vector(top_pos.x, top_pos.y, bottom_pos.z + torus_radius)
+            torus = Part.makeTorus(diameter / 2 - torus_radius, torus_radius, torus_pos, App.Vector(0, 0, 1))
+            end_mill = body.fuse(torus)
+        else:
+            # Fraise droite, ajouter un disque plat au bout
+            disk_pos = App.Vector(top_pos.x, top_pos.y, bottom_pos.z)
+            disk = Part.makeCylinder(diameter / 2, 0.1, disk_pos, App.Vector(0, 0, 1))
+            end_mill = body.fuse(disk)
+        
+        return end_mill
+    
+    def createSimpleTool(self, top_pos, bottom_pos, diameter, length):
+        """Crée une représentation simple d'un outil (cylindre)"""
+        body_pos = App.Vector(top_pos.x, top_pos.y, bottom_pos.z)
+        body = Part.makeCylinder(diameter / 2, length, body_pos, App.Vector(0, 0, 1))
+        return body
 
     def onChanged(self, obj, prop):
         """Appelé quand une propriété change"""
         if prop == "DrillGeometryName":
             self.updateFromGeometry(obj)
-        elif prop in ["ShowPathLine", "PathLineHeight"]:
+        elif prop in ["ShowPathLine", "SafeHeight", "FinalDepth"]:
             self.execute(obj)
 
     def onDocumentRestored(self, obj):

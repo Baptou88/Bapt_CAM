@@ -39,6 +39,16 @@ class DrillGeometry:
             obj.addProperty("App::PropertyColor", "MarkerColor", "Display", "Color of position markers")
             obj.MarkerColor = (1.0, 0.0, 0.0)  # Rouge par défaut
         
+        # Index de la position sélectionnée (-1 si aucune)
+        if not hasattr(obj, "SelectedPosition"):
+            obj.addProperty("App::PropertyInteger", "SelectedPosition", "Display", "Index of the selected position")
+            obj.SelectedPosition = -1
+        
+        # Couleur de surbrillance pour la position sélectionnée
+        if not hasattr(obj, "HighlightColor"):
+            obj.addProperty("App::PropertyColor", "HighlightColor", "Display", "Color of the highlighted position")
+            obj.HighlightColor = (1.0, 1.0, 0.0)  # Jaune par défaut
+        
         # Créer ou obtenir l'objet de visualisation
         self.getOrCreateVisualObject(obj)
 
@@ -62,7 +72,7 @@ class DrillGeometry:
         """Appelé quand une propriété est modifiée"""
         if prop == "DrillFaces":
             self.updateDrillParameters(obj)
-        elif prop in ["DrillPositions", "MarkerSize"]:
+        elif prop in ["DrillPositions", "MarkerSize", "SelectedPosition"]:
             self.execute(obj)
 
     def updateDrillParameters(self, obj):
@@ -97,7 +107,7 @@ class DrillGeometry:
                     
                     # Récupérer le diamètre
                     diameters.add(face.Surface.Radius * 2)
-                    
+                    App.Console.PrintMessage(f'diam detected {face.Surface.Radius * 2}\n')
                     # Calculer la profondeur en trouvant la face plane associée
                     # TODO: Implémenter la détection de profondeur
                     depths.add(10.0)  # valeur temporaire
@@ -108,7 +118,10 @@ class DrillGeometry:
         # Si tous les perçages ont le même diamètre, le définir
         if len(diameters) == 1:
             obj.DrillDiameter = list(diameters)[0]
-        
+        elif len(diameters) > 1:
+            #sinon prendre le plus petit
+            obj.DrillDiameter = min(diameters)
+            
         # Si tous les perçages ont la même profondeur, la définir
         if len(depths) == 1:
             obj.DrillDepth = list(depths)[0]
@@ -124,15 +137,43 @@ class DrillGeometry:
 
         # Créer une sphère pour chaque position
         spheres = []
+        highlighted_spheres = []  # Liste séparée pour les sphères en surbrillance
         radius = obj.MarkerSize / 2.0  # Rayon = moitié de la taille
         
-        for pos in obj.DrillPositions:
-            sphere = Part.makeSphere(radius, pos)
-            spheres.append(sphere)
+        for i, pos in enumerate(obj.DrillPositions):
+            # Utiliser la couleur de surbrillance pour la position sélectionnée
+            if i == obj.SelectedPosition:
+                # Créer une sphère légèrement plus grande pour la position sélectionnée
+                highlight_radius = radius * 1.5
+                sphere = Part.makeSphere(highlight_radius, pos)
+                # Stocker l'index pour l'utiliser dans ViewProvider
+                sphere.Tag = i  # Utiliser Tag pour stocker l'index
+                highlighted_spheres.append(sphere)  # Ajouter à la liste des sphères en surbrillance
+            else:
+                sphere = Part.makeSphere(radius, pos)
+                sphere.Tag = i  # Stocker l'index
+                spheres.append(sphere)
         
         # Fusionner toutes les sphères
-        if spheres:
-            compound = Part.makeCompound(spheres)
+        if spheres or highlighted_spheres:
+            # Créer un compound pour les sphères normales
+            normal_compound = Part.makeCompound(spheres) if spheres else Part.Shape()
+            
+            # Créer un compound pour les sphères en surbrillance
+            highlight_compound = Part.makeCompound(highlighted_spheres) if highlighted_spheres else Part.Shape()
+            
+            # Stocker les deux compounds dans des propriétés de l'objet visuel
+            if not hasattr(visual, "NormalSpheres"):
+                visual.addProperty("App::PropertyPythonObject", "NormalSpheres", "Visualization", "Normal spheres")
+            visual.NormalSpheres = normal_compound
+            
+            if not hasattr(visual, "HighlightedSpheres"):
+                visual.addProperty("App::PropertyPythonObject", "HighlightedSpheres", "Visualization", "Highlighted spheres")
+            visual.HighlightedSpheres = highlight_compound
+            
+            # Combiner les deux compounds
+            all_spheres = spheres + highlighted_spheres
+            compound = Part.makeCompound(all_spheres)
             visual.Shape = compound
 
     def onDocumentRestored(self, obj):
@@ -163,9 +204,7 @@ class ViewProviderDrillGeometry:
         self.Object = vobj.Object
         
         # Définir la couleur de l'objet de visualisation
-        for child in self.Object.Group:
-            if child.Name.startswith("DrillVisual") and hasattr(child, "ViewObject"):
-                child.ViewObject.ShapeColor = (1.0, 0.0, 0.0)  # Rouge
+        self.updateColors()
 
     def setupContextMenu(self, vobj, menu):
         """Configuration du menu contextuel"""
@@ -177,9 +216,68 @@ class ViewProviderDrillGeometry:
         """Appelé quand une propriété de l'objet est modifiée"""
         # Si un nouvel objet de visualisation est ajouté, définir sa couleur
         if prop == "Group":
-            for child in obj.Group:
-                if child.Name.startswith("DrillVisual") and hasattr(child, "ViewObject"):
-                    child.ViewObject.ShapeColor = (1.0, 0.0, 0.0)  # Rouge
+            self.updateColors()
+        # Si la position sélectionnée change, mettre à jour les couleurs
+        elif prop in ["SelectedPosition", "MarkerColor", "HighlightColor"]:
+            self.updateColors()
+
+    def updateColors(self):
+        """Met à jour les couleurs des marqueurs visuels"""
+        if not hasattr(self, "Object") or not self.Object:
+            return
+            
+        # Vérifier si l'objet visuel existe
+        visual = None
+        for child in self.Object.Group:
+            if child.Name.startswith("DrillVisual") and hasattr(child, "ViewObject"):
+                visual = child
+                break
+                
+        if not visual:
+            return
+            
+        # Définir les couleurs en fonction de la position sélectionnée
+        if hasattr(self.Object, "SelectedPosition") and self.Object.SelectedPosition >= 0:
+            # Vérifier si l'objet visuel a des sphères en surbrillance
+            if hasattr(visual, "HighlightedSpheres") and visual.HighlightedSpheres:
+                # Utiliser un ShapeColorExtension pour colorer individuellement les sous-éléments
+                if hasattr(visual.ViewObject, "DiffuseColor"):
+                    # Créer une liste de couleurs pour chaque sous-élément
+                    colors = []
+                    
+                    # Couleur normale pour les sphères normales
+                    normal_color = self.Object.MarkerColor
+                    
+                    # Couleur de surbrillance pour les sphères en surbrillance
+                    highlight_color = self.Object.HighlightColor
+                    
+                    # Appliquer les couleurs appropriées
+                    if hasattr(visual, "NormalSpheres") and visual.NormalSpheres:
+                        # Nombre de sous-éléments dans les sphères normales
+                        if hasattr(visual.NormalSpheres, "SubShapes"):
+                            normal_count = len(visual.NormalSpheres.SubShapes)
+                        else:
+                            normal_count = 1
+                        
+                        # Ajouter la couleur normale pour chaque sphère normale
+                        colors.extend([normal_color] * normal_count)
+                    
+                    # Ajouter la couleur de surbrillance pour chaque sphère en surbrillance
+                    if hasattr(visual.HighlightedSpheres, "SubShapes"):
+                        highlight_count = len(visual.HighlightedSpheres.SubShapes)
+                    else:
+                        highlight_count = 1
+                    
+                    colors.extend([highlight_color] * highlight_count)
+                    
+                    # Appliquer les couleurs
+                    visual.ViewObject.DiffuseColor = colors
+            else:
+                # Aucune sphère en surbrillance, utiliser la couleur normale pour tout
+                visual.ViewObject.ShapeColor = self.Object.MarkerColor
+        else:
+            # Aucune position sélectionnée, utiliser la couleur normale pour tout
+            visual.ViewObject.ShapeColor = self.Object.MarkerColor
 
     def onChanged(self, vobj, prop):
         """Appelé quand une propriété du ViewProvider est modifiée"""
