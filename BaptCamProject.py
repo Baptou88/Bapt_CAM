@@ -11,34 +11,34 @@ class CamProject:
         obj.Proxy = self
         self.Type = "CamProject"
         
-        #if not hasattr(obj, "Origin"):
+        if not hasattr(obj, "Origin"):
             # Origine du projet
-        obj.addProperty("App::PropertyVector", "Origin", "Project Setup", "Project origin point")
-        obj.Origin = App.Vector(0,0,0)
+            obj.addProperty("App::PropertyVector", "Origin", "Project Setup", "Project origin point")
+            obj.Origin = App.Vector(0,0,0)
         
-        #if not hasattr(obj, "StockLength"):
+        if not hasattr(obj, "StockLength"):
             # Dimensions du brut
-        obj.addProperty("App::PropertyLength", "StockLength", "Stock", "Length of stock material")
-        obj.StockLength = 100.0
+            obj.addProperty("App::PropertyLength", "StockLength", "Stock", "Length of stock material")
+            obj.StockLength = 100.0
             
-        #if not hasattr(obj, "StockWidth"):
-        obj.addProperty("App::PropertyLength", "StockWidth", "Stock", "Width of stock material")
-        obj.StockWidth = 100.0
+        if not hasattr(obj, "StockWidth"):
+            obj.addProperty("App::PropertyLength", "StockWidth", "Stock", "Width of stock material")
+            obj.StockWidth = 100.0
             
-        #if not hasattr(obj, "StockHeight"):
-        obj.addProperty("App::PropertyLength", "StockHeight", "Stock", "Height of stock material")
-        obj.StockHeight = 20.0
+        if not hasattr(obj, "StockHeight"):
+            obj.addProperty("App::PropertyLength", "StockHeight", "Stock", "Height of stock material")
+            obj.StockHeight = 20.0
         
-        #if not hasattr(obj, "WorkPlane"):
+        if not hasattr(obj, "WorkPlane"):
             # Plan de travail
-        obj.addProperty("App::PropertyEnumeration", "WorkPlane", "Project Setup", "Working plane")
-        obj.WorkPlane = ["XY", "XZ", "YZ"]
-        obj.WorkPlane = "XY"  # Valeur par défaut
+            obj.addProperty("App::PropertyEnumeration", "WorkPlane", "Project Setup", "Working plane")
+            obj.WorkPlane = ["XY", "XZ", "YZ"]
+            obj.WorkPlane = "XY"  # Valeur par défaut
 
         # Propriétés pour la position d'origine du brut
-        #if not hasattr(obj, "StockOrigin"):
-        obj.addProperty("App::PropertyVector", "StockOrigin", "Stock", "position of stock origin")
-        obj.StockOrigin = App.Vector(0,0,0)
+        if not hasattr(obj, "StockOrigin"):
+            obj.addProperty("App::PropertyVector", "StockOrigin", "Stock", "position of stock origin")
+            obj.StockOrigin = App.Vector(0,0,0)
         
         # Créer le groupe Geometry
         self.createGeometryGroup(obj)
@@ -67,8 +67,9 @@ class CamProject:
 
     def createStock(self, obj):
         """Crée l'objet stock"""
-        App.Console.PrintMessage('createStock\n')
+        
         stock = App.ActiveDocument.addObject("Part::Feature", "Stock")
+
         # Ajouter le stock au groupe
         obj.addObject(stock)
         
@@ -108,7 +109,6 @@ class CamProject:
             else:  # YZ
                 box = Part.makeBox(obj.StockHeight, obj.StockLength, obj.StockWidth, obj.StockOrigin)
             
-            App.Console.PrintMessage('Message')
             # Obtenir ou créer le stock et mettre à jour sa forme
             stock = self.getStock(obj)
             stock.Shape = box
@@ -119,8 +119,9 @@ class CamProject:
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
         #App.Console.PrintMessage("Change property: " + str(obj.Name) + " " + str(prop) + "\n")
-        if prop in ["StockLength", "StockWidth", "StockHeight", "Origin", "WorkPlane", "StockOrigin"]:
-            self.execute(obj)
+        pass
+        # if prop in ["StockLength", "StockWidth", "StockHeight", "Origin", "WorkPlane", "StockOrigin"]:
+        #     self.execute(obj)
 
     def __getstate__(self):
         """Sérialisation"""

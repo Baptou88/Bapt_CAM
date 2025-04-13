@@ -38,6 +38,25 @@ class DrillGeometry:
         if not hasattr(obj, "MarkerColor"):
             obj.addProperty("App::PropertyColor", "MarkerColor", "Display", "Color of position markers")
             obj.MarkerColor = (1.0, 0.0, 0.0)  # Rouge par défaut
+        
+        # Créer ou obtenir l'objet de visualisation
+        self.getOrCreateVisualObject(obj)
+
+    def getOrCreateVisualObject(self, obj):
+        """Obtient ou crée l'objet de visualisation"""
+        # Vérifier si l'objet de visualisation existe déjà
+        for child in obj.Group:
+            if child.Name.startswith("DrillVisual"):
+                return child
+        
+        # Créer un nouvel objet de visualisation
+        visual = App.ActiveDocument.addObject("Part::Feature", "DrillVisual")
+        visual.ViewObject.Visibility = True
+        
+        # Ajouter l'objet au groupe
+        obj.addObject(visual)
+        
+        return visual
 
     def onChanged(self, obj, prop):
         """Appelé quand une propriété est modifiée"""
@@ -96,8 +115,11 @@ class DrillGeometry:
 
     def execute(self, obj):
         """Mettre à jour la représentation visuelle"""
+        # Obtenir l'objet de visualisation
+        visual = self.getOrCreateVisualObject(obj)
+        
         if not obj.DrillPositions:
-            obj.Shape = Part.Shape()  # Shape vide
+            visual.Shape = Part.Shape()  # Shape vide
             return
 
         # Créer une sphère pour chaque position
@@ -111,7 +133,7 @@ class DrillGeometry:
         # Fusionner toutes les sphères
         if spheres:
             compound = Part.makeCompound(spheres)
-            obj.Shape = compound
+            visual.Shape = compound
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
@@ -139,6 +161,11 @@ class ViewProviderDrillGeometry:
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""
         self.Object = vobj.Object
+        
+        # Définir la couleur de l'objet de visualisation
+        for child in self.Object.Group:
+            if child.Name.startswith("DrillVisual") and hasattr(child, "ViewObject"):
+                child.ViewObject.ShapeColor = (1.0, 0.0, 0.0)  # Rouge
 
     def setupContextMenu(self, vobj, menu):
         """Configuration du menu contextuel"""
@@ -148,7 +175,11 @@ class ViewProviderDrillGeometry:
 
     def updateData(self, obj, prop):
         """Appelé quand une propriété de l'objet est modifiée"""
-        pass
+        # Si un nouvel objet de visualisation est ajouté, définir sa couleur
+        if prop == "Group":
+            for child in obj.Group:
+                if child.Name.startswith("DrillVisual") and hasattr(child, "ViewObject"):
+                    child.ViewObject.ShapeColor = (1.0, 0.0, 0.0)  # Rouge
 
     def onChanged(self, vobj, prop):
         """Appelé quand une propriété du ViewProvider est modifiée"""

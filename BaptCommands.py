@@ -12,6 +12,7 @@ from PySide import QtCore, QtGui
 import BaptCamProject
 import BaptGeometry
 import BaptTools
+import BaptDrillOperation  # Importer le nouveau module
 
 class CreateDrillGeometryCommand:
     """Commande pour créer une géométrie de perçage"""
@@ -33,8 +34,8 @@ class CreateDrillGeometryCommand:
         # Obtenir le projet CAM sélectionné
         project = Gui.Selection.getSelection()[0]
         
-        # Créer l'objet avec le bon type pour avoir une Shape
-        obj = App.ActiveDocument.addObject("Part::FeaturePython", "DrillGeometry")
+        # Créer l'objet avec le type DocumentObjectGroupPython pour pouvoir contenir des enfants
+        obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "DrillGeometry")
         
         # Ajouter la fonctionnalité
         drill = BaptGeometry.DrillGeometry(obj)
@@ -42,7 +43,6 @@ class CreateDrillGeometryCommand:
         # Ajouter le ViewProvider
         if obj.ViewObject:
             BaptGeometry.ViewProviderDrillGeometry(obj.ViewObject)
-            obj.ViewObject.ShapeColor = (1.0, 0.0, 0.0)  # Rouge
         
         # Ajouter au groupe Geometry
         geometry_group = project.Proxy.getGeometryGroup(project)
@@ -106,7 +106,9 @@ class CreateHotReloadCommand:
             reload(BaptCamProject)
             reload(BaptGeometry)
             reload(BaptTaskPanel)
-            reload(BaptDrillTaskPanel)  
+            reload(BaptDrillTaskPanel)
+            reload(BaptDrillOperation)
+            reload(BaptDrillOperationTaskPanel)  
             reload(BaptCommands)
             reload(BaptPreferences)
             reload(BaptTools)  # Ajouter le module BaptTools
@@ -137,6 +139,57 @@ class ToolsManagerCommand:
         Gui.Control.showDialog(panel)
         App.Console.PrintMessage("Gestionnaire d'outils ouvert.\n")
 
+class CreateDrillOperationCommand:
+    """Commande pour créer une opération d'usinage de perçage"""
+
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Drilling.svg"),
+                'MenuText': "Nouvelle opération de perçage",
+                'ToolTip': "Créer une nouvelle opération d'usinage pour les géométries de perçage"}
+
+    def IsActive(self):
+        """La commande est active si une géométrie de perçage est sélectionnée"""
+        sel = Gui.Selection.getSelection()
+        if not sel:
+            return False
+        
+        # Vérifier si l'objet sélectionné est une géométrie de perçage
+        # en vérifiant directement le type de Proxy.Type
+        return hasattr(sel[0], "Proxy") and hasattr(sel[0].Proxy, "Type") and sel[0].Proxy.Type == "DrillGeometry"
+
+    def Activated(self):
+        """Créer une nouvelle opération de perçage"""
+        # Obtenir la géométrie de perçage sélectionnée
+        drill_geometry = Gui.Selection.getSelection()[0]
+        
+        # Créer l'objet avec le bon type pour avoir une Shape
+        obj = App.ActiveDocument.addObject("Part::FeaturePython", "DrillOperation")
+        
+        # Ajouter la fonctionnalité
+        operation = BaptDrillOperation.DrillOperation(obj)
+        
+        # Ajouter le ViewProvider
+        if obj.ViewObject:
+            BaptDrillOperation.ViewProviderDrillOperation(obj.ViewObject)
+            obj.ViewObject.ShapeColor = (0.0, 0.0, 1.0)  # Bleu
+        
+        # Définir le nom de la géométrie de perçage associée (au lieu d'un lien direct)
+        obj.DrillGeometryName = drill_geometry.Name
+        
+        # Ajouter l'opération comme enfant direct de la géométrie de perçage
+        # Maintenant que DrillGeometry est un DocumentObjectGroupPython, on peut utiliser addObject
+        drill_geometry.addObject(obj)
+        
+        # Recomputer
+        App.ActiveDocument.recompute()
+        
+        # Ouvrir l'éditeur
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        
+        # Message de confirmation
+        App.Console.PrintMessage("Opération de perçage créée et ajoutée comme enfant de la géométrie de perçage.\n")
+
 class BaptCommand:
     """Ma première commande"""
 
@@ -159,3 +212,4 @@ Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
 Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
 Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())
 Gui.addCommand('Bapt_ToolsManager', ToolsManagerCommand())
+Gui.addCommand('Bapt_CreateDrillOperation', CreateDrillOperationCommand())  # Ajouter la nouvelle commande
