@@ -3,7 +3,12 @@ import FreeCADGui as Gui
 import Part
 import os
 from FreeCAD import Base
-import BaptDrillTaskPanel
+from PySide import QtCore, QtGui
+import math
+try:
+    from pivy import coin
+except ImportError:
+    App.Console.PrintError("Impossible d'importer le module coin. La mise en surbrillance des arêtes ne fonctionnera pas correctement.\n")
 
 class DrillGeometry:
     def __init__(self, obj):
@@ -318,21 +323,23 @@ class ContourGeometry:
         self.Type = "ContourGeometry"
         
         # Transformer l'objet en groupe
-        obj.addExtension("App::GroupExtensionPython", None)
+        #obj.addExtension("App::GroupExtensionPython", None)
+        obj.addExtension("App::GroupExtensionPython")
         
         # Permettre les références à des objets en dehors du groupe
-        obj.addExtension("App::LinkExtensionPython", None)
+        #obj.addExtension("App::LinkExtensionPython", None)
+        obj.addExtension("App::LinkExtensionPython")
         
         # Propriétés pour stocker les arêtes sélectionnées
         if not hasattr(obj, "Edges"):
             obj.addProperty("App::PropertyLinkSubList", "Edges", "Contour", "Arêtes sélectionnées pour le contour")
         
         if not hasattr(obj, "Zref"):
-            obj.addProperty("App::PropertyLength", "Zref", "Contour", "Hauteur de référence")
+            obj.addProperty("App::PropertyFloat", "Zref", "Contour", "Hauteur de référence")
             obj.Zref = 0.0
         
         if not hasattr(obj, "Zfinal"):
-            obj.addProperty("App::PropertyLength", "Zfinal", "Contour", "Hauteur finale")
+            obj.addProperty("App::PropertyFloat", "Zfinal", "Contour", "Hauteur finale")
             obj.Zfinal = 0.0
         
         if not hasattr(obj, "DepthMode"):
@@ -351,7 +358,11 @@ class ContourGeometry:
         
         # Créer une forme vide
         obj.Shape = Part.Shape()
-    
+
+    def onDocumentRestored(self, obj):
+        """Appelé lors de la restauration du document"""
+        self.__init__(obj)
+        
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
         #if prop == "Zref":
@@ -362,70 +373,10 @@ class ContourGeometry:
 
         if prop in ["Edges", "Zref", "Zfinal", "Direction", "DepthMode"]:
             self.execute(obj)
-    
-    def _create_adjusted_edges(self, edges, z_value):
-        """Crée des arêtes ajustées à une hauteur Z spécifique
-        
-        Args:
-            edges: Liste des arêtes d'origine
-            z_value: Valeur Z à appliquer
-            
-        Returns:
-            Liste des nouvelles arêtes ajustées
-        """
-        adjusted_edges = []
-        for edge in edges:
-            #App.Console.PrintMessage(f"Traitement de l'arête pour Z={z_value}: {edge}\n")
-            if isinstance(edge.Curve, Part.Line):
-                # Pour une ligne droite
-                p1 = edge.Vertexes[0].Point
-                p2 = edge.Vertexes[1].Point
-                # Créer de nouveaux points avec Z = z_value
-                new_p1 = App.Vector(p1.x, p1.y, z_value)
-                new_p2 = App.Vector(p2.x, p2.y, z_value)
-                # Créer une nouvelle ligne
-                new_edge = Part.makeLine(new_p1, new_p2)
-                adjusted_edges.append(new_edge)
-            elif isinstance(edge.Curve, Part.Circle):
-                # Pour un arc ou un cercle
-                circle = edge.Curve
-                center = circle.Center
-                new_center = App.Vector(center.x, center.y, z_value)
-                # Créer un nouvel axe Z
-                new_axis = App.Vector(0, 0, 1)
-                radius = circle.Radius
-                
-                # Créer un nouveau cercle
-                new_circle = Part.Circle(new_center, new_axis, radius)
-                
-                # Si c'est un arc (pas un cercle complet)
-                if edge.Curve.AngleXU != 0 or edge.Curve.AngleXV != 0:
-                    # Récupérer les angles de début et de fin
-                    first_param = edge.FirstParameter
-                    last_param = edge.LastParameter
-                    new_edge = Part.Edge(new_circle, first_param, last_param)
-                else:
-                    # Cercle complet
-                    new_edge = Part.Edge(new_circle)
-                
-                adjusted_edges.append(new_edge)
-            else:
-                # Pour les autres types de courbes, utiliser une approximation par points
-                points = []
-                for i in range(10):  # Utiliser 10 points pour l'approximation
-                    param = edge.FirstParameter + (edge.LastParameter - edge.FirstParameter) * i / 9
-                    point = edge.valueAt(param)
-                    new_point = App.Vector(point.x, point.y, z_value)
-                    points.append(new_point)
-                
-                # Créer une BSpline à partir des points
-                if len(points) >= 2:
-                    new_edge = Part.BSplineCurve()
-                    new_edge.interpolate(points)
-                    adjusted_edges.append(Part.Edge(new_edge))
-        
-        return adjusted_edges
-    
+        elif prop == "SelectedEdgeIndex":
+            # Mettre à jour les couleurs des arêtes lorsque la sélection change
+            self.updateEdgeColors(obj)
+
     def execute(self, obj):
         """Mettre à jour la représentation visuelle du contour"""
         try:
@@ -454,9 +405,24 @@ class ContourGeometry:
             
             App.Console.PrintMessage(f"Nombre d'arêtes collectées: {len(edges)}\n")
             
+            # Vérifier si une arête est sélectionnée
+            selected_index = -1
+            if hasattr(obj, "SelectedEdgeIndex"):
+                selected_index = obj.SelectedEdgeIndex
+            
             # Créer des arêtes ajustées à la hauteur Zref et à Zfinal
-            adjusted_edges_zref = self._create_adjusted_edges(edges, obj.Zref)
-            adjusted_edges_zfinal = self._create_adjusted_edges(edges, obj.Zfinal)
+            adjusted_edges_zref = []
+            adjusted_edges_zfinal = []
+            
+            for i, edge in enumerate(edges):
+                # Créer des arêtes ajustées avec des couleurs différentes selon la sélection
+                
+                # Pour l'arête sélectionnée, utiliser une couleur différente et une largeur plus grande
+                edge_zref = self._create_adjusted_edge(edge, obj.Zref, selected= (i == selected_index))
+                edge_zfinal = self._create_adjusted_edge(edge, obj.Zfinal, selected=(i == selected_index))
+                
+                adjusted_edges_zref.append(edge_zref)
+                adjusted_edges_zfinal.append(edge_zfinal)
             
             try:
                 # Créer le fil à Zref
@@ -495,6 +461,80 @@ class ContourGeometry:
         except Exception as e:
             App.Console.PrintError(f"Erreur lors de l'exécution: {str(e)}\n")
     
+    def _create_adjusted_edge(self, edge, z_value, selected=False):
+        """Crée une arête ajustée à une hauteur Z spécifique avec une couleur optionnelle
+        
+        Args:
+            edge: L'arête d'origine
+            z_value: Valeur Z à appliquer
+            selected: Si True, l'arête est sélectionnée et aura une apparence différente
+            
+        Returns:
+            Nouvelle arête ajustée
+        """
+        new_edge = None
+        
+        if isinstance(edge.Curve, Part.Line):
+            # Pour une ligne droite
+            p1 = edge.Vertexes[0].Point
+            p2 = edge.Vertexes[1].Point
+            # Créer de nouveaux points avec Z = z_value
+            new_p1 = App.Vector(p1.x, p1.y, z_value)
+            new_p2 = App.Vector(p2.x, p2.y, z_value)
+            # Créer une nouvelle ligne
+            new_edge = Part.makeLine(new_p1, new_p2)
+        elif isinstance(edge.Curve, Part.Circle):
+            # Pour un arc ou un cercle
+            circle = edge.Curve
+            center = circle.Center
+            new_center = App.Vector(center.x, center.y, z_value)
+            # Créer un nouvel axe Z
+            new_axis = App.Vector(0, 0, 1)
+            radius = circle.Radius
+            
+            # Créer un nouveau cercle
+            new_circle = Part.Circle(new_center, new_axis, radius)
+            
+            # Vérifier si c'est un arc (pas un cercle complet) en utilisant les paramètres
+            # au lieu des attributs AngleXU et AngleXV qui peuvent ne pas exister
+            try:
+                if hasattr(edge, "FirstParameter") and hasattr(edge, "LastParameter"):
+                    first_param = edge.FirstParameter
+                    last_param = edge.LastParameter
+                    
+                    # Si les paramètres sont différents, c'est un arc
+                    if abs(last_param - first_param) < 6.28:  # Moins que 2*pi
+                        new_edge = Part.Edge(new_circle, first_param, last_param)
+                    else:
+                        # Cercle complet
+                        new_edge = Part.Edge(new_circle)
+                else:
+                    # Cercle complet par défaut
+                    new_edge = Part.Edge(new_circle)
+            except Exception as e:
+                App.Console.PrintWarning(f"Erreur lors de la création d'un arc: {str(e)}. Création d'un cercle complet.\n")
+                new_edge = Part.Edge(new_circle)
+        else:
+            # Pour les autres types de courbes, utiliser une approximation par points
+            points = []
+            for i in range(10):  # Utiliser 10 points pour l'approximation
+                param = edge.FirstParameter + (edge.LastParameter - edge.FirstParameter) * i / 9
+                point = edge.valueAt(param)
+                new_point = App.Vector(point.x, point.y, z_value)
+                points.append(new_point)
+            
+            # Créer une BSpline à partir des points
+            if len(points) >= 2:
+                bspline = Part.BSplineCurve()
+                bspline.interpolate(points)
+                new_edge = Part.Edge(bspline)
+        
+        # Si l'arête est sélectionnée, stocker cette information dans la propriété Tag
+        if new_edge and selected:
+            new_edge.Tag = 1  # Utiliser Tag=1 pour indiquer que c'est une arête sélectionnée
+        
+        return new_edge
+    
     def getOutList(self, obj):
         """Retourne la liste des objets référencés par cet objet"""
         outlist = []
@@ -512,6 +552,114 @@ class ContourGeometry:
         """Désérialisation"""
         return None
 
+    def updateEdgeColors(self, obj):
+        """Met à jour les couleurs des arêtes en fonction de l'index sélectionné"""
+        if not hasattr(obj, "SelectedEdgeIndex") or not hasattr(obj, "Edges") or not obj.Edges:
+            return
+        
+        selected_index = obj.SelectedEdgeIndex
+        if selected_index < 0:
+            # Aucune sélection, restaurer les couleurs normales
+            self.execute(obj)
+            return
+        
+        try:
+            # Collecter toutes les arêtes
+            all_edges = []
+            for sub in obj.Edges:
+                obj_ref = sub[0]
+                sub_names = sub[1]
+                
+                for sub_name in sub_names:
+                    if "Edge" in sub_name:
+                        try:
+                            edge = obj_ref.Shape.getElement(sub_name)
+                            all_edges.append(edge)
+                        except Exception as e:
+                            App.Console.PrintError(f"Erreur lors de la récupération de l'arête {sub_name}: {str(e)}\n")
+            
+            if not all_edges or selected_index >= len(all_edges):
+                return
+            
+            # Créer des arêtes ajustées à Zref et Zfinal
+            adjusted_edges_zref = []
+            adjusted_edges_zfinal = []
+            
+            for i, edge in enumerate(all_edges):
+                # Créer des arêtes ajustées avec des couleurs différentes selon la sélection
+                if i == selected_index:
+                    # Pour l'arête sélectionnée, utiliser une couleur différente et une largeur plus grande
+                    edge_zref = self._create_adjusted_edge(edge, obj.Zref, selected=True)
+                    edge_zfinal = self._create_adjusted_edge(edge, obj.Zfinal, selected=True)
+                else:
+                    edge_zref = self._create_adjusted_edge(edge, obj.Zref, selected=False)
+                    edge_zfinal = self._create_adjusted_edge(edge, obj.Zfinal, selected=False)
+                
+                adjusted_edges_zref.append(edge_zref)
+                adjusted_edges_zfinal.append(edge_zfinal)
+            
+            # Séparer les arêtes sélectionnées et non sélectionnées
+            normal_edges_zref = []
+            normal_edges_zfinal = []
+            selected_edges_zref = []
+            selected_edges_zfinal = []
+            
+            for i, edge in enumerate(adjusted_edges_zref):
+                if i == selected_index:
+                    selected_edges_zref.append(edge)
+                else:
+                    normal_edges_zref.append(edge)
+            
+            for i, edge in enumerate(adjusted_edges_zfinal):
+                if i == selected_index:
+                    selected_edges_zfinal.append(edge)
+                else:
+                    normal_edges_zfinal.append(edge)
+            
+            # Créer des compounds pour les arêtes normales et sélectionnées
+            shapes = []
+            
+            # Ajouter les arêtes normales
+            if normal_edges_zref:
+                normal_compound_zref = Part.makeCompound(normal_edges_zref)
+                shapes.append(normal_compound_zref)
+            
+            if normal_edges_zfinal:
+                normal_compound_zfinal = Part.makeCompound(normal_edges_zfinal)
+                shapes.append(normal_compound_zfinal)
+            
+            # Ajouter les arêtes sélectionnées
+            if selected_edges_zref:
+                selected_compound_zref = Part.makeCompound(selected_edges_zref)
+                shapes.append(selected_compound_zref)
+            
+            if selected_edges_zfinal:
+                selected_compound_zfinal = Part.makeCompound(selected_edges_zfinal)
+                shapes.append(selected_compound_zfinal)
+            
+            # Créer un compound final
+            if shapes:
+                compound = Part.makeCompound(shapes)
+                obj.Shape = compound
+                
+                # Stocker les informations pour le ViewProvider
+                if not hasattr(obj, "NormalEdges"):
+                    obj.addProperty("App::PropertyPythonObject", "NormalEdges", "Visualization", "Normal edges")
+                if not hasattr(obj, "SelectedEdges"):
+                    obj.addProperty("App::PropertyPythonObject", "SelectedEdges", "Visualization", "Selected edges")
+                
+                # Stocker les compounds pour que le ViewProvider puisse les colorier
+                normal_edges = normal_edges_zref + normal_edges_zfinal
+                selected_edges = selected_edges_zref + selected_edges_zfinal
+                
+                obj.NormalEdges = Part.makeCompound(normal_edges) if normal_edges else Part.Shape()
+                obj.SelectedEdges = Part.makeCompound(selected_edges) if selected_edges else Part.Shape()
+            
+        except Exception as e:
+            App.Console.PrintError(f"Erreur lors de la mise à jour des couleurs: {str(e)}\n")
+            # En cas d'erreur, revenir à l'affichage normal
+            self.execute(obj)
+
 
 class ViewProviderContourGeometry:
     """Classe pour gérer l'affichage des contours"""
@@ -526,6 +674,11 @@ class ViewProviderContourGeometry:
         vobj.PointColor = (1.0, 0.0, 0.0)  # Rouge
         vobj.LineWidth = 4.0  # Largeur de ligne plus grande
         vobj.PointSize = 6.0  # Taille des points plus grande
+        
+        # Ajouter une propriété pour la couleur des arêtes sélectionnées
+        if not hasattr(vobj, "SelectedEdgeColor"):
+            vobj.addProperty("App::PropertyColor", "SelectedEdgeColor", "Display", "Color of selected edges")
+            vobj.SelectedEdgeColor = (0.0, 1.0, 1.0)  # Cyan par défaut
     
     def getIcon(self):
         """Retourne l'icône"""
@@ -540,9 +693,22 @@ class ViewProviderContourGeometry:
         vobj.PointColor = (1.0, 0.0, 0.0)  # Rouge
         vobj.LineWidth = 4.0  # Largeur de ligne plus grande
         vobj.PointSize = 6.0  # Taille des points plus grande
+        
+        # Ajouter une propriété pour la couleur des arêtes sélectionnées
+        if not hasattr(vobj, "SelectedEdgeColor"):
+            vobj.addProperty("App::PropertyColor", "SelectedEdgeColor", "Display", "Color of selected edges")
+            vobj.SelectedEdgeColor = (0.0, 1.0, 1.0)  # Cyan par défaut
     
     def updateData(self, obj, prop):
         """Appelé lorsqu'une propriété de l'objet est modifiée"""
+        # Mettre à jour l'affichage si une propriété pertinente change
+        if prop == "SelectedEdgeIndex":
+            # Forcer une recomputation pour mettre à jour l'affichage
+            if obj.Document:
+                obj.Document.recompute()
+    
+    def onChanged(self, vobj, prop):
+        """Appelé lorsqu'une propriété du ViewProvider est modifiée"""
         pass
     
     def claimChildren(self):

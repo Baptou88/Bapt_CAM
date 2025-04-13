@@ -48,7 +48,9 @@ class ContourTaskPanel:
         self.edgesTable.verticalHeader().setVisible(False)
         self.edgesTable.setMinimumHeight(150)
         contourLayout.addRow("Éléments:", self.edgesTable)
-    
+        
+        # Connecter le signal de sélection du tableau
+        self.edgesTable.itemSelectionChanged.connect(self.onTableSelectionChanged)
         
         # Direction
         self.direction = QtGui.QComboBox()
@@ -66,7 +68,7 @@ class ContourTaskPanel:
         
         # Hauteur de référence
         self.Zref = QtGui.QDoubleSpinBox()
-        self.Zref.setRange(0.1, 100)
+        #self.Zref.setRange(0.1, 100)
         self.Zref.setDecimals(2)
         self.Zref.setSuffix(" mm")
         self.Zref.setValue(obj.Zref)
@@ -96,11 +98,11 @@ class ContourTaskPanel:
         # Hauteur finale
         self.Zfinal = QtGui.QDoubleSpinBox()
         if self.relativeDepthRadio.isChecked():
-            self.Zfinal.setRange(-100, 0)
+            #self.Zfinal.setRange(-100, 0)
             self.Zfinal.setValue(obj.Zfinal - obj.Zref if obj.Zfinal <= obj.Zref else -1.0)
             self.Zfinal.setSuffix(" mm (relatif)")
         else:
-            self.Zfinal.setRange(0.1, 100)
+            #self.Zfinal.setRange(0.1, 100)
             self.Zfinal.setValue(obj.Zfinal)
             self.Zfinal.setSuffix(" mm (absolu)")
         
@@ -293,6 +295,11 @@ class ContourTaskPanel:
         # Mettre à jour toutes les propriétés
         self.obj.Direction = self.direction.currentText()
         
+
+        # Désactiver le mode de sélection si actif
+        if self.selectionMode:
+            Gui.Selection.removeSelectionGate()
+            
         # Calculer le point le plus haut du contour
         if hasattr(self.obj, "Edges") and self.obj.Edges:
             highest_z = float('-inf')
@@ -341,3 +348,78 @@ class ContourTaskPanel:
         """Définir les boutons standard"""
         return int(QtGui.QDialogButtonBox.Ok |
                   QtGui.QDialogButtonBox.Cancel)
+
+    def updateEdgesTable(self):
+        """Met à jour le tableau des arêtes"""
+        self.edgesTable.clearContents()
+        
+        if not hasattr(self.obj, "Edges") or not self.obj.Edges:
+            self.edgesTable.setRowCount(0)
+            return
+        
+        # Compter le nombre total d'arêtes
+        total_edges = sum(len(sub[1]) for sub in self.obj.Edges)
+        self.edgesTable.setRowCount(total_edges)
+        
+        # Ajouter chaque arête au tableau
+        row = 0
+        for sub in self.obj.Edges:
+            obj = sub[0]
+            for subElement in sub[1]:
+                self.edgesTable.setItem(row, 0, QtGui.QTableWidgetItem(obj.Label))
+                self.edgesTable.setItem(row, 1, QtGui.QTableWidgetItem(subElement))
+                
+                # Déterminer le type d'élément (ligne droite, arc, etc.)
+                try:
+                    element = obj.Shape.getElement(subElement)
+                    elementType = element.Curve.__class__.__name__
+                    self.edgesTable.setItem(row, 2, QtGui.QTableWidgetItem(elementType))
+                except:
+                    self.edgesTable.setItem(row, 2, QtGui.QTableWidgetItem("Inconnu"))
+                
+                row += 1
+        
+        # Ajuster la taille des colonnes
+        self.edgesTable.resizeColumnsToContents()
+        
+    def onTableSelectionChanged(self):
+        """Gère la sélection d'une ligne dans le tableau"""
+        selected_rows = self.edgesTable.selectedIndexes()
+        if not selected_rows:
+            # Aucune sélection, effacer la sélection dans FreeCAD
+            Gui.Selection.clearSelection()
+            return
+        
+        # Obtenir l'index de la ligne sélectionnée
+        row = selected_rows[0].row()
+        
+        # Trouver l'arête correspondante dans la liste des arêtes
+        current_row = 0
+        for sub in self.obj.Edges:
+            obj_ref = sub[0]  # L'objet référencé
+            sub_names = sub[1]  # Les noms des sous-éléments (arêtes)
+            
+            for sub_name in sub_names:
+                if current_row == row:
+                    # Sélectionner cette arête dans FreeCAD
+                    Gui.Selection.clearSelection()
+                    Gui.Selection.addSelection(obj_ref, sub_name)
+                    return
+                current_row += 1
+    
+    def highlightEdge(self, index):
+        """Met en surbrillance l'arête sélectionnée"""
+        # Vérifier si l'objet a la propriété pour stocker l'index sélectionné
+        if not hasattr(self.obj, "SelectedEdgeIndex"):
+            self.obj.addProperty("App::PropertyInteger", "SelectedEdgeIndex", "Visualization", "Index of the selected edge")
+            self.obj.SelectedEdgeIndex = -1  # -1 signifie aucune sélection
+        
+        # Mettre à jour l'index sélectionné
+        self.obj.SelectedEdgeIndex = index
+        
+        # Mettre à jour la visualisation
+        if hasattr(self.obj, "Proxy"):
+            self.obj.Proxy.updateEdgeColors(self.obj)
+        
+        # Recomputer pour mettre à jour l'affichage
+        self.obj.Document.recompute()

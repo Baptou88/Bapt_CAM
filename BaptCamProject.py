@@ -64,10 +64,9 @@ class CamProject:
         
         stock = App.ActiveDocument.addObject("Part::Feature", "Stock")
 
-        # stock = App.ActiveDocument.addObject("Part::FeaturePython", "Stock")
         # Ajouter le stock au groupe
         obj.addObject(stock)
-        
+
         # Définir la couleur et la transparence du stock
         if hasattr(stock, "ViewObject"):
             stock.ViewObject.ShapeColor = (0.8, 0.8, 0.8)  # Gris clair
@@ -109,16 +108,18 @@ class CamProject:
             # Obtenir ou créer le stock et mettre à jour sa forme
             stock = self.getStock(obj)
             stock.Shape = box
-            
+            obj.recompute()
+            stock.recompute()
+
         except Exception as e:
             App.Console.PrintError(f"Error in execute: {str(e)}\n")
 
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
         if prop in ["StockLength", "StockWidth", "StockHeight", "Origin", "WorkPlane", "StockOrigin"]:
-            App.Console.PrintMessage("Change property: " + str(obj.Name) + " " + str(prop) + "\n")
+            #App.Console.PrintMessage("Change property: " + str(obj.Name) + " " + str(prop) + "\n")
             self.execute(obj)
-
+            obj.recompute()
     def __getstate__(self):
         """Sérialisation"""
         return None

@@ -39,9 +39,6 @@ class CamProjectTaskPanel:
         # Garder une référence à l'objet
         self.obj = obj
         
-        #debug
-        App.Console.PrintMessage("CamProjectTaskPanel initialized\n")
-        
         # Créer l'interface utilisateur
         self.form = QtGui.QWidget()
         self.form.setWindowTitle("Edit CAM Project")
@@ -158,14 +155,9 @@ class CamProjectTaskPanel:
         self.stockWidth.valueChanged.connect(lambda: self.updateVisual())
 
         self.stockLength.valueChanged.connect(lambda: self.updateVisual())
-        # debug
-        App.Console.PrintMessage("CamProjectTaskPanel initialized\n")
 
     def clickOnPart(self):
         """Appelé quand l'utilisateur clique sur le bouton Click on Part"""
-        # debug
-        App.Console.PrintMessage("CamProjectTaskPanel clickOnPart\n")
-
         # Changer le texte du bouton pour indiquer que l'on attend un clic
         self.clickOnPartBtn.setText("Cliquez sur un point...")
         self.clickOnPartBtn.setEnabled(False)
@@ -190,8 +182,6 @@ class CamProjectTaskPanel:
 
     def updateVisual(self):
         """Met à jour la représentation visuelle"""
-        # debug
-        App.Console.PrintMessage("CamProjectTaskPanel updateVisual\n")
         self.obj.Origin = App.Vector(self.originX.value(), self.originY.value(), self.originZ.value())
         self.obj.WorkPlane = self.workPlane.currentText()
         self.obj.StockLength = self.stockLength.value()

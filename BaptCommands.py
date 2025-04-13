@@ -39,6 +39,9 @@ class CreateContourCommand:
 
     def Activated(self):
         """Créer un nouveau contournage"""
+        
+        App.ActiveDocument.openTransaction('Create Contour')
+
         # Obtenir la géométrie de contour sélectionnée
         contour_geometry = Gui.Selection.getSelection()[0]
         
@@ -59,26 +62,35 @@ class CreateContourCommand:
         # Lier à la géométrie du contour par son nom
         obj.ContourGeometryName = contour_geometry.Name
         
-        # Ajouter le contournage comme enfant de la géométrie du contour
-        # Vérifier si la géométrie du contour est un groupe (a l'extension Group)
-        if hasattr(contour_geometry, "Group") and hasattr(contour_geometry, "addObject"):
-            # Ajouter directement à la géométrie du contour
-            contour_geometry.addObject(obj)
-            App.Console.PrintMessage(f"Contournage ajouté comme enfant de {contour_geometry.Label}\n")
-        else:
-            # Si la géométrie n'est pas un groupe, essayer de l'ajouter au document
-            App.Console.PrintWarning(f"La géométrie {contour_geometry.Label} n'est pas un groupe, impossible d'ajouter le contournage comme enfant\n")
+        # # Ajouter le contournage comme enfant de la géométrie du contour
+        # # Vérifier si la géométrie du contour est un groupe (a l'extension Group)
+        # if hasattr(contour_geometry, "Group") and hasattr(contour_geometry, "addObject"):
+        #     # Ajouter directement à la géométrie du contour
+        #     contour_geometry.addObject(obj)
+        #     App.Console.PrintMessage(f"Contournage ajouté comme enfant de {contour_geometry.Label}\n")
+        # else:
+        #     # Si la géométrie n'est pas un groupe, essayer de l'ajouter au document
+        #     App.Console.PrintWarning(f"La géométrie {contour_geometry.Label} n'est pas un groupe, impossible d'ajouter le contournage comme enfant\n")
             
-            # Trouver le groupe parent de la géométrie du contour
-            for parent in App.ActiveDocument.Objects:
-                if hasattr(parent, "Group") and contour_geometry in parent.Group:
-                    parent.addObject(obj)
-                    App.Console.PrintMessage(f"Contournage ajouté comme enfant de {parent.Label}\n")
-                    break
+        #     # Trouver le groupe parent de la géométrie du contour
+        #     for parent in App.ActiveDocument.Objects:
+        #         if hasattr(parent, "Group") and contour_geometry in parent.Group:
+        #             parent.addObject(obj)
+        #             App.Console.PrintMessage(f"Contournage ajouté comme enfant de {parent.Label}\n")
+        #             break
+        
+        contour_geometry.addObject(obj)
+        contour_geometry.Group.append(obj)
         
         # Recomputer
         App.ActiveDocument.recompute()
         
+        # Ouvrir le panneau de tâches pour l'édition
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        
+        App.ActiveDocument.commitTransaction()
+
         # Message de confirmation
         App.Console.PrintMessage(f"Contournage créé et lié à {contour_geometry.Label}.\n")
 
@@ -99,6 +111,8 @@ class CreateDrillGeometryCommand:
 
     def Activated(self):
         """Créer une nouvelle géométrie de perçage"""
+        App.ActiveDocument.openTransaction('Create Drill Geometry')
+        
         # Obtenir le projet CAM sélectionné
         project = Gui.Selection.getSelection()[0]
         
@@ -122,6 +136,8 @@ class CreateDrillGeometryCommand:
         # Ouvrir l'éditeur
         if obj.ViewObject:
             obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        
+        App.ActiveDocument.commitTransaction()
 
 
 class CreateCamProjectCommand:
@@ -138,21 +154,20 @@ class CreateCamProjectCommand:
 
     def Activated(self):
         """Créer un nouveau projet CAM"""
+        
+        App.ActiveDocument.openTransaction('Create Cam Project')
+
         # Créer un nouveau document si aucun n'est ouvert
         if App.ActiveDocument is None:
             App.newDocument()
-        
+        App.ActiveDocument.recompute()
         # Créer l'objet projet CAM
         obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "CamProject")
         
-        App.Console.PrintMessage("par ici\n")
 
         # Ajouter la fonctionnalité
         project = BaptCamProject.CamProject(obj)
-
-        App.Console.PrintMessage("par là\n")
         
-        App.Console.PrintMessage('vreation view provider\n')
         # Ajouter le ViewProvider
         if obj.ViewObject:
             BaptCamProject.ViewProviderCamProject(obj.ViewObject)
@@ -166,6 +181,8 @@ class CreateCamProjectCommand:
             
         # Message de confirmation
         App.Console.PrintMessage("Projet CAM créé avec succès!\n")
+
+        App.ActiveDocument.commitTransaction()
 
 class CreateContourGeometryCommand:
     """Commande pour créer une géométrie de contour"""
@@ -184,6 +201,9 @@ class CreateContourGeometryCommand:
 
     def Activated(self):
         """Créer une nouvelle géométrie de contour"""
+
+        App.ActiveDocument.openTransaction('Create Contour Geometry')
+
         # Obtenir le projet CAM sélectionné
         project = Gui.Selection.getSelection()[0]
         
@@ -194,10 +214,6 @@ class CreateContourGeometryCommand:
         # Ajouter la fonctionnalité
         contour = BaptGeometry.ContourGeometry(obj)
         
-        # Ajouter au groupe Geometry
-        geometry_group = project.Proxy.getGeometryGroup(project)
-        geometry_group.addObject(obj)
-        
         # Ajouter le ViewProvider
         if obj.ViewObject:
             BaptGeometry.ViewProviderContourGeometry(obj.ViewObject)
@@ -205,14 +221,26 @@ class CreateContourGeometryCommand:
             obj.ViewObject.PointColor = (1.0, 0.0, 0.0)  # Rouge
             obj.ViewObject.LineWidth = 4.0  # Largeur de ligne plus grande
             obj.ViewObject.PointSize = 6.0  # Taille des points plus grande
-        
+
+        # Ajouter au groupe Geometry
+        geometry_group = project.Proxy.getGeometryGroup(project)
+        geometry_group.addObject(obj)
+                
         # Message de confirmation
-        App.Console.PrintMessage("Géométrie de contour créée. Sélectionnez les arêtes pour le contour.\n")
+        App.Console.PrintMessage("Géométrie de contour créée.\n")
         
+        App.ActiveDocument.recompute()
+
         # Ouvrir le panneau de tâches pour l'édition
-        Gui.Selection.clearSelection()
-        Gui.Selection.addSelection(obj)
-        Gui.ActiveDocument.setEdit(obj.Name)
+        # Gui.Selection.clearSelection()
+        # Gui.Selection.addSelection(obj)
+        # Gui.ActiveDocument.setEdit(obj.Name)
+
+        # Ouvrir l'éditeur
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+
+        App.ActiveDocument.commitTransaction()
 
 class CreateHotReloadCommand:
     def GetResources(self):
@@ -287,6 +315,9 @@ class CreateDrillOperationCommand:
 
     def Activated(self):
         """Créer une nouvelle opération de perçage"""
+        
+        App.ActiveDocument.openTransaction('Create Drill Operation')
+
         # Obtenir la géométrie de perçage sélectionnée
         drill_geometry = Gui.Selection.getSelection()[0]
         
@@ -317,6 +348,8 @@ class CreateDrillOperationCommand:
         
         # Message de confirmation
         App.Console.PrintMessage("Opération de perçage créée et ajoutée comme enfant de la géométrie de perçage.\n")
+        
+        App.ActiveDocument.commitTransaction()
 
 class BaptCommand:
     """Ma première commande"""
