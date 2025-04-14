@@ -20,7 +20,7 @@ class CreateContourCommand:
     """Commande pour créer un Contournage"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Contour.svg"),
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Contournage.svg"),
                 'MenuText': "Nouveau Contournage",
                 'ToolTip': "Créer un nouveau contournage pour l'usinage"}
 
@@ -81,9 +81,10 @@ class CreateContourCommand:
         
         contour_geometry.addObject(obj)
         contour_geometry.Group.append(obj)
-        
+
         # Recomputer
-        App.ActiveDocument.recompute()
+        doc = App.ActiveDocument
+        doc.recompute()
         
         # Ouvrir le panneau de tâches pour l'édition
         if obj.ViewObject:
@@ -176,8 +177,8 @@ class CreateCamProjectCommand:
         App.ActiveDocument.recompute()
         
         # Ouvrir l'éditeur
-        if obj.ViewObject:
-            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        # if obj.ViewObject:
+        #     obj.ViewObject.Proxy.setEdit(obj.ViewObject)
             
         # Message de confirmation
         App.Console.PrintMessage("Projet CAM créé avec succès!\n")

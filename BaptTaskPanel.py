@@ -39,6 +39,9 @@ class CamProjectTaskPanel:
         # Garder une référence à l'objet
         self.obj = obj
         
+        # Obtenir l'objet Stock
+        self.stock = self.getStockObject(obj)
+        
         # Créer l'interface utilisateur
         self.form = QtGui.QWidget()
         self.form.setWindowTitle("Edit CAM Project")
@@ -79,8 +82,6 @@ class CamProjectTaskPanel:
         self.stockLength.setRange(0, 10000)
         self.stockLength.setDecimals(2)
         self.stockLength.setSuffix(" mm")
-        
-        self.stockLength.setValue(obj.StockLength)  # Mettre la valeur initiale
         stockLayout.addRow("Length:", self.stockLength)
         
         # Width
@@ -88,8 +89,6 @@ class CamProjectTaskPanel:
         self.stockWidth.setRange(0, 10000)
         self.stockWidth.setDecimals(2)
         self.stockWidth.setSuffix(" mm")
-        
-        self.stockWidth.setValue(obj.StockWidth)  
         stockLayout.addRow("Width:", self.stockWidth)
         
         # Height
@@ -97,8 +96,6 @@ class CamProjectTaskPanel:
         self.stockHeight.setRange(0, 10000)
         self.stockHeight.setDecimals(2)
         self.stockHeight.setSuffix(" mm")
-        
-        self.stockHeight.setValue(obj.StockHeight)  
         stockLayout.addRow("Height:", self.stockHeight)
         
         # Stock Origin
@@ -118,11 +115,6 @@ class CamProjectTaskPanel:
         self.clickOnPartBtn = QtGui.QPushButton("Click on Part")
         self.clickOnPartBtn.clicked.connect(self.clickOnPart)
         stockLayout.addRow(self.clickOnPartBtn)
-
-        # Initialiser les valeurs
-        self.stockOriginX.setValue(obj.StockOrigin.x)
-        self.stockOriginY.setValue(obj.StockOrigin.y)
-        self.stockOriginZ.setValue(obj.StockOrigin.z)
         
         stockGroup.setLayout(stockLayout)
         layout.addWidget(stockGroup)
@@ -135,26 +127,35 @@ class CamProjectTaskPanel:
         self.originY.setValue(obj.Origin.y)
         self.originZ.setValue(obj.Origin.z)
         self.workPlane.setCurrentText(obj.WorkPlane)
-        self.stockLength.setValue(obj.StockLength)
-        self.stockWidth.setValue(obj.StockWidth)
-        self.stockHeight.setValue(obj.StockHeight)
-        self.stockOriginX.setValue(obj.StockOrigin.x)
-        self.stockOriginY.setValue(obj.StockOrigin.y)
-        self.stockOriginZ.setValue(obj.StockOrigin.z)
-
+        
+        if self.stock:
+            self.stockLength.setValue(self.stock.Length)
+            self.stockWidth.setValue(self.stock.Width)
+            self.stockHeight.setValue(self.stock.Height)
+            self.stockOriginX.setValue(self.stock.Origin.x)
+            self.stockOriginY.setValue(self.stock.Origin.y)
+            self.stockOriginZ.setValue(self.stock.Origin.z)
+        
+        # Connecter les signaux
         self.originX.valueChanged.connect(lambda: self.updateVisual())
         self.originY.valueChanged.connect(lambda: self.updateVisual())
         self.originZ.valueChanged.connect(lambda: self.updateVisual())
-
+        self.workPlane.currentIndexChanged.connect(lambda: self.updateVisual())
+        
         self.stockOriginX.valueChanged.connect(lambda: self.updateVisual())
         self.stockOriginY.valueChanged.connect(lambda: self.updateVisual())
         self.stockOriginZ.valueChanged.connect(lambda: self.updateVisual())
-
         self.stockHeight.valueChanged.connect(lambda: self.updateVisual())
-
         self.stockWidth.valueChanged.connect(lambda: self.updateVisual())
-
         self.stockLength.valueChanged.connect(lambda: self.updateVisual())
+
+    def getStockObject(self, obj):
+        """Obtenir l'objet Stock à partir du projet CAM"""
+        if hasattr(obj, "Group"):
+            for child in obj.Group:
+                if child.Name.startswith("Stock"):
+                    return child
+        return None
 
     def clickOnPart(self):
         """Appelé quand l'utilisateur clique sur le bouton Click on Part"""
@@ -182,35 +183,36 @@ class CamProjectTaskPanel:
 
     def updateVisual(self):
         """Met à jour la représentation visuelle"""
+        # Mettre à jour les propriétés du projet
         self.obj.Origin = App.Vector(self.originX.value(), self.originY.value(), self.originZ.value())
         self.obj.WorkPlane = self.workPlane.currentText()
-        self.obj.StockLength = self.stockLength.value()
-        self.obj.StockWidth = self.stockWidth.value()
-        self.obj.StockHeight = self.stockHeight.value()
-        self.obj.StockOrigin = App.Vector(self.stockOriginX.value(), self.stockOriginY.value(), self.stockOriginZ.value())
+        
+        # Mettre à jour les propriétés du stock
+        if self.stock:
+            self.stock.Length = self.stockLength.value()
+            self.stock.Width = self.stockWidth.value()
+            self.stock.Height = self.stockHeight.value()
+            self.stock.Origin = App.Vector(self.stockOriginX.value(), self.stockOriginY.value(), self.stockOriginZ.value())
+            self.stock.WorkPlane = self.workPlane.currentText()
+        
+        # Recomputer
         self.obj.Document.recompute()
 
     def accept(self):
         """Appelé quand l'utilisateur clique sur OK"""
-        # Mettre à jour l'origine
-        self.obj.Origin = App.Vector(self.originX.value(),
-                                   self.originY.value(),
-                                   self.originZ.value())
-        
-        # Mettre à jour le plan de travail
+        # Mettre à jour l'origine et le plan de travail du projet
+        self.obj.Origin = App.Vector(self.originX.value(), self.originY.value(), self.originZ.value())
         self.obj.WorkPlane = self.workPlane.currentText()
         
-        # Mettre à jour les dimensions du stock
-        self.obj.StockLength = self.stockLength.value()
-        self.obj.StockWidth = self.stockWidth.value()
-        self.obj.StockHeight = self.stockHeight.value()
+        # Mettre à jour les propriétés du stock
+        if self.stock:
+            self.stock.Length = self.stockLength.value()
+            self.stock.Width = self.stockWidth.value()
+            self.stock.Height = self.stockHeight.value()
+            self.stock.Origin = App.Vector(self.stockOriginX.value(), self.stockOriginY.value(), self.stockOriginZ.value())
+            self.stock.WorkPlane = self.workPlane.currentText()
         
-        # Mettre à jour l'origine du stock
-        self.obj.StockOrigin = App.Vector(self.stockOriginX.value(),
-                                        self.stockOriginY.value(),
-                                        self.stockOriginZ.value())
-        
-        # Recompute
+        # Recomputer
         self.obj.Document.recompute()
         
         # Fermer la tâche
