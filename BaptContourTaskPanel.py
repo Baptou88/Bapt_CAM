@@ -68,7 +68,7 @@ class ContourTaskPanel:
         
         # Hauteur de référence
         self.Zref = QtGui.QDoubleSpinBox()
-        #self.Zref.setRange(0.1, 100)
+        self.Zref.setRange(-1000, 1000)
         self.Zref.setDecimals(2)
         self.Zref.setSuffix(" mm")
         self.Zref.setValue(obj.Zref)
@@ -96,18 +96,20 @@ class ContourTaskPanel:
         contourLayout.addRow("Mode de profondeur:", self.depthModeLayout)
         
         # Hauteur finale
-        self.Zfinal = QtGui.QDoubleSpinBox()
+        self.depth = QtGui.QDoubleSpinBox()
+        self.depth.setRange(-1000, 1000)
         if self.relativeDepthRadio.isChecked():
-            #self.Zfinal.setRange(-100, 0)
-            self.Zfinal.setValue(obj.Zfinal - obj.Zref if obj.Zfinal <= obj.Zref else -1.0)
-            self.Zfinal.setSuffix(" mm (relatif)")
+            #self.depth.setRange(-1000, 1000)
+            #self.depth.setValue(obj.depth - obj.Zref if obj.depth <= obj.Zref else -1.0)
+            self.depth.setValue(obj.depth)
+            self.depth.setSuffix(" mm (relatif)")
         else:
-            #self.Zfinal.setRange(0.1, 100)
-            self.Zfinal.setValue(obj.Zfinal)
-            self.Zfinal.setSuffix(" mm (absolu)")
+            #self.depth.setRange(0.1, 100)
+            self.depth.setValue(obj.depth)
+            self.depth.setSuffix(" mm (absolu)")
         
-        self.Zfinal.setDecimals(2)
-        contourLayout.addRow("Zfinal:", self.Zfinal)
+        self.depth.setDecimals(2)
+        contourLayout.addRow("depth:", self.depth)
         
         contourGroup.setLayout(contourLayout)
         layout.addWidget(contourGroup)
@@ -119,11 +121,13 @@ class ContourTaskPanel:
         self.confirmSelectionButton.clicked.connect(self.confirmSelection)
         self.direction.currentTextChanged.connect(self.updateContour)
         self.Zref.valueChanged.connect(self.updateContour)
-        self.Zfinal.valueChanged.connect(self.updateContour)
+        self.depth.valueChanged.connect(self.updateContour)
         
         # Connecter les signaux pour le changement de mode de profondeur
-        self.absoluteDepthRadio.toggled.connect(self.depthModeChanged)
-        self.relativeDepthRadio.toggled.connect(self.depthModeChanged)
+        if self.obj.DepthMode == "Relatif":
+            self.absoluteDepthRadio.clicked.connect(self.depthModeChanged)
+        else:
+            self.relativeDepthRadio.clicked.connect(self.depthModeChanged)
         
         # Variable pour suivre l'état de sélection
         self.selectionMode = False
@@ -173,8 +177,8 @@ class ContourTaskPanel:
         self.confirmSelectionButton.setEnabled(True)
         
         # Récupérer la sélection actuelle
-        current_selection = Gui.Selection.getSelectionEx()
-        App.Console.PrintMessage(f"Sélection actuelle: {len(current_selection)} objets.\n")
+        #current_selection = Gui.Selection.getSelectionEx()
+        #App.Console.PrintMessage(f"Sélection actuelle: {len(current_selection)} objets.\n")
         
         # Demander à l'utilisateur de sélectionner des arêtes
         App.Console.PrintMessage("Sélectionnez les arêtes pour le contour, puis cliquez sur 'Confirmer la sélection'.\n")
@@ -184,8 +188,10 @@ class ContourTaskPanel:
         Gui.Selection.addSelectionGate("SELECT Part::Feature SUBELEMENT Edge")
         
         # Restaurer la sélection actuelle
-        for obj in current_selection:
-            Gui.Selection.addSelection(obj.Object)
+        for obj in self.obj.Edges:
+            Gui.Selection.addSelection(obj[0], obj[1])
+        #for obj in current_selection:
+        #    Gui.Selection.addSelection(obj.Object)
         
         # Changer le texte du bouton
         self.selectEdgesButton.setText("Annuler la sélection")
@@ -249,53 +255,59 @@ class ContourTaskPanel:
     
     def depthModeChanged(self):
         """Gère le changement de mode de profondeur (absolu/relatif)"""
-        current_value = self.Zfinal.value()
+        
+        current_value = self.depth.value()
+        
         
         if self.relativeDepthRadio.isChecked():
-            # Passage en mode relatif
-            self.Zfinal.setRange(-100, 0)
-            if self.absoluteDepthRadio.isChecked():
-                # Si on vient du mode absolu, convertir la valeur
-                self.Zfinal.setValue(current_value - self.Zref.value())
-            self.Zfinal.setSuffix(" mm (relatif)")
+        #     App.Console.PrintMessage('passage en relatif\n')
+            self.absoluteDepthRadio.clicked.connect(self.depthModeChanged)
+            self.relativeDepthRadio.clicked.disconnect(self.depthModeChanged)
+        #     # Passage en mode relatif
+        #     #self.depth.setRange(-100, 0)
+            self.depth.setValue(current_value - self.Zref.value())
+            self.depth.setSuffix(" mm (relatif)")
+            self.obj.DepthMode = "Relatif"
         else:
-            # Passage en mode absolu
-            self.Zfinal.setRange(0.1, 100)
-            if self.relativeDepthRadio.isChecked():
-                # Si on vient du mode relatif, convertir la valeur
-                self.Zfinal.setValue(self.Zref.value() + current_value)
-            self.Zfinal.setSuffix(" mm (absolu)")
+        #     App.Console.PrintMessage('passage en absolu\n')
+            self.absoluteDepthRadio.clicked.disconnect(self.depthModeChanged)
+            self.relativeDepthRadio.clicked.connect(self.depthModeChanged)
+        #     # Passage en mode absolu
+        #     #self.depth.setRange(0.1, 100)
+            self.depth.setValue(self.Zref.value() + current_value)
+            self.depth.setSuffix(" mm (absolu)")
+            self.obj.DepthMode = "Absolu"
         
         # Mettre à jour le contour
         self.updateContour()
 
     def updateContour(self):
         """Met à jour le contour en fonction des paramètres"""
+        # Mettre à jour la direction
         self.obj.Direction = self.direction.currentText()
         
         # Mettre à jour Zref
         self.obj.Zref = self.Zref.value()
         
-        # Mettre à jour Zfinal en fonction du mode
+        self.obj.depth = self.depth.value()
+        
+        # Mettre à jour le mode de profondeur
         if self.relativeDepthRadio.isChecked():
-            # Mode relatif: Zfinal = Zref + valeur relative (négative)
-            self.obj.Zfinal = self.Zref.value() + self.Zfinal.value()
+            # Mode relatif: depth = Zref + valeur relative (négative)
+            #self.obj.depth = self.Zref.value() + self.depth.value()
             self.obj.DepthMode = "Relatif"
         else:
-            # Mode absolu: Zfinal = valeur absolue
-            self.obj.Zfinal = self.Zfinal.value()
+            # Mode absolu: depth = valeur absolue
+            #self.obj.depth = self.depth.value()
             self.obj.DepthMode = "Absolu"
         
         self.obj.Document.recompute()
     
     def accept(self):
         """Appelé quand l'utilisateur clique sur OK"""
-        #debug
-        App.Console.PrintMessage("Accepté\n")
         # Mettre à jour toutes les propriétés
         self.obj.Direction = self.direction.currentText()
         
-
         # Désactiver le mode de sélection si actif
         if self.selectionMode:
             Gui.Selection.removeSelectionGate()
@@ -315,18 +327,18 @@ class ContourTaskPanel:
         #debug
         App.Console.PrintMessage(f"Zref mis à jour: {self.obj.Zref}\n")
         
-        # Mettre à jour les autres propriétés
-        self.obj.Zref = self.Zref.value()
+        # # Mettre à jour les autres propriétés
+        # self.obj.Zref = self.Zref.value()
         
-        # Mettre à jour Zfinal en fonction du mode
-        if self.relativeDepthRadio.isChecked():
-            # Mode relatif: Zfinal = Zref + valeur relative (négative)
-            self.obj.Zfinal = self.Zref.value() + self.Zfinal.value()
-            self.obj.DepthMode = "Relatif"
-        else:
-            # Mode absolu: Zfinal = valeur absolue
-            self.obj.Zfinal = self.Zfinal.value()
-            self.obj.DepthMode = "Absolu"
+        # # Mettre à jour depth en fonction du mode
+        # if self.relativeDepthRadio.isChecked():
+        #     # Mode relatif: depth = Zref + valeur relative (négative)
+        #     #self.obj.depth = self.Zref.value() + self.depth.value()
+        #     self.obj.DepthMode = "Relatif"
+        # else:
+        #     # Mode absolu: depth = valeur absolue
+        #     #self.obj.depth = self.depth.value()
+        #     self.obj.DepthMode = "Absolu"
         
         # Recomputer
         self.obj.Document.recompute()

@@ -185,14 +185,14 @@ class ContournageCycle:
                                 
                                 # En cas d'échec, essayer avec makeOffset2D directement sur le wire
                                 try:
-                                    path_shape = adjusted_wire.makeOffset2D(offset_value, fill=False, join=2, openResult=True)
+                                    path_shape = adjusted_wire.makeOffset2D(offset_value, fill=False, join=0, openResult=True)
                                     App.Console.PrintMessage(f"Décalage créé avec makeOffset2D: {offset_value} mm\n")
                                 except Exception as e2:
                                     App.Console.PrintError(f"Erreur lors de la création du décalage avec makeOffset2D: {str(e2)}\n")
                         else:
                             # Pour un wire ouvert, utiliser makeOffset2D
                             try:
-                                path_shape = adjusted_wire.makeOffset2D(offset_value, fill=False, join=2, openResult=True)
+                                path_shape = adjusted_wire.makeOffset2D(offset_value, fill=False, join=0, openResult=True)
                                 App.Console.PrintMessage(f"Décalage créé avec makeOffset2D pour wire ouvert: {offset_value} mm\n")
                             except Exception as e:
                                 App.Console.PrintError(f"Erreur lors de la création du décalage pour wire ouvert: {str(e)}\n")

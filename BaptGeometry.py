@@ -295,6 +295,7 @@ class ViewProviderDrillGeometry:
 
     def setEdit(self, vobj, mode=0):
         """Ouvrir l'éditeur"""
+        import BaptDrillTaskPanel
         panel = BaptDrillTaskPanel.DrillGeometryTaskPanel(vobj.Object)
         Gui.Control.showDialog(panel)
         return True
@@ -325,6 +326,7 @@ class ContourGeometry:
         # Transformer l'objet en groupe
         #obj.addExtension("App::GroupExtensionPython", None)
         obj.addExtension("App::GroupExtensionPython")
+        DocumentObjectGroupPython
         
         # Permettre les références à des objets en dehors du groupe
         #obj.addExtension("App::LinkExtensionPython", None)
@@ -338,12 +340,13 @@ class ContourGeometry:
             obj.addProperty("App::PropertyFloat", "Zref", "Contour", "Hauteur de référence")
             obj.Zref = 0.0
         
-        if not hasattr(obj, "Zfinal"):
-            obj.addProperty("App::PropertyFloat", "Zfinal", "Contour", "Hauteur finale")
-            obj.Zfinal = 0.0
+        if not hasattr(obj, "depth"):
+            obj.addProperty("App::PropertyFloat", "depth", "Contour", "Hauteur finale")
+            obj.depth = 0.0
         
         if not hasattr(obj, "DepthMode"):
-            obj.addProperty("App::PropertyString", "DepthMode", "Contour", "Mode de profondeur (Absolu ou Relatif)")
+            obj.addProperty("App::PropertyEnumeration", "DepthMode", "Contour", "Mode de profondeur (Absolu ou Relatif)")
+            obj.DepthMode = ["Absolu", "Relatif"]
             obj.DepthMode = "Absolu"
         
         if not hasattr(obj, "Direction"):
@@ -365,13 +368,14 @@ class ContourGeometry:
         
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        #if prop == "Zref":
-            #App.Console.PrintMessage('Message\n')
-            #App.Console.PrintMessage(f'{self.obj.Zref} {obj.Zref}\n')
-            #if obj.DepthMode == "Relatif":
-                # calcul la difference entre l'ancienne et la nouvelle valeur
-
-        if prop in ["Edges", "Zref", "Zfinal", "Direction", "DepthMode"]:
+        #App.Console.PrintMessage('changement \n')
+        if prop in ["DepthMode"]:
+            if obj.DepthMode == "Relatif":
+                obj.depth = obj.depth - obj.Zref
+            else:
+                obj.depth = obj.Zref + obj.depth
+            self.execute(obj)
+        elif prop in ["Edges", "Zref", "Direction", "depth"]:
             self.execute(obj)
         elif prop == "SelectedEdgeIndex":
             # Mettre à jour les couleurs des arêtes lorsque la sélection change
@@ -395,7 +399,7 @@ class ContourGeometry:
                         try:
                             edge = obj_ref.Shape.getElement(sub_name)
                             edges.append(edge)
-                            App.Console.PrintMessage(f"Arête ajoutée: {sub_name} de {obj_ref.Name}\n")
+                            #App.Console.PrintMessage(f"Arête ajoutée: {sub_name} de {obj_ref.Name}\n")
                         except Exception as e:
                             App.Console.PrintError(f"Erreur lors de la récupération de l'arête {sub_name}: {str(e)}\n")
             
@@ -403,38 +407,51 @@ class ContourGeometry:
                 App.Console.PrintError("Aucune arête valide trouvée.\n")
                 return
             
-            App.Console.PrintMessage(f"Nombre d'arêtes collectées: {len(edges)}\n")
+            #App.Console.PrintMessage(f"Nombre d'arêtes collectées: {len(edges)}\n")
             
             # Vérifier si une arête est sélectionnée
             selected_index = -1
             if hasattr(obj, "SelectedEdgeIndex"):
                 selected_index = obj.SelectedEdgeIndex
             
-            # Créer des arêtes ajustées à la hauteur Zref et à Zfinal
+            # Créer des arêtes ajustées à la hauteur Zref et à depth
             adjusted_edges_zref = []
-            adjusted_edges_zfinal = []
+            adjusted_edges_depth = []
+            
+            # Créer des flèches pour indiquer la direction
+            direction_arrows = []
             
             for i, edge in enumerate(edges):
                 # Créer des arêtes ajustées avec des couleurs différentes selon la sélection
                 
                 # Pour l'arête sélectionnée, utiliser une couleur différente et une largeur plus grande
                 edge_zref = self._create_adjusted_edge(edge, obj.Zref, selected= (i == selected_index))
-                edge_zfinal = self._create_adjusted_edge(edge, obj.Zfinal, selected=(i == selected_index))
+
+                if obj.DepthMode == "Relatif":
+                    edge_zfinal = self._create_adjusted_edge(edge, obj.Zref + obj.depth, selected=(i == selected_index))
+                else:
+                    edge_zfinal = self._create_adjusted_edge(edge, obj.depth, selected=(i == selected_index))
                 
                 adjusted_edges_zref.append(edge_zref)
-                adjusted_edges_zfinal.append(edge_zfinal)
+                adjusted_edges_depth.append(edge_zfinal)
+                
+                # Créer une flèche pour indiquer la direction de l'arête
+                arrow = self._create_direction_arrow(edge, obj.Zref, size=2.0)
+                if arrow:
+                    direction_arrows.append(arrow)
             
             try:
                 # Créer le fil à Zref
                 wire_zref = Part.Wire(adjusted_edges_zref)
                 
-                # Créer le fil à Zfinal
-                wire_zfinal = Part.Wire(adjusted_edges_zfinal)
+                # Créer le fil à depth
+                wire_zfinal = Part.Wire(adjusted_edges_depth)
                 
-                # Créer un compound contenant les deux fils
-                compound = Part.makeCompound([wire_zref, wire_zfinal])
+                # Créer un compound contenant les deux fils et les flèches
+                shapes = [wire_zref, wire_zfinal]
+                shapes.extend(direction_arrows)
+                compound = Part.makeCompound(shapes)
                 obj.Shape = compound
-
                 
                 # Vérifier si le fil est fermé (utiliser le fil à Zref pour cette vérification)
                 if wire_zref.isClosed():
@@ -442,14 +459,12 @@ class ContourGeometry:
                 else:
                     obj.IsClosed = False
                 
-                
-                
             except Exception as e:
                 App.Console.PrintError(f"Impossible de créer un fil à partir des arêtes sélectionnées: {str(e)}\n")
                 # Essayer de créer une forme composite si le fil échoue
                 try:
                     all_edges = adjusted_edges_zref
-                    all_edges.extend(adjusted_edges_zfinal)
+                    all_edges.extend(adjusted_edges_depth)
                     compound = Part.makeCompound(all_edges)
                     obj.Shape = compound
                     App.Console.PrintMessage("Forme composite créée à la place du fil.\n")
@@ -534,6 +549,71 @@ class ContourGeometry:
             new_edge.Tag = 1  # Utiliser Tag=1 pour indiquer que c'est une arête sélectionnée
         
         return new_edge
+        
+    def _create_direction_arrow(self, edge, z_value, size=2.0):
+        """Crée une petite flèche au milieu de l'arête pour indiquer la direction
+        
+        Args:
+            edge: L'arête d'origine
+            z_value: Valeur Z à appliquer
+            size: Taille de la flèche en mm
+            
+        Returns:
+            Shape représentant la flèche
+        """
+        try:
+            # Obtenir le point au milieu de l'arête
+            mid_param = (edge.FirstParameter + edge.LastParameter) / 2
+            mid_point = edge.valueAt(mid_param)
+            mid_point_z = App.Vector(mid_point.x, mid_point.y, z_value)
+            
+            # Obtenir la tangente à ce point (normalisée)
+            tangent = edge.tangentAt(mid_param).normalize()
+            tangent_z = App.Vector(tangent.x, tangent.y, 0)  # Projeter sur le plan XY
+            
+            # Si la tangente est nulle (peut arriver avec certaines courbes), utiliser une direction par défaut
+            if tangent_z.Length < 1e-6:
+                if isinstance(edge.Curve, Part.Circle):
+                    # Pour un cercle, calculer la tangente manuellement
+                    center = edge.Curve.Center
+                    center_z = App.Vector(center.x, center.y, z_value)
+                    radius_vector = mid_point_z.sub(center_z)
+                    # La tangente est perpendiculaire au rayon
+                    tangent_z = App.Vector(-radius_vector.y, radius_vector.x, 0).normalize()
+                else:
+                    # Direction par défaut si on ne peut pas calculer la tangente
+                    tangent_z = App.Vector(1, 0, 0)
+            
+            # Créer la flèche (une ligne avec deux lignes plus petites pour la pointe)
+            # Point de départ de la flèche (légèrement en arrière du point milieu)
+            start_point = mid_point_z.sub(tangent_z.multiply(size/2))
+            
+            # Point de fin de la flèche (légèrement en avant du point milieu)
+            end_point = mid_point_z.add(tangent_z.multiply(size/2))
+            
+            # Créer la ligne principale de la flèche
+            arrow_line = Part.makeLine(start_point, end_point)
+            
+            # Créer les deux lignes de la pointe de la flèche
+            # Vecteur perpendiculaire à la tangente
+            perp = App.Vector(-tangent_z.y, tangent_z.x, 0).normalize()
+            
+            # Points pour les deux lignes de la pointe
+            arrow_p1 = end_point.sub(tangent_z.multiply(size/3)).add(perp.multiply(size/4))
+            arrow_p2 = end_point.sub(tangent_z.multiply(size/3)).sub(perp.multiply(size/4))
+            
+            # Créer les deux lignes de la pointe
+            arrow_line1 = Part.makeLine(end_point, arrow_p1)
+            arrow_line2 = Part.makeLine(end_point, arrow_p2)
+            
+            # Combiner les trois lignes en une seule forme
+            arrow_shape = Part.makeCompound([arrow_line, arrow_line1, arrow_line2])
+            
+            return arrow_shape
+            
+        except Exception as e:
+            App.Console.PrintWarning(f"Erreur lors de la création de la flèche: {str(e)}\n")
+            return None
     
     def getOutList(self, obj):
         """Retourne la liste des objets référencés par cet objet"""
@@ -581,28 +661,28 @@ class ContourGeometry:
             if not all_edges or selected_index >= len(all_edges):
                 return
             
-            # Créer des arêtes ajustées à Zref et Zfinal
+            # Créer des arêtes ajustées à Zref et depth
             adjusted_edges_zref = []
-            adjusted_edges_zfinal = []
+            adjusted_edges_depth = []
             
             for i, edge in enumerate(all_edges):
                 # Créer des arêtes ajustées avec des couleurs différentes selon la sélection
                 if i == selected_index:
                     # Pour l'arête sélectionnée, utiliser une couleur différente et une largeur plus grande
                     edge_zref = self._create_adjusted_edge(edge, obj.Zref, selected=True)
-                    edge_zfinal = self._create_adjusted_edge(edge, obj.Zfinal, selected=True)
+                    edge_depth = self._create_adjusted_edge(edge, obj.depth, selected=True)
                 else:
                     edge_zref = self._create_adjusted_edge(edge, obj.Zref, selected=False)
-                    edge_zfinal = self._create_adjusted_edge(edge, obj.Zfinal, selected=False)
+                    edge_depth = self._create_adjusted_edge(edge, obj.depth, selected=False)
                 
                 adjusted_edges_zref.append(edge_zref)
-                adjusted_edges_zfinal.append(edge_zfinal)
+                adjusted_edges_depth.append(edge_depth)
             
             # Séparer les arêtes sélectionnées et non sélectionnées
             normal_edges_zref = []
-            normal_edges_zfinal = []
+            normal_edges_depth = []
             selected_edges_zref = []
-            selected_edges_zfinal = []
+            selected_edges_depth = []
             
             for i, edge in enumerate(adjusted_edges_zref):
                 if i == selected_index:
@@ -610,11 +690,11 @@ class ContourGeometry:
                 else:
                     normal_edges_zref.append(edge)
             
-            for i, edge in enumerate(adjusted_edges_zfinal):
+            for i, edge in enumerate(adjusted_edges_depth):
                 if i == selected_index:
-                    selected_edges_zfinal.append(edge)
+                    selected_edges_depth.append(edge)
                 else:
-                    normal_edges_zfinal.append(edge)
+                    normal_edges_depth.append(edge)
             
             # Créer des compounds pour les arêtes normales et sélectionnées
             shapes = []
@@ -624,18 +704,18 @@ class ContourGeometry:
                 normal_compound_zref = Part.makeCompound(normal_edges_zref)
                 shapes.append(normal_compound_zref)
             
-            if normal_edges_zfinal:
-                normal_compound_zfinal = Part.makeCompound(normal_edges_zfinal)
-                shapes.append(normal_compound_zfinal)
+            if normal_edges_depth:
+                normal_compound_depth = Part.makeCompound(normal_edges_depth)
+                shapes.append(normal_compound_depth)
             
             # Ajouter les arêtes sélectionnées
             if selected_edges_zref:
                 selected_compound_zref = Part.makeCompound(selected_edges_zref)
                 shapes.append(selected_compound_zref)
             
-            if selected_edges_zfinal:
-                selected_compound_zfinal = Part.makeCompound(selected_edges_zfinal)
-                shapes.append(selected_compound_zfinal)
+            if selected_edges_depth:
+                selected_compound_depth = Part.makeCompound(selected_edges_depth)
+                shapes.append(selected_compound_depth)
             
             # Créer un compound final
             if shapes:
@@ -649,8 +729,8 @@ class ContourGeometry:
                     obj.addProperty("App::PropertyPythonObject", "SelectedEdges", "Visualization", "Selected edges")
                 
                 # Stocker les compounds pour que le ViewProvider puisse les colorier
-                normal_edges = normal_edges_zref + normal_edges_zfinal
-                selected_edges = selected_edges_zref + selected_edges_zfinal
+                normal_edges = normal_edges_zref + normal_edges_depth
+                selected_edges = selected_edges_zref + selected_edges_depth
                 
                 obj.NormalEdges = Part.makeCompound(normal_edges) if normal_edges else Part.Shape()
                 obj.SelectedEdges = Part.makeCompound(selected_edges) if selected_edges else Part.Shape()
@@ -760,7 +840,27 @@ class ViewProviderContourGeometry:
         """Configuration du menu contextuel"""
         action = menu.addAction("Edit")
         action.triggered.connect(lambda: self.setEdit(vobj))
+
+        actionExport = menu.addAction("Export")
+        actionExport.triggered.connect(lambda: self.export(vobj))
         return True
+    
+    def export(self, vobj, mode=0):
+        """Exporte l'objet"""
+        sheet = App.activeDocument().addObject('Spreadsheet::Sheet','Spreadsheet')
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(App.activeDocument().Name,'Spreadsheet')
+
+        #recupere les edges de la géométrie
+        edges = vobj.Object.Edges
+        
+        for i, edge in enumerate(edges):
+            obj_ref = edge[0]
+            sub_names = edge[1]
+            sheet.set("A" + str(i+1), str(i))
+            for j, sub_name in enumerate(sub_names):
+                sheet.set("B" + str(i+j+1), str(sub_name))
+        pass
     
     def setEdit(self, vobj, mode=0):
         """Appelé lorsque l'objet est édité"""
@@ -789,10 +889,12 @@ class ViewProviderContourGeometry:
     
     def __getstate__(self):
         """Appelé lors de la sauvegarde"""
+        return None
         return {"ObjectName": self.Object.Name if self.Object else None}
     
     def __setstate__(self, state):
         """Appelé lors du chargement"""
+        return None
         if state and "ObjectName" in state and state["ObjectName"]:
             self.Object = App.ActiveDocument.getObject(state["ObjectName"])
         return None

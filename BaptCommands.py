@@ -6,11 +6,11 @@ Contient les commandes principales du workbench
 """
 
 import os
-
 import BaptCamProject
 import BaptDrillOperation
 import BaptGeometry
 import BaptMachiningCycle
+import BaptMpfReader
 import BaptTools
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -156,14 +156,15 @@ class CreateCamProjectCommand:
     def Activated(self):
         """Créer un nouveau projet CAM"""
         
-        App.ActiveDocument.openTransaction('Create Cam Project')
-
+        doc = App.ActiveDocument
         # Créer un nouveau document si aucun n'est ouvert
-        if App.ActiveDocument is None:
-            App.newDocument()
-        App.ActiveDocument.recompute()
+        if doc is None:
+            doc = App.newDocument()
+        
+        doc.openTransaction('Create Cam Project')
+
         # Créer l'objet projet CAM
-        obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "CamProject")
+        obj = doc.addObject("App::DocumentObjectGroupPython", "CamProject")
         
 
         # Ajouter la fonctionnalité
@@ -174,7 +175,7 @@ class CreateCamProjectCommand:
             BaptCamProject.ViewProviderCamProject(obj.ViewObject)
         
         # Recomputer
-        App.ActiveDocument.recompute()
+        doc.recompute()
         
         # Ouvrir l'éditeur
         # if obj.ViewObject:
@@ -183,7 +184,7 @@ class CreateCamProjectCommand:
         # Message de confirmation
         App.Console.PrintMessage("Projet CAM créé avec succès!\n")
 
-        App.ActiveDocument.commitTransaction()
+        doc.commitTransaction()
 
 class CreateContourGeometryCommand:
     """Commande pour créer une géométrie de contour"""
@@ -377,3 +378,4 @@ Gui.addCommand('Bapt_CreateMachiningCycle', CreateContourCommand())
 Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())
 Gui.addCommand('Bapt_ToolsManager', ToolsManagerCommand())
 Gui.addCommand('Bapt_CreateDrillOperation', CreateDrillOperationCommand())  # Ajouter la nouvelle commande
+Gui.addCommand('ImportMpf', BaptMpfReader.ImportMpfCommand())  # Ajouter la commande d'importation MPF

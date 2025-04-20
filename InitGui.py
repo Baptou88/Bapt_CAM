@@ -21,7 +21,7 @@ class BaptWorkbench (Workbench):
         It is executed once in a FreeCAD session."""
         import BaptCommands
         import BaptTools
-        self.list = ["Bapt_CreateCamProject", "Bapt_Command", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreateHotReload"]  # Ajout de la commande d'opération de perçage
+        self.list = ["Bapt_CreateCamProject", "Bapt_Command", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreateHotReload", "ImportMpf"]  # Ajout de la commande d'opération de perçage
         self.appendToolbar("Bapt Tools", self.list)
         self.appendMenu("Bapt", self.list)
 

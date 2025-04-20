@@ -49,12 +49,13 @@ class Stock:
     
     def execute(self, obj):
         """Mettre à jour la forme du brut"""
-        if not hasattr(obj,"WorkPlane"):
-            return
+        
         self.updateShape(obj)
     
     def updateShape(self, obj):
         """Mettre à jour la forme du brut en fonction des propriétés"""
+        if not hasattr(obj,"WorkPlane"):
+            return
         try:
             # Créer la boîte en fonction du plan de travail
             if obj.WorkPlane == "XY":
