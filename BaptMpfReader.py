@@ -19,6 +19,8 @@ class MpfReader:
         obj.addProperty("App::PropertyMap", "Origins", "File", "Liste des origines de programme avec leur emplacement")
         obj.Origins = { "54": "App.Vector(0, 0, 0)"}
 
+        obj.addProperty("App::PropertyBool", "Create", "File", "Create objects")
+        obj.Create = False
         obj.Proxy = self
         pass
     def onChanged(self, obj, prop):
@@ -29,7 +31,29 @@ class MpfReader:
         App.Console.PrintMessage('Execute\n')
 
         self.load_file(obj.FilePath)
-        pass
+
+        if not obj.Create:
+            return
+
+    #     parser = MPFParser.MPFParser(self.content)
+    #     commands = parser.parse()
+    #     self.activeTool = None
+    #     self.activeOrigin = None
+    #     self.cursor = 0
+    #     while self.cursor < len(commands):
+    #         command = commands[self.cursor]
+    #         self.cursor += 1
+    #         self.process_command(command)
+        
+    #     pass
+    # def process_command(self, command):
+    #     if command["Type"] == "toolCall":
+    #         #create object tool
+    #         t = App.ActiveDocument.addObject("App::DocumentObjectGroup", f"T{command['T']}")
+    #         obj.addObjects([t])
+    #         self.activeTool = t
+            
+    #     pass
     def load_file(self, file_path):
         if not file_path:
             return False
@@ -87,7 +111,7 @@ class MpfReaderTaskPanel:
         
         # Option pour créer des objets FreeCAD
         self.create_objects_checkbox = QtGui.QCheckBox("Créer des objets FreeCAD")
-        self.create_objects_checkbox.setChecked(False)
+        self.create_objects_checkbox.setChecked(obj.Create)
         options_layout.addWidget(self.create_objects_checkbox)
         
         options_group.setLayout(options_layout)
@@ -181,13 +205,14 @@ class MpfReaderTaskPanel:
         self.obj.FilePath = file_path
         # Créer des objets FreeCAD si l'option est cochée
         if self.create_objects_checkbox.isChecked():
-            pass
-            created_objects = self.mpf_reader.create_freecad_objects()
-            if created_objects:
-                App.Console.PrintMessage(f"{len(created_objects)} objets créés.\n")
-            else:
-                App.Console.PrintWarning("Aucun objet créé.\n")
-        
+            
+            #created_objects = self.mpf_reader.create_freecad_objects()
+            with open(file_path, "r") as file:
+                content = file.read()
+                mpf_parser = MPFParser.MPFParser(content)
+                op = mpf_parser.parse()
+            I = Interpreter(self.obj,op)
+            I.process()
         # Fermer le panneau de tâches
         Gui.Control.closeDialog()
         return True
@@ -197,6 +222,116 @@ class MpfReaderTaskPanel:
         Gui.Control.closeDialog()
         return True
 
+class Interpreter:
+    def __init__(self, obj, commands):
+        self.commands = commands
+        self.cursor = 0
+        self.currentTool = None
+        self.currentOrigin = None
+        self.obj = obj
+        pass
+    def hasNext(self):
+        return self.cursor < len(self.commands) -1
+    def next(self):
+        if not self.hasNext():
+            return False
+        self.cursor += 1
+        return self.commands[self.cursor]
+    def get(self):
+        return self.commands[self.cursor]
+    def process(self):
+        while self.hasNext():
+            command = self.get()
+            if command['Type'] == 'toolCall':
+                self.process_tool_call(command)
+            elif command['Type'] == 'gcode':
+                self.process_gcode(command)
+            command = self.next()
+            
+    def process_tool_call(self, command):
+        tNumber = command['T']
+        t = App.ActiveDocument.addObject("App::FeaturePython", f"Tool_{tNumber}")
+        t.addProperty("App::PropertyString", "Name", "Base", "Name of the tool")#.setGroupAccessMethod("RO")
+        t.addProperty("App::PropertyString", "Id", "Base", "Id of the tool").Id = str(tNumber)
+        self.obj.addObject(t)
+        self.currentTool = t
+
+    def process_gcode(self, command):
+        if command['G'] in [0,1,2,3]:
+            self.process_move(command)
+        elif command['G'] in [54,55,56,57,58,59]:
+            self.currentOrigin = command['G']
+            self.process_origin(command)
+
+    def process_origin(self, command):
+        pass
+        
+    def process_move(self, command):
+        """
+        Traite une séquence de déplacements (G0, G1, G2, G3), accumule les points de trajectoire,
+        crée un wire pour visualiser la trajectoire de l'outil, et l'ajoute dans le groupe d'opérations
+        du WCS courant. Ajoute également des logs et une gestion d'erreur pour le debug.
+        """
+        import Part
+        isMove = True
+        trajectory_points = []
+        current_pos = None
+        try:
+            # Initialiser la position courante à partir du premier mouvement
+            #App.Console.PrintMessage(f'command: {command}\n')
+            if 'X' in command and 'Y' in command and 'Z' in command:
+                current_pos = App.Vector(float(command['X']), float(command['Y']), float(command['Z']))
+                trajectory_points.append(current_pos)
+                App.Console.PrintMessage(f"[Trajectoire] Départ: {current_pos}\n")
+            else:
+                App.Console.PrintWarning("[Trajectoire] Commande initiale sans coordonnées XYZ.\n")
+                App.Console.PrintWarning(f"cursor: {self.cursor}\n")
+            self.next()
+            while self.hasNext():
+                command = self.get()
+                if command['Type'] == 'gcode' and command['G'] in [0,1,2,3]:
+                    #pos = command['G']
+                    # Extraire la position si disponible
+                    x = float(command['X']) if 'X' in command else (current_pos.x if current_pos else 0.0)
+                    y = float(command['Y']) if 'Y' in command else (current_pos.y if current_pos else 0.0)
+                    z = float(command['Z']) if 'Z' in command else (current_pos.z if current_pos else 0.0)
+                    current_pos = App.Vector(x, y, z)
+                    trajectory_points.append(current_pos)
+                    App.Console.PrintMessage(f"[Trajectoire] Ajout point: {current_pos}\n")
+                else:
+                    
+                    break
+                self.next()
+            if len(trajectory_points) > 1:
+                # Création du wire
+                wire_shape = Part.makePolygon(trajectory_points)
+                suiviTrajectoire = App.ActiveDocument.addObject("Part::Feature", "SuiviTrajectoireWire")
+                suiviTrajectoire.Shape = wire_shape
+                suiviTrajectoire.Label = "Trajectoire Outil"
+                App.Console.PrintMessage(f"[Trajectoire] Wire créé avec {len(trajectory_points)} points.\n")
+
+                # Ajouter dans le groupe d'opérations du WCS courant si possible
+                # (Supposé: self.currentOrigin est un nom de groupe ou d'objet)
+                if hasattr(self, 'currentOrigin') and self.currentOrigin:
+                    group_found = False
+                    for obj in App.ActiveDocument.Objects:
+                        if obj.Name == str(self.currentOrigin):
+                            if hasattr(obj, 'Group'):
+                                obj.Group.append(suiviTrajectoire)
+                                group_found = True
+                                App.Console.PrintMessage(f"[Trajectoire] Ajouté à {obj.Name}\n")
+                                break
+                    if not group_found:
+                        self.obj.addObject(suiviTrajectoire)
+                        App.Console.PrintWarning(f"[Trajectoire] Groupe WCS '{self.currentOrigin}' non trouvé. Wire ajouté à la racine.\n")
+                else:
+                    App.Console.PrintWarning("[Trajectoire] currentOrigin non défini. Wire ajouté à la racine.\n")
+            else:
+                App.Console.PrintWarning("[Trajectoire] Pas assez de points pour créer une trajectoire.\n")
+        except Exception as e:
+            App.Console.PrintError(f"[Trajectoire] Erreur générale dans process_move: {str(e)}\n")
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            App.Console.PrintError(f"[Trajectoire] Ligne {exc_tb.tb_lineno}\n")
 
 class ImportMpfCommand:
     """Commande pour importer un fichier MPF"""

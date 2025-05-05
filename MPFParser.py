@@ -113,9 +113,8 @@ class MPFParser(abstractParser):
         
     def gcode(self):
         """Parse a G-code command, return a dictionary with command number and coordinates (X, Y, Z)"""
-        char = self.get()
         command = self.exceptInt()
-        gCommand = ["G" + str(command)]
+        gCommand = {"Type":"gcode", "G":command}
         
         while self.hasNext() and self.get() != '\n':
             char = self.next()
@@ -124,15 +123,14 @@ class MPFParser(abstractParser):
             elif char == ';':
                 raise Exception("Unimplemented commentaire in line")
             elif char in ['X','Y','Z']:
-
                 c = self.coordinate()
-                gCommand.append(c)
+                gCommand.update(c)
             else:
                 raise Exception(f"Invalid G-code, Invalid key {char} at pos {self.cursor} at line {self.getLineFromCursor()}")
         self.next()
-        return {"Type":"gcode","G":gCommand}
+        return gCommand
 
-    def coordinate(self):
+    def coordinate(self)->dict[str,float]:
         """
         Parse coordinate values from the content string at the current cursor 
         position. This function updates cursor position and collects coordinate 
@@ -201,12 +199,8 @@ class MPFParser(abstractParser):
                 self.numLine()
             elif char == 'T':
                 self.operations.append(self.tool())
-                print(f'cursor: {self.cursor}')
-                a=0
             elif char == 'G':
                 self.operations.append(self.gcode())
-                a = self.cursor
-                b= self.get()
             elif char in ['X','Y','Z']:
                 self.cursor -= 1
                 self.operations.append(self.coordinate())
