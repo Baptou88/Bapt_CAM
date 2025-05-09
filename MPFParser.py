@@ -16,6 +16,8 @@ class abstractParser:
         self.char = self.content[self.cursor]
         return self.char
 
+    def isEnd(self):
+        return self.cursor >= len(self.content) - 1
     def hasNext(self):
         return self.cursor < len(self.content) -1
 
@@ -33,14 +35,28 @@ class abstractParser:
         return float(self.content[start:end])
     
     def exceptInt(self):
+        """
+        Extrait un entier (avec signe) à partir de la position courante,
+        même si le nombre est à la fin de la chaîne.
+        """
         char = self.get()
         if not (char.isdigit() or char in ['+','-']):
             raise Exception(f"Invalid number, Number Excepted got {char}")
         start = self.cursor
-        while self.hasNext() and char.isdigit():
+        # Avance sur le signe si présent
+        if char in ['+','-']:
             char = self.next()
+        # Avance sur tous les chiffres
+        while not self.isEnd() and char.isdigit():
+            char = self.next()
+        # Si on est à la fin et le dernier caractère est un chiffre, il faut inclure ce chiffre
         end = self.cursor
-        return int(self.content[start:end])
+        if self.isEnd() and char.isdigit():
+            end += 1
+        value_str = self.content[start:end]
+        print(f"'{value_str}'")
+        return int(value_str)
+
 
     def getLineFromCursor(self):
         lignes = self.content.split('\n')
@@ -52,16 +68,19 @@ class abstractParser:
                 return {"Line":lignes[i], "Number":i+1, 'start':debut, 'end':fin}
             debut += len(lignes[i]) + 1
         return None
+        
 class MPFParser(abstractParser):
     def __init__(self, content):
         super().__init__(content)
         pass
 
     def commentaire(self):
-        self.char = self.content[self.cursor]
-        while self.cursor < len(self.content) and self.char != '\n':
-            self.cursor += 1
-            self.char = self.content[self.cursor]
+        start = self.cursor
+        char = self.get()
+        while self.hasNext() and char != '\n':
+            char = self.next()
+        end = self.cursor
+        return {"Type":"commentaire","Commentaire":self.content[start:end]}
 
     def numLine(self):
         self.char = self.content[self.cursor]
@@ -171,18 +190,22 @@ class MPFParser(abstractParser):
         #self.cursor += 1
         char = self.get()
         while self.hasNext() and char != '\n':
-            char = self.next()
             if char == 'M':
+                char = self.next()
+                print(self.cursor)
                 m = self.mcode()
                 if m in mCommand:
-                    raise Exception(f"Invalid M-code, Duplicate key {m}")
+                    raise Exception(f"Invalid M-code, Duplicate key '{m}'")
                 mCommand.append(m)
-            elif char == ';':
+            elif char in [';',' ']:
+                char = self.next()
                 pass
+                
             else:
-                raise Exception(f"Invalid M-code, Invalid key {char}")
+                raise Exception(f"Invalid M-code, Invalid key '{char}'")
+            #char = self.next()
         #self.next()
-        return {"Type":"mcode","M":mCommand}
+        return mCommand
 
     def parse(self):
         while self.hasNext():
@@ -194,7 +217,7 @@ class MPFParser(abstractParser):
             if char == "\n":
                 pass
             elif char == ';':
-                self.commentaire()
+                self.operations.append(self.commentaire())
             elif char == 'N':
                 self.numLine()
             elif char == 'T':
@@ -205,8 +228,9 @@ class MPFParser(abstractParser):
                 self.cursor -= 1
                 self.operations.append(self.coordinate())
             elif char == 'M':
-                self.operations.append(self.mcode())
-                self.next()
+                a = {"Type":"mcode","M":self.mcode()}
+                self.operations.append(a)
+               # self.next()
             else:
                 raise Exception(f"Invalid character '{char}' at position {self.cursor}\n line: {self.getLineFromCursor()}")
                 

@@ -232,6 +232,8 @@ class Interpreter:
         pass
     def hasNext(self):
         return self.cursor < len(self.commands) -1
+    def hasPrevious(self):
+        return self.cursor > 0
     def next(self):
         if not self.hasNext():
             return False
@@ -243,6 +245,7 @@ class Interpreter:
         while self.hasNext():
             command = self.get()
             if command['Type'] == 'toolCall':
+                App.Console.PrintMessage('process ToolCall\n')
                 self.process_tool_call(command)
             elif command['Type'] == 'gcode':
                 self.process_gcode(command)
@@ -250,9 +253,17 @@ class Interpreter:
             
     def process_tool_call(self, command):
         tNumber = command['T']
-        t = App.ActiveDocument.addObject("App::FeaturePython", f"Tool_{tNumber}")
+
+        if self.hasPrevious():
+            previousCommand = self.commands[self.cursor-1]
+            if previousCommand['Type'] == 'commentaire':
+                tComment = previousCommand['Commentaire']
+            else:
+                tComment = ''
+        t = App.ActiveDocument.addObject("App::FeaturePython", f"T{tNumber}_{tComment}")
         t.addProperty("App::PropertyString", "Name", "Base", "Name of the tool")#.setGroupAccessMethod("RO")
         t.addProperty("App::PropertyString", "Id", "Base", "Id of the tool").Id = str(tNumber)
+        t.addProperty("App::PropertyString", "Comment", "Base", "Comment of the tool").Comment = tComment
         self.obj.addObject(t)
         self.currentTool = t
 
@@ -268,66 +279,113 @@ class Interpreter:
         
     def process_move(self, command):
         """
-        Traite une séquence de déplacements (G0, G1, G2, G3), accumule les points de trajectoire,
-        crée un wire pour visualiser la trajectoire de l'outil, et l'ajoute dans le groupe d'opérations
-        du WCS courant. Ajoute également des logs et une gestion d'erreur pour le debug.
+        Traite une séquence de déplacements (G0, G1, G2, G3), accumule les éléments de trajectoire (lignes et arcs),
+        crée un wire pour visualiser la trajectoire de l'outil, et l'ajoute dans le groupe d'opérations du WCS courant.
+        Les arcs (G2/G3) sont correctement affichés en utilisant Part.Arc. Logs et gestion d'erreur inclus.
         """
         import Part
         isMove = True
-        trajectory_points = []
+        elements = []  # Contiendra Part.LineSegment et Part.Arc
         current_pos = None
         try:
             # Initialiser la position courante à partir du premier mouvement
-            #App.Console.PrintMessage(f'command: {command}\n')
             if 'X' in command and 'Y' in command and 'Z' in command:
                 current_pos = App.Vector(float(command['X']), float(command['Y']), float(command['Z']))
-                trajectory_points.append(current_pos)
                 App.Console.PrintMessage(f"[Trajectoire] Départ: {current_pos}\n")
             else:
                 App.Console.PrintWarning("[Trajectoire] Commande initiale sans coordonnées XYZ.\n")
-                App.Console.PrintWarning(f"cursor: {self.cursor}\n")
-            self.next()
-            while self.hasNext():
-                command = self.get()
+
+            while self.hasNext() and isMove:
+                command = self.next()
                 if command['Type'] == 'gcode' and command['G'] in [0,1,2,3]:
-                    #pos = command['G']
-                    # Extraire la position si disponible
+                    # Extraire la position cible
                     x = float(command['X']) if 'X' in command else (current_pos.x if current_pos else 0.0)
                     y = float(command['Y']) if 'Y' in command else (current_pos.y if current_pos else 0.0)
                     z = float(command['Z']) if 'Z' in command else (current_pos.z if current_pos else 0.0)
-                    current_pos = App.Vector(x, y, z)
-                    trajectory_points.append(current_pos)
-                    App.Console.PrintMessage(f"[Trajectoire] Ajout point: {current_pos}\n")
-                else:
-                    
-                    break
-                self.next()
-            if len(trajectory_points) > 1:
-                # Création du wire
-                wire_shape = Part.makePolygon(trajectory_points)
-                suiviTrajectoire = App.ActiveDocument.addObject("Part::Feature", "SuiviTrajectoireWire")
-                suiviTrajectoire.Shape = wire_shape
-                suiviTrajectoire.Label = "Trajectoire Outil"
-                App.Console.PrintMessage(f"[Trajectoire] Wire créé avec {len(trajectory_points)} points.\n")
+                    target_pos = App.Vector(x, y, z)
 
-                # Ajouter dans le groupe d'opérations du WCS courant si possible
-                # (Supposé: self.currentOrigin est un nom de groupe ou d'objet)
-                if hasattr(self, 'currentOrigin') and self.currentOrigin:
-                    group_found = False
-                    for obj in App.ActiveDocument.Objects:
-                        if obj.Name == str(self.currentOrigin):
-                            if hasattr(obj, 'Group'):
-                                obj.Group.append(suiviTrajectoire)
-                                group_found = True
-                                App.Console.PrintMessage(f"[Trajectoire] Ajouté à {obj.Name}\n")
-                                break
-                    if not group_found:
-                        self.obj.addObject(suiviTrajectoire)
-                        App.Console.PrintWarning(f"[Trajectoire] Groupe WCS '{self.currentOrigin}' non trouvé. Wire ajouté à la racine.\n")
+                    if command['G'] in [0,1]:
+                        # Mouvement linéaire
+                        if  current_pos:
+                            #App.Console.PrintMessage(f"[Trajectoire] Ligne: {current_pos} -> {target_pos}\n")
+                            elements.append(Part.LineSegment(current_pos, target_pos))
+                        current_pos = target_pos
+                    elif command['G'] in [2,3]:
+                        # Mouvement circulaire (arc)
+                        if current_pos:
+                            # Calcul du centre de l'arc (donné en relatif par IJK)
+                            i = float(command['I']) if 'I' in command else 0.0
+                            j = float(command['J']) if 'J' in command else 0.0
+                            k = float(command['K']) if 'K' in command else 0.0
+                            center = current_pos.add(App.Vector(i, j, k))
+                            # Calcul d'un vrai point intermédiaire sur l'arc (à mi-angle)
+                            # Ceci est nécessaire car Part.Arc attend 3 points sur l'arc, pas le centre !
+                            import math
+                            v_start = current_pos.sub(center)
+                            v_end = target_pos.sub(center)
+                            # Calcul des angles
+                            angle_start = math.atan2(v_start.y, v_start.x)
+                            angle_end = math.atan2(v_end.y, v_end.x)
+                            # Détermination du sens (horaire/antihoraire)
+                            if command['G'] == 2:  # G2 = horaire
+                                if angle_end > angle_start:
+                                    angle_end -= 2 * math.pi
+                            else:  # G3 = antihoraire
+                                if angle_end < angle_start:
+                                    angle_end += 2 * math.pi
+                            angle_mid = (angle_start + angle_end) / 2
+                            radius = (v_start.Length + v_end.Length) / 2
+                            mid_point = App.Vector(
+                                center.x + radius * math.cos(angle_mid),
+                                center.y + radius * math.sin(angle_mid),
+                                center.z  # plan XY, Z constant
+                            )
+                            # Créer l'arc avec les trois points sur l'arc
+                            arc = Part.Arc(current_pos, mid_point, target_pos)
+
+                            if command['G'] == 2:
+                                # G2 = sens horaire, FreeCAD suit l'ordre des points
+                                elements.append(arc)
+                                App.Console.PrintMessage(f"[Trajectoire] Arc horaire: {current_pos} -> {target_pos} (centre: {center})\n")
+                            else:
+                                # G3 = sens antihoraire, inverser les points pour FreeCAD
+                                #arc = Part.Arc(target_pos, center, current_pos)
+                                elements.append(arc)
+                                App.Console.PrintMessage(f"[Trajectoire] Arc antihoraire: {current_pos} -> {target_pos} (centre: {center})\n")
+                            current_pos = target_pos
+                    else:
+                        App.Console.PrintWarning(f"[Trajectoire] Mouvement non pris en charge: G{command['G']}\n")
                 else:
-                    App.Console.PrintWarning("[Trajectoire] currentOrigin non défini. Wire ajouté à la racine.\n")
+                    isMove = False
+            self.cursor -= 1
+            if len(elements) > 0:
+                # Création du wire
+                try:
+                    wire_shape = Part.Wire([e.toShape() for e in elements])
+                    suiviTrajectoire = App.ActiveDocument.addObject("Part::Feature", "SuiviTrajectoireWire")
+                    suiviTrajectoire.Shape = wire_shape
+                    suiviTrajectoire.Label = "Trajectoire Outil"
+                    App.Console.PrintMessage(f"[Trajectoire] Wire créé avec {len(elements)} éléments.\n")
+
+                    # Ajouter dans le groupe d'opérations du WCS courant si possible
+                    if hasattr(self, 'currentOrigin') and self.currentOrigin:
+                        group_found = False
+                        for obj in App.ActiveDocument.Objects:
+                            if obj.Name == str(self.currentOrigin):
+                                if hasattr(obj, 'Group'):
+                                    obj.Group.append(suiviTrajectoire)
+                                    group_found = True
+                                    App.Console.PrintMessage(f"[Trajectoire] Ajouté à {obj.Name}\n")
+                                    break
+                        if not group_found:
+                            self.obj.addObject(suiviTrajectoire)
+                            App.Console.PrintWarning(f"[Trajectoire] Groupe WCS '{self.currentOrigin}' non trouvé. Wire ajouté à la racine.\n")
+                    else:
+                        App.Console.PrintWarning("[Trajectoire] currentOrigin non défini. Wire ajouté à la racine.\n")
+                except Exception as e:
+                    App.Console.PrintError(f"[Trajectoire] Erreur lors de la création du wire: {str(e)}\n")
             else:
-                App.Console.PrintWarning("[Trajectoire] Pas assez de points pour créer une trajectoire.\n")
+                App.Console.PrintWarning("[Trajectoire] Aucun élément pour créer une trajectoire.\n")
         except Exception as e:
             App.Console.PrintError(f"[Trajectoire] Erreur générale dans process_move: {str(e)}\n")
             exc_type, exc_obj, exc_tb = sys.exc_info()

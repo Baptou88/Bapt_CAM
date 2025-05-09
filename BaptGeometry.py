@@ -326,7 +326,7 @@ class ContourGeometry:
         # Transformer l'objet en groupe
         #obj.addExtension("App::GroupExtensionPython", None)
         obj.addExtension("App::GroupExtensionPython")
-        DocumentObjectGroupPython
+        #DocumentObjectGroupPython
         
         # Permettre les références à des objets en dehors du groupe
         #obj.addExtension("App::LinkExtensionPython", None)
@@ -860,6 +860,17 @@ class ViewProviderContourGeometry:
             sheet.set("A" + str(i+1), str(i))
             for j, sub_name in enumerate(sub_names):
                 sheet.set("B" + str(i+j+1), str(sub_name))
+                edge_ref = obj_ref.Shape.getElement(sub_name)
+                start_point = edge_ref.Vertexes[0].Point
+                end_point = edge_ref.Vertexes[-1].Point
+                sheet.set("C" + str(i+j+1), str(start_point))
+                sheet.set("D" + str(i+j+1), str(end_point))
+                if isinstance(edge_ref.Curve, Part.Circle):
+                    sheet.set("E" + str(i+j+1), "Cercle")
+                elif isinstance(edge_ref.Curve, Part.Line):
+                    sheet.set("E" + str(i+j+1), "Ligne")
+                else:
+                    sheet.set("E" + str(i+j+1), "Inconnu")
         pass
     
     def setEdit(self, vobj, mode=0):
