@@ -39,8 +39,8 @@ class CreateContourCommand:
 
     def Activated(self):
         """Créer un nouveau contournage"""
-        
-        App.ActiveDocument.openTransaction('Create Contour')
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Contour')
 
         # Obtenir la géométrie de contour sélectionnée
         contour_geometry = Gui.Selection.getSelection()[0]
@@ -83,14 +83,14 @@ class CreateContourCommand:
         contour_geometry.Group.append(obj)
 
         # Recomputer
-        doc = App.ActiveDocument
+        
         doc.recompute()
         
         # Ouvrir le panneau de tâches pour l'édition
         if obj.ViewObject:
             obj.ViewObject.Proxy.setEdit(obj.ViewObject)
         
-        App.ActiveDocument.commitTransaction()
+        doc.commitTransaction()
 
         # Message de confirmation
         App.Console.PrintMessage(f"Contournage créé et lié à {contour_geometry.Label}.\n")
@@ -112,13 +112,16 @@ class CreateDrillGeometryCommand:
 
     def Activated(self):
         """Créer une nouvelle géométrie de perçage"""
-        App.ActiveDocument.openTransaction('Create Drill Geometry')
+
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Drill Geometry')
         
         # Obtenir le projet CAM sélectionné
         project = Gui.Selection.getSelection()[0]
         
         # Créer l'objet avec le type DocumentObjectGroupPython pour pouvoir contenir des enfants
-        obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "DrillGeometry")
+        #obj = doc.addObject("App::DocumentObjectGroupPython", "DrillGeometry")
+        obj = doc.addObject("Part::FeaturePython", "DrillGeometry")
         
         # Ajouter la fonctionnalité
         drill = BaptGeometry.DrillGeometry(obj)
@@ -132,13 +135,15 @@ class CreateDrillGeometryCommand:
         geometry_group.addObject(obj)
         
         # Recomputer
-        App.ActiveDocument.recompute()
+        doc.recompute()
 
         # Ouvrir l'éditeur
         if obj.ViewObject:
             obj.ViewObject.Proxy.setEdit(obj.ViewObject)
         
-        App.ActiveDocument.commitTransaction()
+        doc.recompute()
+
+        doc.commitTransaction()
 
 
 class CreateCamProjectCommand:
@@ -318,13 +323,14 @@ class CreateDrillOperationCommand:
     def Activated(self):
         """Créer une nouvelle opération de perçage"""
         
-        App.ActiveDocument.openTransaction('Create Drill Operation')
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Drill Operation')
 
         # Obtenir la géométrie de perçage sélectionnée
         drill_geometry = Gui.Selection.getSelection()[0]
         
         # Créer l'objet avec le bon type pour avoir une Shape
-        obj = App.ActiveDocument.addObject("Part::FeaturePython", "DrillOperation")
+        obj = doc.addObject("Part::FeaturePython", "DrillOperation")
         
         # Ajouter la fonctionnalité
         operation = BaptDrillOperation.DrillOperation(obj)
@@ -333,6 +339,7 @@ class CreateDrillOperationCommand:
         if obj.ViewObject:
             BaptDrillOperation.ViewProviderDrillOperation(obj.ViewObject)
             obj.ViewObject.ShapeColor = (0.0, 0.0, 1.0)  # Bleu
+            obj.ViewObject.Transparency = 70
         
         # Définir le nom de la géométrie de perçage associée (au lieu d'un lien direct)
         obj.DrillGeometryName = drill_geometry.Name
@@ -340,9 +347,10 @@ class CreateDrillOperationCommand:
         # Ajouter l'opération comme enfant direct de la géométrie de perçage
         # Maintenant que DrillGeometry est un DocumentObjectGroupPython, on peut utiliser addObject
         drill_geometry.addObject(obj)
+        drill_geometry.Group.append(obj)
         
         # Recomputer
-        App.ActiveDocument.recompute()
+        doc.recompute()
         
         # Ouvrir l'éditeur
         if obj.ViewObject:
@@ -351,7 +359,7 @@ class CreateDrillOperationCommand:
         # Message de confirmation
         App.Console.PrintMessage("Opération de perçage créée et ajoutée comme enfant de la géométrie de perçage.\n")
         
-        App.ActiveDocument.commitTransaction()
+        doc.commitTransaction()
 
 class BaptCommand:
     """Ma première commande"""

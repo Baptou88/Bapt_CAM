@@ -16,6 +16,11 @@ class DrillGeometry:
         obj.Proxy = self
         self.Type = "DrillGeometry"
         
+        obj.addExtension("App::GroupExtensionPython")
+        #obj.addExtension("App::DocumentObjectGroupPython")
+        obj.addExtension("App::LinkExtensionPython")
+        
+
         # Référence aux faces sélectionnées
         if not hasattr(obj, "DrillFaces"):
             obj.addProperty("App::PropertyLinkSubList", "DrillFaces", "Drill", "Selected drill faces")
@@ -55,23 +60,8 @@ class DrillGeometry:
             obj.HighlightColor = (1.0, 1.0, 0.0)  # Jaune par défaut
         
         # Créer ou obtenir l'objet de visualisation
-        self.getOrCreateVisualObject(obj)
+        #self.getOrCreateVisualObject(obj)
 
-    def getOrCreateVisualObject(self, obj):
-        """Obtient ou crée l'objet de visualisation"""
-        # Vérifier si l'objet de visualisation existe déjà
-        for child in obj.Group:
-            if child.Name.startswith("DrillVisual"):
-                return child
-        
-        # Créer un nouvel objet de visualisation
-        visual = App.ActiveDocument.addObject("Part::Feature", "DrillVisual")
-        visual.ViewObject.Visibility = True
-        
-        # Ajouter l'objet au groupe
-        obj.addObject(visual)
-        
-        return visual
 
     def onChanged(self, obj, prop):
         """Appelé quand une propriété est modifiée"""
@@ -134,10 +124,10 @@ class DrillGeometry:
     def execute(self, obj):
         """Mettre à jour la représentation visuelle"""
         # Obtenir l'objet de visualisation
-        visual = self.getOrCreateVisualObject(obj)
+        #visual = self.getOrCreateVisualObject(obj)
         
         if not obj.DrillPositions:
-            visual.Shape = Part.Shape()  # Shape vide
+            obj.Shape = Part.Shape()  # Shape vide
             return
 
         # Créer une sphère pour chaque position
@@ -167,19 +157,19 @@ class DrillGeometry:
             # Créer un compound pour les sphères en surbrillance
             highlight_compound = Part.makeCompound(highlighted_spheres) if highlighted_spheres else Part.Shape()
             
-            # Stocker les deux compounds dans des propriétés de l'objet visuel
-            if not hasattr(visual, "NormalSpheres"):
-                visual.addProperty("App::PropertyPythonObject", "NormalSpheres", "Visualization", "Normal spheres")
-            visual.NormalSpheres = normal_compound
+            # Stocker les deux compounds dans des propriétés de l'objet
+            if not hasattr(obj, "NormalSpheres"):
+                obj.addProperty("App::PropertyPythonObject", "NormalSpheres", "Visualization", "Normal spheres")
+            obj.NormalSpheres = normal_compound
             
-            if not hasattr(visual, "HighlightedSpheres"):
-                visual.addProperty("App::PropertyPythonObject", "HighlightedSpheres", "Visualization", "Highlighted spheres")
-            visual.HighlightedSpheres = highlight_compound
+            if not hasattr(obj, "HighlightedSpheres"):
+                obj.addProperty("App::PropertyPythonObject", "HighlightedSpheres", "Visualization", "Highlighted spheres")
+            obj.HighlightedSpheres = highlight_compound
             
             # Combiner les deux compounds
             all_spheres = spheres + highlighted_spheres
             compound = Part.makeCompound(all_spheres)
-            visual.Shape = compound
+            obj.Shape = compound
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
@@ -193,6 +183,10 @@ class DrillGeometry:
         """Désérialisation"""
         return None
 
+    def onBeforeDelete(self, obj, subelements):
+        # Custom logic before deletion
+        App.Console.PrintMessage("Object is about to be deleted: " + obj.Name + "\n")
+        
 
 class ViewProviderDrillGeometry:
     def __init__(self, vobj):
@@ -232,21 +226,21 @@ class ViewProviderDrillGeometry:
             return
             
         # Vérifier si l'objet visuel existe
-        visual = None
-        for child in self.Object.Group:
-            if child.Name.startswith("DrillVisual") and hasattr(child, "ViewObject"):
-                visual = child
-                break
+        # visual = None
+        # for child in self.Object.Group:
+        #     if child.Name.startswith("DrillVisual") and hasattr(child, "ViewObject"):
+        #         visual = child
+        #         break
                 
-        if not visual:
-            return
+        # if not visual:
+        #     return
             
         # Définir les couleurs en fonction de la position sélectionnée
         if hasattr(self.Object, "SelectedPosition") and self.Object.SelectedPosition >= 0:
             # Vérifier si l'objet visuel a des sphères en surbrillance
-            if hasattr(visual, "HighlightedSpheres") and visual.HighlightedSpheres:
+            if hasattr(self.Object, "HighlightedSpheres") and self.Object.HighlightedSpheres:
                 # Utiliser un ShapeColorExtension pour colorer individuellement les sous-éléments
-                if hasattr(visual.ViewObject, "DiffuseColor"):
+                if hasattr(self.Object.ViewObject, "DiffuseColor"):
                     # Créer une liste de couleurs pour chaque sous-élément
                     colors = []
                     
@@ -257,10 +251,10 @@ class ViewProviderDrillGeometry:
                     highlight_color = self.Object.HighlightColor
                     
                     # Appliquer les couleurs appropriées
-                    if hasattr(visual, "NormalSpheres") and visual.NormalSpheres:
+                    if hasattr(self.Object, "NormalSpheres") and self.Object.NormalSpheres:
                         # Nombre de sous-éléments dans les sphères normales
-                        if hasattr(visual.NormalSpheres, "SubShapes"):
-                            normal_count = len(visual.NormalSpheres.SubShapes)
+                        if hasattr(self.Object.NormalSpheres, "SubShapes"):
+                            normal_count = len(self.Object.NormalSpheres.SubShapes)
                         else:
                             normal_count = 1
                         
@@ -268,21 +262,22 @@ class ViewProviderDrillGeometry:
                         colors.extend([normal_color] * normal_count)
                     
                     # Ajouter la couleur de surbrillance pour chaque sphère en surbrillance
-                    if hasattr(visual.HighlightedSpheres, "SubShapes"):
-                        highlight_count = len(visual.HighlightedSpheres.SubShapes)
-                    else:
-                        highlight_count = 1
-                    
-                    colors.extend([highlight_color] * highlight_count)
+                    if hasattr(self.Object, "HighlightedSpheres") and self.Object.HighlightedSpheres:
+                        if hasattr(self.Object.HighlightedSpheres, "SubShapes"):
+                            highlight_count = len(self.Object.HighlightedSpheres.SubShapes)
+                        else:
+                            highlight_count = 1
+                        
+                        colors.extend([highlight_color] * highlight_count)
                     
                     # Appliquer les couleurs
-                    visual.ViewObject.DiffuseColor = colors
+                    self.Object.ViewObject.DiffuseColor = colors
             else:
                 # Aucune sphère en surbrillance, utiliser la couleur normale pour tout
-                visual.ViewObject.ShapeColor = self.Object.MarkerColor
+                self.Object.ViewObject.ShapeColor = self.Object.MarkerColor
         else:
             # Aucune position sélectionnée, utiliser la couleur normale pour tout
-            visual.ViewObject.ShapeColor = self.Object.MarkerColor
+            self.Object.ViewObject.ShapeColor = self.Object.MarkerColor
 
     def onChanged(self, vobj, prop):
         """Appelé quand une propriété du ViewProvider est modifiée"""
@@ -314,6 +309,48 @@ class ViewProviderDrillGeometry:
         """Désérialisation"""
         return None
 
+    def claimChildren(self):
+        """Retourne les enfants de cet objet"""
+        #debug
+        App.Console.PrintMessage(f"claimChildren de {self.Object.Name}\n")
+        children = []
+        # Récupérer tous les objets de contournage qui référencent cette géométrie par son nom
+        if self.Object:
+            doc = self.Object.Document
+            if not doc:
+                return children
+                
+            # Vérifier que l'objet a un nom valide
+            if not hasattr(self.Object, "Name") or not self.Object.Name:
+                return children
+                
+            for obj in doc.Objects:
+                # Vérifier si l'objet est un cycle de contournage
+                if hasattr(obj, "Proxy") and hasattr(obj.Proxy, "Type") and obj.Proxy.Type == "DrillOperation":
+                    # Vérifier si l'objet référence cette géométrie
+                    if hasattr(obj, "DrillGeometryName") and obj.DrillGeometryName == self.Object.Name:
+                        children.append(obj)
+                        
+            # Vérifier si l'objet a un groupe
+            if hasattr(self.Object, "Group"):
+                # Ajouter tous les objets du groupe qui ne sont pas déjà dans la liste
+                for obj in self.Object.Group:
+                    if obj not in children:
+                        children.append(obj)
+                        
+        return children
+    
+    def onBeforeDelete(self, obj, subelements):
+        """Supprime tous les enfants lors de la suppression du parent"""
+        #debug
+        App.Console.PrintMessage(f"onBeforeDelete de {obj.Name}\n")
+        children = self.claimChildren()
+        for child in children:
+            try:
+                if child and hasattr(child, "Document") and child.Document:
+                    child.Document.removeObject(child.Name)
+            except Exception as e:
+                App.Console.PrintError(f"Erreur suppression enfant {child.Name}: {e}\n")
 
 class ContourGeometry:
     """Classe pour gérer les contours d'usinage"""
@@ -768,16 +805,16 @@ class ViewProviderContourGeometry:
         """Appelé lors de l'attachement du ViewProvider"""
         self.Object = vobj.Object
         
-        # Définir la couleur rouge pour le contour
-        vobj.LineColor = (1.0, 0.0, 0.0)  # Rouge
-        vobj.PointColor = (1.0, 0.0, 0.0)  # Rouge
-        vobj.LineWidth = 4.0  # Largeur de ligne plus grande
-        vobj.PointSize = 6.0  # Taille des points plus grande
+        # # Définir la couleur rouge pour le contour
+        # vobj.LineColor = (1.0, 0.0, 0.0)  # Rouge
+        # vobj.PointColor = (1.0, 0.0, 0.0)  # Rouge
+        # vobj.LineWidth = 4.0  # Largeur de ligne plus grande
+        # vobj.PointSize = 6.0  # Taille des points plus grande
         
-        # Ajouter une propriété pour la couleur des arêtes sélectionnées
-        if not hasattr(vobj, "SelectedEdgeColor"):
-            vobj.addProperty("App::PropertyColor", "SelectedEdgeColor", "Display", "Color of selected edges")
-            vobj.SelectedEdgeColor = (0.0, 1.0, 1.0)  # Cyan par défaut
+        # # Ajouter une propriété pour la couleur des arêtes sélectionnées
+        # if not hasattr(vobj, "SelectedEdgeColor"):
+        #     vobj.addProperty("App::PropertyColor", "SelectedEdgeColor", "Display", "Color of selected edges")
+        #     vobj.SelectedEdgeColor = (0.0, 1.0, 1.0)  # Cyan par défaut
     
     def updateData(self, obj, prop):
         """Appelé lorsqu'une propriété de l'objet est modifiée"""
