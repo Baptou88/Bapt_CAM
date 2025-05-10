@@ -6,7 +6,25 @@ from FreeCAD import Base
 
 class ContournageCycle:
     """Représente un cycle d'usinage de contournage"""
-    
+
+    def reorder_wire(self, shape):
+        """
+        Trie et oriente les edges d'un wire ou shape, retourne un wire ordonné.
+        """
+        if hasattr(shape, "Edges"):
+            sorted_edges = Part.__sortEdges__(list(shape.Edges))
+            wire = Part.Wire(sorted_edges)
+            # Afficher la séquence ordonnée des points
+            ordered_points = []
+            for edge in wire.Edges:
+                for v in edge.Vertexes:
+                    pt = (round(v.Point.x, 5), round(v.Point.y, 5), round(v.Point.z, 5))
+                    if not ordered_points or pt != ordered_points[-1]:
+                        ordered_points.append(pt)
+            
+            return wire
+        return shape
+
     def __init__(self, obj):
         """Initialise l'objet de cycle de contournage"""
         # Ajouter les propriétés
@@ -34,14 +52,30 @@ class ContournageCycle:
         # Utiliser PropertyString au lieu de PropertyLink pour éviter la dépendance circulaire
         if not hasattr(obj, "ContourGeometryName"):
             obj.addProperty("App::PropertyString", "ContourGeometryName", "Contour", "Nom de la géométrie du contour")
+        
+        # Ajout des types d'approche et de sortie
+        if not hasattr(obj, "ApproachType"):
+            obj.addProperty("App::PropertyEnumeration", "ApproachType", "Approche", "Type d'approche du contour")
+            obj.ApproachType = ["Tangentielle", "Perpendiculaire", "Hélicoïdale"]
+            obj.ApproachType = "Tangentielle"
+        if not hasattr(obj, "RetractType"):
+            obj.addProperty("App::PropertyEnumeration", "RetractType", "Sortie", "Type de sortie du contour")
+            obj.RetractType = ["Tangentielle", "Perpendiculaire", "Verticale"]
+            obj.RetractType = "Tangentielle"
+        # Longueur personnalisable pour l'approche/sortie
+        if not hasattr(obj, "ApproachRetractLength"):
+            obj.addProperty("App::PropertyLength", "ApproachRetractLength", "Approche", "Longueur de l'approche/sortie")
+            obj.ApproachRetractLength = 12.0  # Valeur par défaut en mm
+
     
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
         self.__init__(obj)
 
+
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        if prop in ["ToolDiameter", "CutDepth", "StepDown", "Direction", "ContourGeometryName"]:
+        if prop in ["ToolDiameter", "CutDepth", "StepDown", "Direction", "ContourGeometryName", "ApproachType", "RetractType", "ApproachRetractLength", "ApproachRetractLength"]:
             self.execute(obj)
     
     def execute(self, obj):
@@ -178,7 +212,8 @@ class ContournageCycle:
                                     path_shape = offset_shape.Wires[0]
                                 else:
                                     path_shape = offset_shape
-                                
+                                # Réordonner et afficher la séquence des points
+                                path_shape = self.reorder_wire(path_shape)
                                 App.Console.PrintMessage(f"Décalage créé avec makeOffset: {offset_value} mm\n")
                             except Exception as e:
                                 App.Console.PrintError(f"Erreur lors de la création du décalage avec makeOffset: {str(e)}\n")
@@ -186,6 +221,8 @@ class ContournageCycle:
                                 # En cas d'échec, essayer avec makeOffset2D directement sur le wire
                                 try:
                                     path_shape = adjusted_wire.makeOffset2D(offset_value, fill=False, join=0, openResult=True)
+                                    # Réordonner et afficher la séquence des points
+                                    path_shape = self.reorder_wire(path_shape)
                                     App.Console.PrintMessage(f"Décalage créé avec makeOffset2D: {offset_value} mm\n")
                                 except Exception as e2:
                                     App.Console.PrintError(f"Erreur lors de la création du décalage avec makeOffset2D: {str(e2)}\n")
@@ -193,18 +230,75 @@ class ContournageCycle:
                             # Pour un wire ouvert, utiliser makeOffset2D
                             try:
                                 path_shape = adjusted_wire.makeOffset2D(offset_value, fill=False, join=0, openResult=True)
+                                # Réordonner et afficher la séquence des points
+                                path_shape = self.reorder_wire(path_shapes)
                                 App.Console.PrintMessage(f"Décalage créé avec makeOffset2D pour wire ouvert: {offset_value} mm\n")
                             except Exception as e:
                                 App.Console.PrintError(f"Erreur lors de la création du décalage pour wire ouvert: {str(e)}\n")
                     except Exception as e:
                         App.Console.PrintError(f"Erreur lors de la création du wire ajusté: {str(e)}\n")
             
-            # Assigner la forme au cycle de contournage
-            if path_shape:
-                obj.Shape = path_shape
-                App.Console.PrintMessage("Chemin d'usinage créé avec succès.\n")
-            else:
-                App.Console.PrintError("Impossible de créer le chemin d'usinage.\n")
+            # --- Ajout des segments d'approche et de sortie ---
+            approach_length = obj.ApproachRetractLength.Value if hasattr(obj, "ApproachRetractLength") else 12.0
+            approach_edges = []
+            retract_edges = []
+            
+            # Récupérer les points de départ et d'arrivée du wire
+            if hasattr(path_shape, "Vertexes") and len(path_shape.Vertexes) >= 2:
+                start = path_shape.Vertexes[0].Point
+                end = path_shape.Vertexes[-1].Point
+                #debug start end end
+                App.Console.PrintMessage(f"Start: {start}\n")
+                App.Console.PrintMessage(f"End: {end}\n")
+                
+                # Direction tangentielle au départ
+                tangent = None
+                if hasattr(path_shape, "Edges") and len(path_shape.Edges) > 0:
+                    try:
+                        tangent_vec = path_shape.Edges[0].tangentAt(0)
+                        if tangent_vec.Length > 0:
+                            tangent = tangent_vec.normalize()
+                    except Exception:
+                        tangent = None
+                approach = obj.ApproachType
+                # Approche
+                if approach == "Tangentielle" and tangent:
+                    approach_start = start - tangent.multiply(approach_length)
+                    approach_edge = Part.makeLine(approach_start, start)
+                    approach_edges.append(approach_edge)
+                elif approach == "Perpendiculaire" and tangent:
+                    perp = App.Vector(-tangent.y, tangent.x, tangent.z).normalize()
+                    approach_start = start - perp.multiply(approach_length)
+                    approach_edge = Part.makeLine(approach_start, start)
+                    approach_edges.append(approach_edge)
+                elif approach == "Hélicoïdale":
+                    # TODO: Implémenter une vraie approche hélicoïdale
+                    approach_edges.append(Part.makeLine(start - App.Vector(0, 0, approach_length), start))
+                # Sortie
+                tangent_end = None
+                if hasattr(path_shape, "Edges") and len(path_shape.Edges) > 0:
+                    try:
+                        tangent_end_vec = path_shape.Edges[-1].tangentAt(1)
+                        if tangent_end_vec.Length > 0:
+                            tangent_end = tangent_end_vec.normalize()
+                    except Exception:
+                        tangent_end = None
+                retract = obj.RetractType
+                if retract == "Tangentielle" and tangent_end:
+                    retract_end = end + tangent_end.multiply(-approach_length)
+                    retract_edges.append(Part.makeLine(end, retract_end))
+                elif retract == "Perpendiculaire" and tangent_end:
+                    perp_end = App.Vector(-tangent_end.y, tangent_end.x, tangent_end.z).normalize()
+                    retract_end = end + perp_end.multiply(-approach_length)
+                    retract_edges.append(Part.makeLine(end, retract_end))
+                elif retract == "Hélicoïdale":
+                    # TODO: Implémenter une vraie sortie hélicoïdale
+                    retract_edges.append(Part.makeLine(end, end + App.Vector(0, 0, approach_length)))
+
+            # Fusionner tous les segments
+            all_edges = approach_edges + path_shape.Edges + retract_edges
+            obj.Shape = Part.makeCompound(all_edges)
+            App.Console.PrintMessage("Chemin d'usinage (entrée, contour, sortie) créé avec succès.\n")
                 
         except Exception as e:
             App.Console.PrintError(f"Erreur lors de la création du chemin d'usinage: {str(e)}\n")

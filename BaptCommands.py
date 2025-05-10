@@ -183,8 +183,8 @@ class CreateCamProjectCommand:
         doc.recompute()
         
         # Ouvrir l'éditeur
-        # if obj.ViewObject:
-        #     obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
             
         # Message de confirmation
         App.Console.PrintMessage("Projet CAM créé avec succès!\n")

@@ -26,6 +26,36 @@ class ContournageTaskPanel:
         self.toolDiameter.setSuffix(" mm")
         self.toolDiameter.setValue(obj.ToolDiameter)
         toolLayout.addRow("Diamètre de l'outil:", self.toolDiameter)
+
+        # Longueur d'approche/sortie personnalisée
+        self.approachRetractLength = QtGui.QDoubleSpinBox()
+        self.approachRetractLength.setRange(0.0, 100.0)
+        self.approachRetractLength.setDecimals(2)
+        self.approachRetractLength.setSuffix(" mm")
+        self.approachRetractLength.setValue(obj.ApproachRetractLength if hasattr(obj, "ApproachRetractLength") else 12.0)
+        toolLayout.addRow("Longueur approche/sortie :", self.approachRetractLength)
+        self.approachRetractLength.valueChanged.connect(self.updateContournage)
+
+        # Type d'approche
+        self.approachType = QtGui.QComboBox()
+        self.approachType.addItems(["Tangentielle", "Perpendiculaire", "Hélicoïdale"])
+        if hasattr(obj, "ApproachType"):
+            idx = self.approachType.findText(obj.ApproachType)
+            if idx >= 0:
+                self.approachType.setCurrentIndex(idx)
+        toolLayout.addRow("Type d'approche:", self.approachType)
+        self.approachType.currentTextChanged.connect(self.updateContournage)
+
+        # Type de sortie
+        self.retractType = QtGui.QComboBox()
+        self.retractType.addItems(["Tangentielle", "Perpendiculaire", "Hélicoïdale"])
+        if hasattr(obj, "RetractType"):
+            idx = self.retractType.findText(obj.RetractType)
+            if idx >= 0:
+                self.retractType.setCurrentIndex(idx)
+        toolLayout.addRow("Type de sortie:", self.retractType)
+        self.retractType.currentTextChanged.connect(self.updateContournage)
+
         
         toolGroup.setLayout(toolLayout)
         layout.addWidget(toolGroup)
@@ -142,6 +172,12 @@ class ContournageTaskPanel:
         self.obj.CutDepth = self.cutDepth.value()
         self.obj.StepDown = self.stepDown.value()
         self.obj.Direction = self.direction.currentText()
+        if hasattr(self.obj, "ApproachRetractLength"):
+            self.obj.ApproachRetractLength = self.approachRetractLength.value()
+        if hasattr(self.obj, "ApproachType"):
+            self.obj.ApproachType = self.approachType.currentText()
+        if hasattr(self.obj, "RetractType"):
+            self.obj.RetractType = self.retractType.currentText()
         
         # Recalculer la trajectoire
         self.obj.Proxy.execute(self.obj)
