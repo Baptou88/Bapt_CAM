@@ -12,6 +12,7 @@ import BaptGeometry
 import BaptMachiningCycle
 import BaptMpfReader
 import BaptTools
+import BaptPostProcess
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
@@ -377,6 +378,17 @@ class BaptCommand:
         """Cette fonction est exécutée quand la commande est activée"""
         App.Console.PrintMessage("Hello, FreeCAD!\n")
 
+class PostProcessGCodeCommand:
+    """Commande pour générer un programme G-code à partir du projet CAM"""
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "PostProcess.svg"),
+                'MenuText': "Post-process G-code",
+                'ToolTip': "Générer un programme G-code à partir des opérations d'usinage"}
+    def IsActive(self):
+        return App.ActiveDocument is not None
+    def Activated(self):
+        BaptPostProcess.postprocess_gcode()
+
 # Enregistrer les commandes
 Gui.addCommand('Bapt_Command', BaptCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
@@ -387,3 +399,4 @@ Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())
 Gui.addCommand('Bapt_ToolsManager', ToolsManagerCommand())
 Gui.addCommand('Bapt_CreateDrillOperation', CreateDrillOperationCommand())  # Ajouter la nouvelle commande
 Gui.addCommand('ImportMpf', BaptMpfReader.ImportMpfCommand())  # Ajouter la commande d'importation MPF
+Gui.addCommand('Bapt_PostProcessGCode', PostProcessGCodeCommand())
