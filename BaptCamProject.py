@@ -14,7 +14,7 @@ class Stock:
             obj: L'objet FreeCAD
             parent: L'objet parent (CamProject)
         """
-        obj.Proxy = self
+        
         self.Type = "Stock"
         self.parent = parent
         
@@ -42,6 +42,8 @@ class Stock:
         
         # Créer une forme initiale
         self.updateShape(obj)
+
+        obj.Proxy = self
     
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
@@ -236,10 +238,10 @@ class CamProject:
     
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        if prop == "WorkPlane":
+        if hasattr(obj,"WorkPlane") and prop == "WorkPlane":
             # Synchroniser le plan de travail avec le stock
             stock = self.getStock(obj)
-            if stock:
+            if stock and hasattr(stock, "WorkPlane"):
                 stock.WorkPlane = obj.WorkPlane
     
     def __getstate__(self):

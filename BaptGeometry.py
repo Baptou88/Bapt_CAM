@@ -5,6 +5,7 @@ import os
 from FreeCAD import Base
 from PySide import QtCore, QtGui
 import math
+
 try:
     from pivy import coin
 except ImportError:
@@ -13,12 +14,12 @@ except ImportError:
 class DrillGeometry:
     def __init__(self, obj):
         """Ajoute les propriétés"""
-        obj.Proxy = self
+        
         self.Type = "DrillGeometry"
         
         obj.addExtension("App::GroupExtensionPython")
         #obj.addExtension("App::DocumentObjectGroupPython")
-        obj.addExtension("App::LinkExtensionPython")
+        #obj.addExtension("App::LinkExtensionPython")
         
 
         # Référence aux faces sélectionnées
@@ -62,6 +63,7 @@ class DrillGeometry:
         # Créer ou obtenir l'objet de visualisation
         #self.getOrCreateVisualObject(obj)
 
+        obj.Proxy = self
 
     def onChanged(self, obj, prop):
         """Appelé quand une propriété est modifiée"""
@@ -357,7 +359,7 @@ class ContourGeometry:
     
     def __init__(self, obj):
         """Ajoute les propriétés"""
-        obj.Proxy = self
+        
         self.Type = "ContourGeometry"
         
         # Transformer l'objet en groupe
@@ -367,7 +369,8 @@ class ContourGeometry:
         
         # Permettre les références à des objets en dehors du groupe
         #obj.addExtension("App::LinkExtensionPython", None)
-        obj.addExtension("App::LinkExtensionPython")
+        #obj.addExtension("App::LinkExtensionPython")
+        #obj.addProperty("App::PropertyLinkList", "Group", "Base", "Groupe d'objets géométriques")
         
         # Propriétés pour stocker les arêtes sélectionnées
         if not hasattr(obj, "Edges"):
@@ -398,6 +401,8 @@ class ContourGeometry:
         
         # Créer une forme vide
         obj.Shape = Part.Shape()
+
+        obj.Proxy = self
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
