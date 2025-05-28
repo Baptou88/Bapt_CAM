@@ -443,7 +443,7 @@ class ContourGeometry:
                             edges.append(edge)
                             #App.Console.PrintMessage(f"Arête ajoutée: {sub_name} de {obj_ref.Name}\n")
                         except Exception as e:
-                            App.Console.PrintError(f"Erreur lors de la récupération de l'arête {sub_name}: {str(e)}\n")
+                            App.Console.PrintError(f"Execute : Erreur lors de la récupération de l'arête {sub_name}: {str(e)}\n")
             
             if not edges:
                 App.Console.PrintError("Aucune arête valide trouvée.\n")

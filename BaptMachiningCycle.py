@@ -231,7 +231,7 @@ class ContournageCycle:
                             try:
                                 path_shape = adjusted_wire.makeOffset2D(offset_value, fill=False, join=0, openResult=True)
                                 # Réordonner et afficher la séquence des points
-                                path_shape = self.reorder_wire(path_shapes)
+                                path_shape = self.reorder_wire(path_shape)
                                 App.Console.PrintMessage(f"Décalage créé avec makeOffset2D pour wire ouvert: {offset_value} mm\n")
                             except Exception as e:
                                 App.Console.PrintError(f"Erreur lors de la création du décalage pour wire ouvert: {str(e)}\n")

@@ -368,7 +368,7 @@ class DrillOperationTaskPanel:
         self.finalDepth.setSingleStep(1.0)
         self.finalDepth.setSuffix(" mm")
         depthParamsLayout.addRow("Profondeur finale:", self.finalDepth)
-        self.finalDepth.valueChanged.connect(self.updateVisual)
+        
         
         # Référence Z (pour le mode relatif)
         self.zReference = QtGui.QDoubleSpinBox()
@@ -425,6 +425,7 @@ class DrillOperationTaskPanel:
         self.geometryCombo.currentIndexChanged.connect(self.geometryChanged)
 
         self.safeHeight.valueChanged.connect(lambda: self.updateVisual())
+        self.finalDepth.valueChanged.connect(lambda: self.updateVisual())
 
     def updateVisual(self):
         """Mise à jour visuelle des paramètres"""
@@ -576,6 +577,7 @@ class DrillOperationTaskPanel:
             self.zReference.setValue(self.obj.ZReference.Value)
         
         if hasattr(self.obj, "SafeHeight"):
+            App.Console.PrintMessage(f'safe height: {self.obj.SafeHeight}\n')
             self.safeHeight.setValue(self.obj.SafeHeight.Value)
         
         # Onglet Affichage

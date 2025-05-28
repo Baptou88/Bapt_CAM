@@ -10,12 +10,35 @@ import BaptCamProject
 import BaptDrillOperation
 import BaptGeometry
 import BaptMachiningCycle
+import BaptPocketOperation
 import BaptMpfReader
 import BaptTools
 import BaptPostProcess
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
+
+class CreatePocketOperationCommand:
+    """Commande pour créer une opération de poche basée sur ContourGeometry"""
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Pocket.svg"),
+                'MenuText': "Nouvelle opération de poche",
+                'ToolTip': "Créer une nouvelle opération de poche pour l'usinage"}
+
+    def IsActive(self):
+        sel = Gui.Selection.getSelection()
+        return sel and hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
+
+    def Activated(self):
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Pocket Operation')
+        contour_geometry = Gui.Selection.getSelection()[0]
+        obj = BaptPocketOperation.createPocketOperation(contour=contour_geometry)
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        doc.recompute()
+        doc.commitTransaction()
+        App.Console.PrintMessage(f"Opération de poche créée et liée à {contour_geometry.Label}.\n")
 
 class CreateContourCommand:
     """Commande pour créer un Contournage"""
@@ -395,6 +418,7 @@ Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
 Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
 Gui.addCommand('Bapt_CreateContourGeometry', CreateContourGeometryCommand())
 Gui.addCommand('Bapt_CreateMachiningCycle', CreateContourCommand())
+Gui.addCommand('Bapt_CreatePocketOperation', CreatePocketOperationCommand())
 Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())
 Gui.addCommand('Bapt_ToolsManager', ToolsManagerCommand())
 Gui.addCommand('Bapt_CreateDrillOperation', CreateDrillOperationCommand())  # Ajouter la nouvelle commande

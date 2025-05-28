@@ -21,7 +21,7 @@ class BaptWorkbench (Workbench):
         It is executed once in a FreeCAD session."""
         import BaptCommands
         import BaptTools
-        self.list = ["Bapt_CreateCamProject", "Bapt_Command", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreateHotReload", "ImportMpf", "Bapt_PostProcessGCode"]  # Ajout de la commande d'opération de perçage
+        self.list = ["Bapt_CreateCamProject", "Bapt_Command", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreatePocketOperation", "Bapt_CreateHotReload", "ImportMpf", "Bapt_PostProcessGCode"]  # Ajout de la commande d'opération de perçage et de poche
         self.appendToolbar("Bapt Tools", self.list)
         self.appendMenu("Bapt", self.list)
 
@@ -42,3 +42,4 @@ Gui.addWorkbench(BaptWorkbench())
 # Register preferences
 from BaptPreferences import BaptPreferencesPage
 Gui.addPreferencePage(BaptPreferencesPage, "Bapt")
+Gui.addIconPath(os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons"))
