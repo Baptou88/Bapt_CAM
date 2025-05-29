@@ -1,6 +1,9 @@
-import FreeCAD, FreeCADGui
-import FreeCAD as App 
+import FreeCAD
+import FreeCAD as App
+import FreeCADGui
 from PySide import QtGui
+from pivy import coin
+from utils import PointSelectionObserver
 
 class Origin:
     """
@@ -20,7 +23,7 @@ class Origin:
         # Pas de géométrie calculée, juste l'affichage
         pass
 
-from pivy import coin
+
 
 class ViewProviderOrigin:
     def __init__(self, vobj):
@@ -127,7 +130,6 @@ class ViewProviderOrigin:
 
 class OriginTaskPanel:
     def __init__(self, obj):
-        App.Console.PrintMessage('Message\n')
         #super().__init__()
         self.obj = obj
         self.form = QtGui.QWidget()
@@ -156,6 +158,41 @@ class OriginTaskPanel:
         layout.addRow(btnLayout)
         self.okBtn.clicked.connect(self.accept)
         self.cancelBtn.clicked.connect(self.reject)
+
+        self.clickOnPartBtn = QtGui.QPushButton("Click on Part")
+        self.clickOnPartBtn.clicked.connect(self.clickOnPart)
+        btnLayout.addWidget(self.clickOnPartBtn)
+
+    def clickOnPart(self):
+        """Appelé quand l'utilisateur clique sur le bouton Click on Part"""
+        # Changer le texte du bouton pour indiquer que l'on attend un clic
+        self.clickOnPartBtn.setText("Cliquez sur un point...")
+        self.clickOnPartBtn.setEnabled(False)
+        
+        # Créer et activer l'observer
+        self.observer = PointSelectionObserver.PointSelectionObserver(self.pointSelected)
+        self.observer.enable()
+
+    def pointSelected(self, point):
+        """Appelé quand l'utilisateur a cliqué sur un point"""
+        # Mettre à jour les coordonnées du stock origin
+        
+        self.xSpin.setValue(point.x)
+        self.ySpin.setValue(point.y)
+        self.zSpin.setValue(point.z)
+
+        # Mettre à jour la représentation visuelle
+        self.updateVisual()
+        
+        # Remettre le bouton dans son état initial
+        self.clickOnPartBtn.setText("Click on Part")
+        self.clickOnPartBtn.setEnabled(True)
+
+    def updateVisual(self):
+        self.obj.Placement.Base.x = self.xSpin.value()
+        self.obj.Placement.Base.y = self.ySpin.value()
+        self.obj.Placement.Base.z = self.zSpin.value()
+
     def accept(self):
         self.obj.OriginName = self.nameEdit.text()
         self.obj.OriginNumber = self.numberEdit.text()
@@ -166,6 +203,7 @@ class OriginTaskPanel:
         self.obj.Placement = pl
         FreeCAD.ActiveDocument.recompute()
         FreeCADGui.Control.closeDialog()
+
     def reject(self):
         FreeCADGui.Control.closeDialog()
 
