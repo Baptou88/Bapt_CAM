@@ -10,6 +10,7 @@ import BaptCamProject
 import BaptDrillOperation
 import BaptGeometry
 import BaptMachiningCycle
+import BaptOrigin
 import BaptPocketOperation
 import BaptMpfReader
 import BaptTools
@@ -17,6 +18,22 @@ import BaptPostProcess
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
+
+class CreateOriginCommand:    
+    """Commande pour créer une origine d'usinage (G54, G55, ...)."""
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Origin.svg"),
+                'MenuText': "Nouvelle Origine",
+                'ToolTip': "Créer une nouvelle origine d'usinage (G54, G55, ...)."}
+    def IsActive(self):
+        return App.ActiveDocument is not None
+    def Activated(self):
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Origin')
+        obj = BaptOrigin.createOrigin()
+        doc.recompute()
+        doc.commitTransaction()
+        App.Console.PrintMessage(f"Origine créée : {obj.OriginName} ({obj.OriginNumber})\n")
 
 class CreatePocketOperationCommand:
     """Commande pour créer une opération de poche basée sur ContourGeometry"""
@@ -414,6 +431,8 @@ class PostProcessGCodeCommand:
 
 # Enregistrer les commandes
 Gui.addCommand('Bapt_Command', BaptCommand())
+Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
+Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
 Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
 Gui.addCommand('Bapt_CreateContourGeometry', CreateContourGeometryCommand())
