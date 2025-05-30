@@ -15,6 +15,7 @@ import BaptPocketOperation
 import BaptMpfReader
 import BaptTools
 import BaptPostProcess
+from Op import Surfacage
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
@@ -186,6 +187,63 @@ class CreateDrillGeometryCommand:
 
         doc.commitTransaction()
 
+class CreateSurfacageCommand:
+    """Commande pour créer un nouveau surfacage"""
+
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Surfacage.svg"),
+                'MenuText': "Nouveau Surfacage",
+                'ToolTip': "Créer un nouveau surfacage"}
+
+    def IsActive(self):
+        """La commande est active si un document est ouvert"""
+        sel = Gui.Selection.getSelection()
+        if not sel:
+            return False
+        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject"
+
+    def Activated(self):
+        """Créer un nouveau surfacage"""
+        
+        doc = App.ActiveDocument
+        # Créer un nouveau document si aucun n'est ouvert
+        if doc is None:
+            doc = App.newDocument()
+        
+        doc.openTransaction('Create Surfacage')
+
+        # Créer l'objet surfacage
+        obj = doc.addObject("Part::FeaturePython", "Surfacage")
+        
+
+        project = Gui.Selection.getSelection()[0]
+
+        # Ajouter la fonctionnalité
+        Surfacage.Surfacage(obj)
+        
+        # Ajouter le ViewProvider
+        if obj.ViewObject:
+            Surfacage.ViewProviderSurfacage(obj.ViewObject)
+        
+        # Ajouter au groupe Operations
+        operations_group = project.Proxy.getOperationsGroup(project)
+        operations_group.addObject(obj)
+
+        obj.Stock = project.Proxy.getStock(project)
+
+        # Recomputer
+        doc.recompute()
+        
+        # Ouvrir l'éditeur
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+            
+        # Message de confirmation
+        App.Console.PrintMessage("Surfacage créé avec succès!\n")
+
+        doc.commitTransaction()
+
+
 
 class CreateCamProjectCommand:
     """Commande pour créer un nouveau projet CAM"""
@@ -314,6 +372,8 @@ class CreateHotReloadCommand:
             reload(BaptToolsTaskPanel)
             import BaptPreferences
             reload(BaptPreferences)
+            import Surfacage
+            reload(Surfacage)
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 
@@ -443,3 +503,4 @@ Gui.addCommand('Bapt_ToolsManager', ToolsManagerCommand())
 Gui.addCommand('Bapt_CreateDrillOperation', CreateDrillOperationCommand())  # Ajouter la nouvelle commande
 Gui.addCommand('ImportMpf', BaptMpfReader.ImportMpfCommand())  # Ajouter la commande d'importation MPF
 Gui.addCommand('Bapt_PostProcessGCode', PostProcessGCodeCommand())
+Gui.addCommand('Bapt_CreateSurfacage', CreateSurfacageCommand())
