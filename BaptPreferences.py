@@ -30,6 +30,18 @@ class BaptPreferences:
         path_layout.addWidget(self.toolsDbPathButton)
         tools_db_layout.addLayout(path_layout)
         
+        # Chemin du dossier G-code
+        gcode_folder_layout = QtGui.QHBoxLayout()
+        gcode_folder_label = QtGui.QLabel("Dossier par défaut des programmes G-code:")
+        self.gcodeFolderPath = QtGui.QLineEdit()
+        self.gcodeFolderPath.setReadOnly(True)  # Rendre le champ en lecture seule pour éviter les erreurs
+        self.gcodeFolderPathButton = QtGui.QPushButton("Parcourir...")
+        
+        gcode_folder_layout.addWidget(gcode_folder_label)
+        gcode_folder_layout.addWidget(self.gcodeFolderPath)
+        gcode_folder_layout.addWidget(self.gcodeFolderPathButton)
+        tools_db_layout.addLayout(gcode_folder_layout)
+        
         # Boutons pour créer une nouvelle base de données ou utiliser celle par défaut
         buttons_layout = QtGui.QHBoxLayout()
         
@@ -50,6 +62,7 @@ class BaptPreferences:
         self.toolsDbPathButton.clicked.connect(self.chooseExistingDb)
         self.createNewDbButton.clicked.connect(self.createNewDb)
         self.useDefaultDbButton.clicked.connect(self.useDefaultDb)
+        self.gcodeFolderPathButton.clicked.connect(self.chooseGCodeFolder)
         
         # Load settings
         self.preferences = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Bapt")
@@ -114,17 +127,38 @@ class BaptPreferences:
             f"La base de données par défaut sera utilisée à l'emplacement suivant:\n{default_path}"
         )
     
+    def chooseGCodeFolder(self):
+        """Sélectionner le dossier par défaut des programmes G-code"""
+        folder = QtGui.QFileDialog.getExistingDirectory(self.form, "Sélectionner le dossier G-code")
+        if folder:
+            self.gcodeFolderPath.setText(folder)
+            self.saveSettings()
+            
+            # Afficher un message de confirmation
+            QtGui.QMessageBox.information(
+                self.form,
+                "Dossier G-code sélectionné",
+                f"Le dossier G-code à l'emplacement suivant sera utilisé:\n{folder}"
+            )
+    
     def saveSettings(self):
         """Enregistrer les paramètres"""
         self.preferences.SetString("ToolsDbPath", self.toolsDbPath.text())
+        self.preferences.SetString("GCodeFolderPath", self.gcodeFolderPath.text())
         
     def loadSettings(self):
         """Charger les paramètres"""
         self.toolsDbPath.setText(self.preferences.GetString("ToolsDbPath", ""))
+        self.gcodeFolderPath.setText(self.preferences.GetString("GCodeFolderPath", ""))
         
     def getToolsDbPath(self):
         """Obtenir le chemin de la base de données d'outils"""
         return self.preferences.GetString("ToolsDbPath", "")
+
+    def getGCodeFolderPath(self):
+        """Obtenir le dossier par défaut des programmes G-code"""
+        return self.preferences.GetString("GCodeFolderPath", "")
+
 
 class BaptPreferencesPage(QtGui.QWidget):
     def __init__(self, parent=None):
@@ -150,3 +184,4 @@ class BaptPreferencesPage(QtGui.QWidget):
 # from BaptPreferences import BaptPreferences
 # prefs = BaptPreferences()
 # db_path = prefs.getToolsDbPath()
+# dossier_gcode = prefs.getGCodeFolderPath()

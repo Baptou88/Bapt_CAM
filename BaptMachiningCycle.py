@@ -28,7 +28,7 @@ class ContournageCycle:
     def __init__(self, obj):
         """Initialise l'objet de cycle de contournage"""
         # Ajouter les propriétés
-        obj.Proxy = self
+        
         self.Type = "ContournageCycle"
         
         # Propriétés pour les paramètres d'usinage
@@ -67,7 +67,12 @@ class ContournageCycle:
             obj.addProperty("App::PropertyLength", "ApproachRetractLength", "Approche", "Longueur de l'approche/sortie")
             obj.ApproachRetractLength = 12.0  # Valeur par défaut en mm
 
-    
+        if not hasattr(obj, "desactivated"):
+            obj.addProperty("App::PropertyBool", "desactivated", "General", "Désactiver le cycle")
+            obj.desactivated = False
+
+        obj.Proxy = self
+
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
         self.__init__(obj)
@@ -75,11 +80,17 @@ class ContournageCycle:
 
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        if prop in ["ToolDiameter", "CutDepth", "StepDown", "Direction", "ContourGeometryName", "ApproachType", "RetractType", "ApproachRetractLength", "ApproachRetractLength"]:
+        if prop in ["ToolDiameter", "CutDepth", "StepDown", "Direction", "ContourGeometryName", "ApproachType", "RetractType", "ApproachRetractLength", "ApproachRetractLength", "desactivated"]:
             self.execute(obj)
     
     def execute(self, obj):
         """Mettre à jour la représentation visuelle"""
+        
+        obj.Shape = Part.Shape()
+
+        if obj.desactivated:
+            return
+
         # Vérifier si l'objet a une géométrie de contour associée
         if not hasattr(obj, "ContourGeometryName") or not obj.ContourGeometryName:
             #App.Console.PrintError("Aucune géométrie de contour associée.\n")
@@ -231,7 +242,7 @@ class ContournageCycle:
                             try:
                                 path_shape = adjusted_wire.makeOffset2D(offset_value, fill=False, join=0, openResult=True)
                                 # Réordonner et afficher la séquence des points
-                                path_shape = self.reorder_wire(path_shapes)
+                                path_shape = self.reorder_wire(path_shape)
                                 App.Console.PrintMessage(f"Décalage créé avec makeOffset2D pour wire ouvert: {offset_value} mm\n")
                             except Exception as e:
                                 App.Console.PrintError(f"Erreur lors de la création du décalage pour wire ouvert: {str(e)}\n")
@@ -342,6 +353,9 @@ class ViewProviderContournageCycle:
     
     def getIcon(self):
         """Retourne l'icône"""
+
+        if self.Object.desactivated:
+            return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "operation_disabled.svg")
         return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Contournage.svg")
     
     def attach(self, vobj):
@@ -358,7 +372,18 @@ class ViewProviderContournageCycle:
         """Configuration du menu contextuel"""
         action = menu.addAction("Edit")
         action.triggered.connect(lambda: self.setEdit(vobj))
+
+        action2 = menu.addAction("Activate" if vobj.Object.desactivated else "Desactivate")
+        action2.triggered.connect(lambda: self.setDesactivate(vobj))
         return True
+    
+    def setDesactivate(self, vobj):
+        """Désactive l'objet"""
+        vobj.Object.desactivated = not vobj.Object.desactivated
+        if vobj.Object.desactivated:
+            vobj.Object.ViewObject.Visibility = False
+        else:
+            vobj.Object.ViewObject.Visibility = True
     
     def updateData(self, obj, prop):
         """Appelé lorsqu'une propriété de l'objet est modifiée"""

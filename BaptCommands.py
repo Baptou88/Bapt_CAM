@@ -10,11 +10,53 @@ import BaptCamProject
 import BaptDrillOperation
 import BaptGeometry
 import BaptMachiningCycle
+import BaptOrigin
+import BaptPocketOperation
 import BaptMpfReader
 import BaptTools
+import BaptPostProcess
+from Op import Surfacage
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
+
+class CreateOriginCommand:    
+    """Commande pour créer une origine d'usinage (G54, G55, ...)."""
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Origin.svg"),
+                'MenuText': "Nouvelle Origine",
+                'ToolTip': "Créer une nouvelle origine d'usinage (G54, G55, ...)."}
+    def IsActive(self):
+        return App.ActiveDocument is not None
+    def Activated(self):
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Origin')
+        obj = BaptOrigin.createOrigin()
+        doc.recompute()
+        doc.commitTransaction()
+        App.Console.PrintMessage(f"Origine créée : {obj.OriginName} ({obj.OriginNumber})\n")
+
+class CreatePocketOperationCommand:
+    """Commande pour créer une opération de poche basée sur ContourGeometry"""
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Pocket.svg"),
+                'MenuText': "Nouvelle opération de poche",
+                'ToolTip': "Créer une nouvelle opération de poche pour l'usinage"}
+
+    def IsActive(self):
+        sel = Gui.Selection.getSelection()
+        return sel and hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
+
+    def Activated(self):
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Pocket Operation')
+        contour_geometry = Gui.Selection.getSelection()[0]
+        obj = BaptPocketOperation.createPocketOperation(contour=contour_geometry)
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        doc.recompute()
+        doc.commitTransaction()
+        App.Console.PrintMessage(f"Opération de poche créée et liée à {contour_geometry.Label}.\n")
 
 class CreateContourCommand:
     """Commande pour créer un Contournage"""
@@ -145,6 +187,63 @@ class CreateDrillGeometryCommand:
 
         doc.commitTransaction()
 
+class CreateSurfacageCommand:
+    """Commande pour créer un nouveau surfacage"""
+
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Surfacage.svg"),
+                'MenuText': "Nouveau Surfacage",
+                'ToolTip': "Créer un nouveau surfacage"}
+
+    def IsActive(self):
+        """La commande est active si un document est ouvert"""
+        sel = Gui.Selection.getSelection()
+        if not sel:
+            return False
+        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject"
+
+    def Activated(self):
+        """Créer un nouveau surfacage"""
+        
+        doc = App.ActiveDocument
+        # Créer un nouveau document si aucun n'est ouvert
+        if doc is None:
+            doc = App.newDocument()
+        
+        doc.openTransaction('Create Surfacage')
+
+        # Créer l'objet surfacage
+        obj = doc.addObject("Part::FeaturePython", "Surfacage")
+        
+
+        project = Gui.Selection.getSelection()[0]
+
+        # Ajouter la fonctionnalité
+        Surfacage.Surfacage(obj)
+        
+        # Ajouter le ViewProvider
+        if obj.ViewObject:
+            Surfacage.ViewProviderSurfacage(obj.ViewObject)
+        
+        # Ajouter au groupe Operations
+        operations_group = project.Proxy.getOperationsGroup(project)
+        operations_group.addObject(obj)
+
+        obj.Stock = project.Proxy.getStock(project)
+
+        # Recomputer
+        doc.recompute()
+        
+        # Ouvrir l'éditeur
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+            
+        # Message de confirmation
+        App.Console.PrintMessage("Surfacage créé avec succès!\n")
+
+        doc.commitTransaction()
+
+
 
 class CreateCamProjectCommand:
     """Commande pour créer un nouveau projet CAM"""
@@ -179,6 +278,20 @@ class CreateCamProjectCommand:
         if obj.ViewObject:
             BaptCamProject.ViewProviderCamProject(obj.ViewObject)
         
+        from BaptCamProject import ObjSelector
+        dlg = ObjSelector()
+        if dlg.exec_():
+            model = dlg.getSelectedObject()
+            if model:
+                model.ViewObject.Visibility = False
+                import Draft
+                clone = Draft.clone(model)
+                clone.Label = f"Clone_{model.Label}"
+                clone.ViewObject.Visibility = True
+                clone.ViewObject.Transparency = 50
+
+                obj.Model = clone
+                obj.addObject(clone)
         # Recomputer
         doc.recompute()
         
@@ -191,6 +304,8 @@ class CreateCamProjectCommand:
 
         doc.commitTransaction()
 
+
+    
 class CreateContourGeometryCommand:
     """Commande pour créer une géométrie de contour"""
 
@@ -269,10 +384,12 @@ class CreateHotReloadCommand:
             reload(BaptContournageTaskPanel)
             import BaptDrillTaskPanel
             reload(BaptDrillTaskPanel)
-            import BaptToolsTaskPanel
-            reload(BaptToolsTaskPanel)
             import BaptPreferences
             reload(BaptPreferences)
+            from Op import Surfacage
+            reload(Surfacage)
+            import BaptPostProcess
+            reload(BaptPostProcess)
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 
@@ -377,13 +494,29 @@ class BaptCommand:
         """Cette fonction est exécutée quand la commande est activée"""
         App.Console.PrintMessage("Hello, FreeCAD!\n")
 
+class PostProcessGCodeCommand:
+    """Commande pour générer un programme G-code à partir du projet CAM"""
+    def GetResources(self):
+        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "PostProcess.svg"),
+                'MenuText': "Post-process G-code",
+                'ToolTip': "Générer un programme G-code à partir des opérations d'usinage"}
+    def IsActive(self):
+        return App.ActiveDocument is not None
+    def Activated(self):
+        BaptPostProcess.postprocess_gcode()
+
 # Enregistrer les commandes
 Gui.addCommand('Bapt_Command', BaptCommand())
+Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
+Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
 Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
 Gui.addCommand('Bapt_CreateContourGeometry', CreateContourGeometryCommand())
 Gui.addCommand('Bapt_CreateMachiningCycle', CreateContourCommand())
+Gui.addCommand('Bapt_CreatePocketOperation', CreatePocketOperationCommand())
 Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())
 Gui.addCommand('Bapt_ToolsManager', ToolsManagerCommand())
 Gui.addCommand('Bapt_CreateDrillOperation', CreateDrillOperationCommand())  # Ajouter la nouvelle commande
 Gui.addCommand('ImportMpf', BaptMpfReader.ImportMpfCommand())  # Ajouter la commande d'importation MPF
+Gui.addCommand('Bapt_PostProcessGCode', PostProcessGCodeCommand())
+Gui.addCommand('Bapt_CreateSurfacage', CreateSurfacageCommand())

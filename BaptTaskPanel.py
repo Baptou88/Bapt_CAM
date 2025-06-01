@@ -1,38 +1,8 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
+from utils import PointSelectionObserver
 
-class PointSelectionObserver:
-    def __init__(self, callback):
-        self.callback = callback
-        self.active = False
-        
-    def enable(self):
-        """Activer l'observer"""
-        self.active = True
-        Gui.Selection.addObserver(self)
-        App.Console.PrintMessage("Observer activé. Cliquez sur un point de la pièce.\n")
-        
-    def disable(self):
-        """Désactiver l'observer"""
-        self.active = False
-        Gui.Selection.removeObserver(self)
-        App.Console.PrintMessage("Observer désactivé.\n")
-        
-    def addSelection(self, document, object, element, position):
-        """Appelé quand l'utilisateur sélectionne quelque chose"""
-        if not self.active:
-            return
-            
-        # Récupérer les coordonnées du point sélectionné
-        point = App.Vector(position[0], position[1], position[2])
-        App.Console.PrintMessage(f"Point sélectionné: {point.x}, {point.y}, {point.z}\n")
-        
-        # Appeler le callback avec le point
-        self.callback(point)
-        
-        # Désactiver l'observer après la sélection
-        self.disable()
 
 class CamProjectTaskPanel:
     def __init__(self, obj):
@@ -51,20 +21,6 @@ class CamProjectTaskPanel:
         setupGroup = QtGui.QGroupBox("Project Setup")
         setupLayout = QtGui.QFormLayout()
         
-        # Origin
-        self.originX = QtGui.QDoubleSpinBox()
-        self.originY = QtGui.QDoubleSpinBox()
-        self.originZ = QtGui.QDoubleSpinBox()
-        for spinBox in [self.originX, self.originY, self.originZ]:
-            spinBox.setRange(-10000, 10000)
-            spinBox.setDecimals(2)
-
-        originLayout = QtGui.QHBoxLayout()
-        originLayout.addWidget(self.originX)
-        originLayout.addWidget(self.originY)
-        originLayout.addWidget(self.originZ)
-        setupLayout.addRow("Origin (X,Y,Z):", originLayout)
-        
         # Work Plane
         self.workPlane = QtGui.QComboBox()
         self.workPlane.addItems(["XY", "XZ", "YZ"])
@@ -73,6 +29,17 @@ class CamProjectTaskPanel:
         setupGroup.setLayout(setupLayout)
         layout.addWidget(setupGroup)
         
+        # Groupe Model
+        modelGroup = QtGui.QGroupBox("Model")
+        modelLayout = QtGui.QFormLayout()
+        
+        # Model
+        self.model = QtGui.QComboBox()
+        self.model.addItems( [obj.Name for obj in App.ActiveDocument.Objects if obj.isDerivedFrom("Part::Feature")])
+        modelLayout.addRow("Model:", self.model)
+        modelGroup.setLayout(modelLayout)
+        layout.addWidget(modelGroup)
+
         # Groupe Stock
         stockGroup = QtGui.QGroupBox("Stock Dimensions")
         stockLayout = QtGui.QFormLayout()
@@ -123,25 +90,19 @@ class CamProjectTaskPanel:
         layout.addStretch()
         
         # Initialiser les valeurs
-        self.originX.setValue(obj.Origin.x)
-        self.originY.setValue(obj.Origin.y)
-        self.originZ.setValue(obj.Origin.z)
         self.workPlane.setCurrentText(obj.WorkPlane)
-        
+        self.model.setCurrentText(obj.Model.Name)
         if self.stock:
             self.stockLength.setValue(self.stock.Length)
             self.stockWidth.setValue(self.stock.Width)
             self.stockHeight.setValue(self.stock.Height)
-            self.stockOriginX.setValue(self.stock.Origin.x)
-            self.stockOriginY.setValue(self.stock.Origin.y)
-            self.stockOriginZ.setValue(self.stock.Origin.z)
+            self.stockOriginX.setValue(self.stock.Placement.Base.x)
+            self.stockOriginY.setValue(self.stock.Placement.Base.y)
+            self.stockOriginZ.setValue(self.stock.Placement.Base.z)
         
         # Connecter les signaux
-        self.originX.valueChanged.connect(lambda: self.updateVisual())
-        self.originY.valueChanged.connect(lambda: self.updateVisual())
-        self.originZ.valueChanged.connect(lambda: self.updateVisual())
         self.workPlane.currentIndexChanged.connect(lambda: self.updateVisual())
-        
+        self.model.currentIndexChanged.connect(lambda: self.updateVisual())
         self.stockOriginX.valueChanged.connect(lambda: self.updateVisual())
         self.stockOriginY.valueChanged.connect(lambda: self.updateVisual())
         self.stockOriginZ.valueChanged.connect(lambda: self.updateVisual())
@@ -164,7 +125,7 @@ class CamProjectTaskPanel:
         self.clickOnPartBtn.setEnabled(False)
         
         # Créer et activer l'observer
-        self.observer = PointSelectionObserver(self.pointSelected)
+        self.observer = PointSelectionObserver.PointSelectionObserver(self.pointSelected)
         self.observer.enable()
 
     def pointSelected(self, point):
@@ -184,15 +145,18 @@ class CamProjectTaskPanel:
     def updateVisual(self):
         """Met à jour la représentation visuelle"""
         # Mettre à jour les propriétés du projet
-        self.obj.Origin = App.Vector(self.originX.value(), self.originY.value(), self.originZ.value())
         self.obj.WorkPlane = self.workPlane.currentText()
-        
+        # Mettre à jour les propriétés du model
+        for obj in App.ActiveDocument.Objects:
+            if obj.Name == self.model.currentText():
+                self.obj.Model = obj
+                break
         # Mettre à jour les propriétés du stock
         if self.stock:
             self.stock.Length = self.stockLength.value()
             self.stock.Width = self.stockWidth.value()
             self.stock.Height = self.stockHeight.value()
-            self.stock.Origin = App.Vector(self.stockOriginX.value(), self.stockOriginY.value(), self.stockOriginZ.value())
+            self.stock.Placement = App.Placement(App.Vector(self.stockOriginX.value(), self.stockOriginY.value(), self.stockOriginZ.value()), App.Rotation(App.Vector(0,0,1),0))
             self.stock.WorkPlane = self.workPlane.currentText()
         
         # Recomputer
@@ -200,20 +164,8 @@ class CamProjectTaskPanel:
 
     def accept(self):
         """Appelé quand l'utilisateur clique sur OK"""
-        # Mettre à jour l'origine et le plan de travail du projet
-        self.obj.Origin = App.Vector(self.originX.value(), self.originY.value(), self.originZ.value())
-        self.obj.WorkPlane = self.workPlane.currentText()
         
-        # Mettre à jour les propriétés du stock
-        if self.stock:
-            self.stock.Length = self.stockLength.value()
-            self.stock.Width = self.stockWidth.value()
-            self.stock.Height = self.stockHeight.value()
-            self.stock.Origin = App.Vector(self.stockOriginX.value(), self.stockOriginY.value(), self.stockOriginZ.value())
-            self.stock.WorkPlane = self.workPlane.currentText()
-        
-        # Recomputer
-        self.obj.Document.recompute()
+        self.updateVisual()
         
         # Fermer la tâche
         Gui.Control.closeDialog()
