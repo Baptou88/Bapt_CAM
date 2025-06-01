@@ -9,17 +9,21 @@
 
   <date>2025-05-29</date>
 
-  <maintainer email="Baptou_88@gmail.com">Baptou_88</maintainer>
+
+  <maintainer email="Baptou_88@gmail.com"> Baptou88</maintainer>
 
   <license file="LICENSE">LGPL-2.1-or-later</license>
 
-  <url type="website">https://github.com/Baptou_88/Bapt_Cam/blob/main/CHANGELOG.md</url>
+  <url branch="main" type="repository">https://github.com/Baptou88/Bapt_Cam</url>
 
-  <url branch="main" type="repository">https://github.com/Baptou_88/Bapt_Cam</url>
 
-  <url type="readme">https://github.com/Baptou_88/Bapt_Cam/blob/main/README.md</url>
+  <url type="readme">https://github.com/Baptou88/Bapt_Cam/blob/main/README.md</url>
 
-  <author>Baptou_88 (https://github.com/Baptou_88)</author>
+
+  <url type="changelog">https://github.com/Baptou88/Bapt_Cam/blob/main/CHANGELOG.md</url>
+
+  <author>Baptou_88 (https://github.com/Baptou88)</author>
+
 
   <icon>Resources/icons/BaptWorkbench.svg</icon>
 
