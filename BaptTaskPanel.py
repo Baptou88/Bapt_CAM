@@ -29,6 +29,17 @@ class CamProjectTaskPanel:
         setupGroup.setLayout(setupLayout)
         layout.addWidget(setupGroup)
         
+        # Groupe Model
+        modelGroup = QtGui.QGroupBox("Model")
+        modelLayout = QtGui.QFormLayout()
+        
+        # Model
+        self.model = QtGui.QComboBox()
+        self.model.addItems( [obj.Name for obj in App.ActiveDocument.Objects if obj.isDerivedFrom("Part::Feature")])
+        modelLayout.addRow("Model:", self.model)
+        modelGroup.setLayout(modelLayout)
+        layout.addWidget(modelGroup)
+
         # Groupe Stock
         stockGroup = QtGui.QGroupBox("Stock Dimensions")
         stockLayout = QtGui.QFormLayout()
@@ -80,18 +91,18 @@ class CamProjectTaskPanel:
         
         # Initialiser les valeurs
         self.workPlane.setCurrentText(obj.WorkPlane)
-        
+        self.model.setCurrentText(obj.Model.Name)
         if self.stock:
             self.stockLength.setValue(self.stock.Length)
             self.stockWidth.setValue(self.stock.Width)
             self.stockHeight.setValue(self.stock.Height)
-            self.stockOriginX.setValue(self.stock.Origin.x)
-            self.stockOriginY.setValue(self.stock.Origin.y)
-            self.stockOriginZ.setValue(self.stock.Origin.z)
+            self.stockOriginX.setValue(self.stock.Placement.Base.x)
+            self.stockOriginY.setValue(self.stock.Placement.Base.y)
+            self.stockOriginZ.setValue(self.stock.Placement.Base.z)
         
         # Connecter les signaux
         self.workPlane.currentIndexChanged.connect(lambda: self.updateVisual())
-        
+        self.model.currentIndexChanged.connect(lambda: self.updateVisual())
         self.stockOriginX.valueChanged.connect(lambda: self.updateVisual())
         self.stockOriginY.valueChanged.connect(lambda: self.updateVisual())
         self.stockOriginZ.valueChanged.connect(lambda: self.updateVisual())
@@ -135,13 +146,17 @@ class CamProjectTaskPanel:
         """Met à jour la représentation visuelle"""
         # Mettre à jour les propriétés du projet
         self.obj.WorkPlane = self.workPlane.currentText()
-        
+        # Mettre à jour les propriétés du model
+        for obj in App.ActiveDocument.Objects:
+            if obj.Name == self.model.currentText():
+                self.obj.Model = obj
+                break
         # Mettre à jour les propriétés du stock
         if self.stock:
             self.stock.Length = self.stockLength.value()
             self.stock.Width = self.stockWidth.value()
             self.stock.Height = self.stockHeight.value()
-            self.stock.Origin = App.Vector(self.stockOriginX.value(), self.stockOriginY.value(), self.stockOriginZ.value())
+            self.stock.Placement = App.Placement(App.Vector(self.stockOriginX.value(), self.stockOriginY.value(), self.stockOriginZ.value()), App.Rotation(App.Vector(0,0,1),0))
             self.stock.WorkPlane = self.workPlane.currentText()
         
         # Recomputer
@@ -149,19 +164,8 @@ class CamProjectTaskPanel:
 
     def accept(self):
         """Appelé quand l'utilisateur clique sur OK"""
-        # Mettre à jour l'origine et le plan de travail du projet
-        self.obj.WorkPlane = self.workPlane.currentText()
         
-        # Mettre à jour les propriétés du stock
-        if self.stock:
-            self.stock.Length = self.stockLength.value()
-            self.stock.Width = self.stockWidth.value()
-            self.stock.Height = self.stockHeight.value()
-            self.stock.Origin = App.Vector(self.stockOriginX.value(), self.stockOriginY.value(), self.stockOriginZ.value())
-            self.stock.WorkPlane = self.workPlane.currentText()
-        
-        # Recomputer
-        self.obj.Document.recompute()
+        self.updateVisual()
         
         # Fermer la tâche
         Gui.Control.closeDialog()

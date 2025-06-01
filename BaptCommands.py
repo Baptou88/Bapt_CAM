@@ -278,6 +278,20 @@ class CreateCamProjectCommand:
         if obj.ViewObject:
             BaptCamProject.ViewProviderCamProject(obj.ViewObject)
         
+        from BaptCamProject import ObjSelector
+        dlg = ObjSelector()
+        if dlg.exec_():
+            model = dlg.getSelectedObject()
+            if model:
+                model.ViewObject.Visibility = False
+                import Draft
+                clone = Draft.clone(model)
+                clone.Label = f"Clone_{model.Label}"
+                clone.ViewObject.Visibility = True
+                clone.ViewObject.Transparency = 50
+
+                obj.Model = clone
+                obj.addObject(clone)
         # Recomputer
         doc.recompute()
         
@@ -290,6 +304,8 @@ class CreateCamProjectCommand:
 
         doc.commitTransaction()
 
+
+    
 class CreateContourGeometryCommand:
     """Commande pour créer une géométrie de contour"""
 
@@ -368,12 +384,12 @@ class CreateHotReloadCommand:
             reload(BaptContournageTaskPanel)
             import BaptDrillTaskPanel
             reload(BaptDrillTaskPanel)
-            import BaptToolsTaskPanel
-            reload(BaptToolsTaskPanel)
             import BaptPreferences
             reload(BaptPreferences)
-            import Surfacage
+            from Op import Surfacage
             reload(Surfacage)
+            import BaptPostProcess
+            reload(BaptPostProcess)
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 

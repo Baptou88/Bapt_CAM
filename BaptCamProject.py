@@ -32,9 +32,9 @@ class Stock:
             obj.addProperty("App::PropertyLength", "Height", "Stock", "Hauteur du brut")
             obj.Height = 50.0
         
-        if not hasattr(obj, "Origin"):
-            obj.addProperty("App::PropertyVector", "Origin", "Stock", "Origine du brut")
-            obj.Origin = App.Vector(0, 0, 0)
+        # if not hasattr(obj, "Origin"):
+        #     obj.addProperty("App::PropertyVector", "Origin", "Stock", "Origine du brut")
+        #     obj.Origin = App.Vector(0, 0, 0)
         
         if not hasattr(obj, "WorkPlane"):
             obj.addProperty("App::PropertyEnumeration", "WorkPlane", "Stock", "Plan de travail")
@@ -59,24 +59,26 @@ class Stock:
         """Mettre à jour la forme du brut en fonction des propriétés"""
         if not hasattr(obj,"WorkPlane"):
             return
-        try:
-            # Créer la boîte en fonction du plan de travail
-            if obj.WorkPlane == "XY":
-                box = Part.makeBox(obj.Length, obj.Width, obj.Height, obj.Origin)
-            elif obj.WorkPlane == "XZ":
-                box = Part.makeBox(obj.Length, obj.Height, obj.Width, obj.Origin)
-            else:  # YZ
-                box = Part.makeBox(obj.Height, obj.Length, obj.Width, obj.Origin)
-            
-            # Assigner la forme
-            obj.Shape = box
-            
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de la mise à jour du brut: {str(e)}\n")
+        App.Console.PrintMessage(f'updateShape {obj.Placement.Base}\n')
+        placement = obj.Placement
+        obj.Shape = Part.Shape()
+        
+        
+        # Créer la boîte en fonction du plan de travail
+        if obj.WorkPlane == "XY":
+            box = Part.makeBox(obj.Length, obj.Width, obj.Height)
+        elif obj.WorkPlane == "XZ":
+            box = Part.makeBox(obj.Length, obj.Height, obj.Width)
+        else:  # YZ
+            box = Part.makeBox(obj.Height, obj.Length, obj.Width)
+        
+        # Assigner la forme
+        obj.Shape = box
+        obj.Placement = placement
     
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        if prop in ["Length", "Width", "Height", "Origin", "WorkPlane"]:
+        if prop in ["Length", "Width", "Height", "WorkPlane"]:
             self.updateShape(obj)
     
     def __getstate__(self):
@@ -127,6 +129,49 @@ class ViewProviderStock:
     def __setstate__(self, state):
         """Désérialisation"""
         return None
+
+class ObjSelector(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Sélection d'objet")
+        self.resize(350, 200)
+        layout = QtWidgets.QVBoxLayout(self)
+        
+        # Liste des objets du document actif
+        self.listWidget = QtWidgets.QListWidget()
+        self.objects = []
+        doc = App.ActiveDocument
+        if doc:
+            for obj in doc.Objects:
+                if hasattr(obj, "Shape"):
+                    self.objects.append(obj)
+                    self.listWidget.addItem(f"{obj.Label} ({obj.Name})")
+        layout.addWidget(self.listWidget)
+        
+        # Bouton OK
+        self.okBtn = QtWidgets.QPushButton("OK")
+        self.okBtn.clicked.connect(self.accept)
+        layout.addWidget(self.okBtn)
+        
+        # Label pour afficher la bounding box
+        self.resultLabel = QtWidgets.QLabel("")
+        layout.addWidget(self.resultLabel)
+        
+        # Action lors de la sélection
+        self.listWidget.currentRowChanged.connect(self.showObj)
+    
+    def showObj(self, row):
+        if row < 0 or row >= len(self.objects):
+            self.resultLabel.setText("")
+            return
+        obj = self.objects[row]
+        self.resultLabel.setText(obj.Label)
+    
+    def getSelectedObject(self):
+        row = self.listWidget.currentRow()
+        if row < 0 or row >= len(self.objects):
+            return None
+        return self.objects[row]
 
 class BoundingBoxSelector(QtWidgets.QDialog):
     def __init__(self, parent=None):
@@ -192,6 +237,9 @@ class CamProject:
             obj.WorkPlane = ["XY", "XZ", "YZ"]
             obj.WorkPlane = "XY"
         
+        if not hasattr(obj, "Model"):
+            obj.addProperty("App::PropertyLink", "Model", "Base", "The base objects for all operations")
+
         # Créer le groupe Operations
         self.getOperationsGroup(obj)
         
@@ -301,14 +349,17 @@ class CamProject:
                     stock.Length = bbox.XLength
                     stock.Width = bbox.YLength
                     stock.Height = bbox.ZLength
-                    stock.Origin = App.Vector(bbox.XMin, bbox.YMin, bbox.ZMin)
+                    stock.Placement = App.Placement(App.Vector(bbox.XMin, bbox.YMin, bbox.ZMin), App.Rotation(App.Vector(0,0,1),0))
+                    App.Console.PrintMessage(f"Stock created: {stock.Name}\n")
+                    App.Console.PrintMessage(f"Stock origin: {stock.Placement.Base}\n")
+                    #stock.Origin = App.Vector(bbox.XMin, bbox.YMin, bbox.ZMin)
                 else:
                     App.Console.PrintMessage("Aucun objet sélectionné.\n")
                     # Initialiser les propriétés du stock
                     stock.Length = 100.0
                     stock.Width = 100.0
                     stock.Height = 50.0
-                    stock.Origin = App.Vector(0, 0, 0)
+                    stock.Placement.Base = App.Vector(0, 0, 0)
             stock.WorkPlane = obj.WorkPlane
             
             # Ajouter le stock au groupe

@@ -17,7 +17,7 @@ def list_machining_operations(obj):
         App.Console.PrintMessage(f"Objet: {obj.Label}\n")
     ops = []
     if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type in [
-        'ContournageCycle', 'DrillOperation']:
+        'ContournageCycle', 'DrillOperation', 'Surfacage']:
         ops.append(obj)
     # Parcours récursif des groupes/enfants
     if hasattr(obj, 'Group') and obj.Group:
@@ -38,6 +38,48 @@ def generate_gcode(cam_project):
     App.Console.PrintMessage(f"Nombre d'opérations d'usinage: {len(machining_ops)}\n")
     for obj in machining_ops:
         if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type'):
+            # --- Surfacage ---
+            if obj.Proxy.Type == 'Surfacage' and hasattr(obj, 'Shape'):
+                # Gestion du changement d'outil si ToolId présent
+                tool_id = getattr(obj, 'ToolId', None)
+                tool_name = getattr(obj, 'ToolName', None)
+                spindle = getattr(obj, 'SpindleSpeed', None)
+                feed = getattr(obj, 'FeedRate', None)
+                if tool_id is not None and tool_id != current_tool:
+                    gcode_lines.append(f"(Changement d'outil: {tool_name if tool_name else ''})")
+                    gcode_lines.append(f"M6 T{tool_id}")
+                    if spindle:
+                        gcode_lines.append(f"S{spindle} M3")
+                        current_spindle = spindle
+                    if feed:
+                        gcode_lines.append(f"F{feed}")
+                        current_feed = feed
+                    current_tool = tool_id
+                gcode_lines.append(f"(Surfacage: {obj.Label})")
+                last_pt = None
+                for edge in obj.Shape.Edges:
+                    v1 = edge.Vertexes[0].Point
+                    v2 = edge.Vertexes[1].Point
+                    # Premier point: déplacement rapide (G0)
+                    if last_pt is None or (v1.x != last_pt.x or v1.y != last_pt.y or v1.z != last_pt.z):
+                        gcode_lines.append(f"G0 X{v1.x:.3f} Y{v1.y:.3f} Z{v1.z:.3f}")
+                    # Arc de cercle ?
+                    if hasattr(edge, 'Curve') and edge.Curve and edge.Curve.TypeId == 'Part::GeomCircle':
+                        circle = edge.Curve
+                        center = circle.Center
+                        # Calculer I, J (relatifs au point de départ)
+                        I = center.x - v1.x
+                        J = center.y - v1.y
+                        # Sens horaire/anti-horaire
+                        if edge.Orientation == 'Forward':
+                            gcode_cmd = 'G2'  # Horaire
+                        else:
+                            gcode_cmd = 'G3'  # Anti-horaire
+                        gcode_lines.append(f"{gcode_cmd} X{v2.x:.3f} Y{v2.y:.3f} I{I:.3f} J{J:.3f} Z{v2.z:.3f}")
+                    else:
+                        # Usinage (G1)
+                        gcode_lines.append(f"G1 X{v2.x:.3f} Y{v2.y:.3f} Z{v2.z:.3f}")
+                    last_pt = v2
             # --- Contournage ---
             if obj.Proxy.Type == 'ContournageCycle' and hasattr(obj, 'Shape'):
                 # Gestion du changement d'outil si ToolId présent
