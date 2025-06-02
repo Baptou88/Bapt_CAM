@@ -19,7 +19,7 @@ class DrillGeometry:
         
         self.Type = "DrillGeometry"
         
-        obj.addExtension("App::GroupExtensionPython")
+        #obj.addExtension("App::GroupExtensionPython")
         #obj.addExtension("App::DocumentObjectGroupPython")
         #obj.addExtension("App::LinkExtensionPython")
         
@@ -366,7 +366,7 @@ class ContourGeometry:
         
         # Transformer l'objet en groupe
         #obj.addExtension("App::GroupExtensionPython", None)
-        obj.addExtension("App::GroupExtensionPython")
+        # obj.addExtension("App::GroupExtensionPython")
         #DocumentObjectGroupPython
         
         # Permettre les références à des objets en dehors du groupe
@@ -408,8 +408,16 @@ class ContourGeometry:
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
-        return
+        #return
+        # App.Console.PrintMessage('Restoring ContourGeometry\n')
+        # children = []
+        # if hasattr(obj, "Group"):
+        #     App.Console.PrintMessage(f"ContourGeometry {obj.Name} a un groupe\n")
+        #     for child in obj.Group:
+        #         App.Console.PrintMessage(f"Enfant: {child.Name}\n")
+        #         children.append(child)
         self.__init__(obj)
+        # obj.Group = children
         
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""

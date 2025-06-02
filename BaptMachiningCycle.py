@@ -86,7 +86,9 @@ class ContournageCycle:
     
     def execute(self, obj):
         """Mettre à jour la représentation visuelle"""
-        
+        if App.ActiveDocument.Restoring:
+            return
+
         obj.Shape = Part.Shape()
 
         if obj.desactivated:

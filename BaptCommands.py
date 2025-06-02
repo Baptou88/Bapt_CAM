@@ -165,6 +165,7 @@ class CreateDrillGeometryCommand:
         # Créer l'objet avec le type DocumentObjectGroupPython pour pouvoir contenir des enfants
         #obj = doc.addObject("App::DocumentObjectGroupPython", "DrillGeometry")
         obj = doc.addObject("Part::FeaturePython", "DrillGeometry")
+        obj.addExtension("App::GroupExtensionPython")
         
         # Ajouter la fonctionnalité
         drill = BaptGeometry.DrillGeometry(obj)
@@ -333,7 +334,8 @@ class CreateContourGeometryCommand:
         # Créer l'objet avec le bon type pour avoir une Shape
         obj = App.ActiveDocument.addObject("Part::FeaturePython", "ContourGeometry")
         #obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "ContourGeometry")
-        
+        obj.addExtension("App::GroupExtensionPython")
+
         # Ajouter la fonctionnalité
         contour = BaptGeometry.ContourGeometry(obj)
         
