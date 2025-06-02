@@ -6,6 +6,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
 import MPFParser
+import BaptUtilities
 
 class MpfReader:
     """Classe pour lire et analyser les fichiers MPF (programmes d'usinage)"""
@@ -396,7 +397,7 @@ class ImportMpfCommand:
     
     def GetResources(self):
         return {
-            'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "ImportMpf.svg"),
+            'Pixmap': BaptUtilities.getIconPath("ImportMpf.svg"),
             'MenuText': "Importer un fichier MPF",
             'ToolTip': "Importer un programme d'usinage au format MPF"
         }
@@ -446,7 +447,7 @@ class ViewProviderMpfReader:
     
     def getIcon(self):
         """Retourne l'icône"""
-        return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "ImportMpf.svg")
+        return BaptUtilities.getIconPath("ImportMpf.svg")
     
     def setupContextMenu(self, vobj, menu):
         """Configuration du menu contextuel"""
@@ -478,7 +479,7 @@ class ViewProviderMpfReader:
         """
         Retourne l'icône associée à l'objet
         """
-        return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "ImportMpf.svg")
+        return BaptUtilities.getIconPath("ImportMpf.svg")
     
     def attach(self, vobj):
         """

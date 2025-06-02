@@ -3,6 +3,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 import Part
 from FreeCAD import Base
+import BaptUtilities
 
 class ContournageCycle:
     """Représente un cycle d'usinage de contournage"""
@@ -355,8 +356,8 @@ class ViewProviderContournageCycle:
         """Retourne l'icône"""
 
         if self.Object.desactivated:
-            return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "operation_disabled.svg")
-        return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Contournage.svg")
+            return BaptUtilities.getIconPath("operation_disabled.svg")
+        return BaptUtilities.getIconPath("Contournage.svg")
     
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""

@@ -5,6 +5,7 @@ import os
 import math
 from FreeCAD import Base
 from PySide import QtCore, QtGui
+import BaptUtilities
 
 class DrillOperation:
     """Classe représentant une opération d'usinage de perçage"""
@@ -357,7 +358,7 @@ class ViewProviderDrillOperation:
         
     def getIcon(self):
         """Retourne l'icône"""
-        return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Drilling.svg")
+        return BaptUtilities.getIconPath("Tree_Drilling.svg")
         
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""

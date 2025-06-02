@@ -5,6 +5,8 @@ import os
 from FreeCAD import Base
 from PySide import QtCore, QtGui
 import math
+import sys
+import BaptUtilities
 
 try:
     from pivy import coin
@@ -198,7 +200,7 @@ class ViewProviderDrillGeometry:
         
     def getIcon(self):
         """Retourne l'icône"""
-        return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Drilling.svg")
+        return BaptUtilities.getIconPath("Tree_Drilling.svg")
         
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""
@@ -406,16 +408,18 @@ class ContourGeometry:
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
+        return
         self.__init__(obj)
         
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        #App.Console.PrintMessage('changement \n')
         if prop in ["DepthMode"]:
+            App.Console.PrintMessage('changement \n')
             if obj.DepthMode == "Relatif":
                 obj.depth = obj.depth - obj.Zref
             else:
                 obj.depth = obj.Zref + obj.depth
+            App.Console.PrintMessage(' fin changement \n')
             self.execute(obj)
         elif prop in ["Edges", "Zref", "Direction", "depth"]:
             self.execute(obj)
@@ -425,6 +429,8 @@ class ContourGeometry:
 
     def execute(self, obj):
         """Mettre à jour la représentation visuelle du contour"""
+        if App.ActiveDocument.Restoring:
+            return
         try:
             if not hasattr(obj, "Edges") or not obj.Edges:
                 App.Console.PrintMessage("Aucune arête sélectionnée pour le contour.\n")
@@ -444,6 +450,8 @@ class ContourGeometry:
                             #App.Console.PrintMessage(f"Arête ajoutée: {sub_name} de {obj_ref.Name}\n")
                         except Exception as e:
                             App.Console.PrintError(f"Execute : Erreur lors de la récupération de l'arête {sub_name}: {str(e)}\n")
+                            exc_type, exc_obj, exc_tb = sys.exc_info()
+                            App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
             
             if not edges:
                 App.Console.PrintError("Aucune arête valide trouvée.\n")
@@ -804,7 +812,7 @@ class ViewProviderContourGeometry:
     
     def getIcon(self):
         """Retourne l'icône"""
-        return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Contour.svg")
+        return BaptUtilities.getIconPath("Tree_Contour.svg")
     
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""

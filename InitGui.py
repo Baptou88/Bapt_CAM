@@ -9,12 +9,14 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from FreeCADGui import Workbench
 import os
+import BaptUtilities
 
 class BaptWorkbench (Workbench):
     def __init__(self):
         self.__class__.MenuText = "Bapt"
         self.__class__.ToolTip = "Bapt Workbench"
-        self.__class__.Icon = os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg")
+        import BaptUtilities
+        self.__class__.Icon = BaptUtilities.getIconPath("BaptWorkbench.svg")
 
     def Initialize(self):
         """This function is executed when the workbench is first activated.
@@ -42,4 +44,4 @@ Gui.addWorkbench(BaptWorkbench())
 # Register preferences
 from BaptPreferences import BaptPreferencesPage
 Gui.addPreferencePage(BaptPreferencesPage, "Bapt")
-Gui.addIconPath(os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons"))
+Gui.addIconPath(os.path.join(BaptUtilities.getResourcesPath(), "icons"))

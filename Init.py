@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import BaptUtilities
 
 """
 Init.py for Bapt Workbench
@@ -9,7 +10,8 @@ class BaptWorkbench (Workbench):
     def __init__(self):
         import os
         import inspect
-        self.__class__.Icon = os.path.join(os.path.dirname(inspect.getfile(self.__class__)), "resources", "icons", "BaptWorkbench.svg")
+        #self.__class__.Icon = os.path.join(os.path.dirname(inspect.getfile(self.__class__)), "resources", "icons", "BaptWorkbench.svg")
+        self.__class__.Icon = BaptUtilities.getIconPath("BaptWorkbench.svg")
         self.__class__.MenuText = "Bapt"
         self.__class__.ToolTip = "Bapt Workbench"
 

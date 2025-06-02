@@ -120,8 +120,8 @@ class ContourTaskPanel:
         # Connecter les signaux pour l'actualisation en temps réel
         self.confirmSelectionButton.clicked.connect(self.confirmSelection)
         self.direction.currentTextChanged.connect(self.updateContour)
-        self.Zref.valueChanged.connect(self.updateContour)
-        self.depth.valueChanged.connect(self.updateContour)
+        self.Zref.valueChanged.connect(self.updateZref)
+        self.depth.valueChanged.connect(self.updateDepth)
         
         # Connecter les signaux pour le changement de mode de profondeur
         if self.obj.DepthMode == "Relatif":
@@ -265,7 +265,8 @@ class ContourTaskPanel:
             self.relativeDepthRadio.clicked.disconnect(self.depthModeChanged)
         #     # Passage en mode relatif
         #     #self.depth.setRange(-100, 0)
-            self.depth.setValue(current_value - self.Zref.value())
+            #self.depth.setValue(current_value - self.Zref.value())
+            
             self.depth.setSuffix(" mm (relatif)")
             self.obj.DepthMode = "Relatif"
         else:
@@ -274,12 +275,21 @@ class ContourTaskPanel:
             self.relativeDepthRadio.clicked.connect(self.depthModeChanged)
         #     # Passage en mode absolu
         #     #self.depth.setRange(0.1, 100)
-            self.depth.setValue(self.Zref.value() + current_value)
+            #self.depth.setValue(self.Zref.value() + current_value)
+            
             self.depth.setSuffix(" mm (absolu)")
             self.obj.DepthMode = "Absolu"
-        
+        App.Console.PrintMessage('fin calcul\n')
         # Mettre à jour le contour
         self.updateContour()
+
+    def updateZref(self):
+        """Met à jour Zref"""
+        self.obj.Zref = self.Zref.value()
+
+    def updateDepth(self):
+        """Met à jour depth"""
+        self.obj.depth = self.depth.value()
 
     def updateContour(self):
         """Met à jour le contour en fonction des paramètres"""
@@ -287,19 +297,21 @@ class ContourTaskPanel:
         self.obj.Direction = self.direction.currentText()
         
         # Mettre à jour Zref
-        self.obj.Zref = self.Zref.value()
+        # self.obj.Zref = self.Zref.value()
         
-        self.obj.depth = self.depth.value()
+        # self.obj.depth = self.depth.value()
+        self.Zref.setValue(self.obj.Zref)
+        self.depth.setValue(self.obj.depth)
         
         # Mettre à jour le mode de profondeur
-        if self.relativeDepthRadio.isChecked():
+        #if self.relativeDepthRadio.isChecked():
             # Mode relatif: depth = Zref + valeur relative (négative)
             #self.obj.depth = self.Zref.value() + self.depth.value()
-            self.obj.DepthMode = "Relatif"
-        else:
+            #self.obj.DepthMode = "Relatif"
+        #else:
             # Mode absolu: depth = valeur absolue
             #self.obj.depth = self.depth.value()
-            self.obj.DepthMode = "Absolu"
+            #self.obj.DepthMode = "Absolu"
         
         self.obj.Document.recompute()
     

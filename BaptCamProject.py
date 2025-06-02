@@ -3,6 +3,7 @@ import FreeCADGui as Gui
 import Part
 from FreeCAD import Base
 import os
+import BaptUtilities
 from PySide2 import QtWidgets
 
 class Stock:
@@ -104,7 +105,7 @@ class ViewProviderStock:
     
     def getIcon(self):
         """Retourne l'icône"""
-        return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Stock.svg")
+        return BaptUtilities.getIconPath("Tree_Stock.svg")
     
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""
@@ -397,7 +398,7 @@ class ViewProviderCamProject:
     
     def getIcon(self):
         """Retourne l'icône"""
-        return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg")
+        return BaptUtilities.getIconPath("BaptWorkbench.svg")
         
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""

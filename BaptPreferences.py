@@ -2,6 +2,7 @@ import os
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
+import BaptUtilities
 
 class BaptPreferences:
     def __init__(self):
@@ -118,7 +119,7 @@ class BaptPreferences:
         self.toolsDbPath.clear()
         self.saveSettings()
         
-        default_path = os.path.join(App.getUserAppDataDir(), "Bapt", "tools.db")
+        default_path = BaptUtilities.getToolsDbPath()
         
         # Afficher un message de confirmation
         QtGui.QMessageBox.information(

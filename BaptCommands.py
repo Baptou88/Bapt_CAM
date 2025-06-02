@@ -19,11 +19,12 @@ from Op import Surfacage
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
+import BaptUtilities
 
 class CreateOriginCommand:    
     """Commande pour créer une origine d'usinage (G54, G55, ...)."""
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Origin.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Origin.svg"),
                 'MenuText': "Nouvelle Origine",
                 'ToolTip': "Créer une nouvelle origine d'usinage (G54, G55, ...)."}
     def IsActive(self):
@@ -39,7 +40,7 @@ class CreateOriginCommand:
 class CreatePocketOperationCommand:
     """Commande pour créer une opération de poche basée sur ContourGeometry"""
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Pocket.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Pocket.svg"),
                 'MenuText': "Nouvelle opération de poche",
                 'ToolTip': "Créer une nouvelle opération de poche pour l'usinage"}
 
@@ -62,7 +63,7 @@ class CreateContourCommand:
     """Commande pour créer un Contournage"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Contournage.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Contournage.svg"),
                 'MenuText': "Nouveau Contournage",
                 'ToolTip': "Créer un nouveau contournage pour l'usinage"}
 
@@ -141,7 +142,7 @@ class CreateDrillGeometryCommand:
     """Commande pour créer une géométrie de perçage"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Drilling.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Tree_Drilling.svg"),
                 'MenuText': "Nouvelle géométrie de perçage",
                 'ToolTip': "Créer une nouvelle géométrie de perçage"}
 
@@ -191,7 +192,7 @@ class CreateSurfacageCommand:
     """Commande pour créer un nouveau surfacage"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Surfacage.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Surfacage.svg"),
                 'MenuText': "Nouveau Surfacage",
                 'ToolTip': "Créer un nouveau surfacage"}
 
@@ -249,7 +250,7 @@ class CreateCamProjectCommand:
     """Commande pour créer un nouveau projet CAM"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
                 'MenuText': "Nouveau Projet CAM",
                 'ToolTip': "Créer un nouveau projet d'usinage"}
 
@@ -310,7 +311,7 @@ class CreateContourGeometryCommand:
     """Commande pour créer une géométrie de contour"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Contour.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Tree_Contour.svg"),
                 'MenuText': "Nouvelle géométrie de contour",
                 'ToolTip': "Créer une nouvelle géométrie de contour pour l'usinage"}
 
@@ -366,7 +367,7 @@ class CreateContourGeometryCommand:
 
 class CreateHotReloadCommand:
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
                 'MenuText': "Hot Reload",
                 'ToolTip': "Recharge les modules Bapt"}
     def IsActive(self):
@@ -405,7 +406,7 @@ class ToolsManagerCommand:
     """Commande pour ouvrir le gestionnaire d'outils"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
                 'MenuText': "Gestionnaire d'outils",
                 'ToolTip': "Ouvrir le gestionnaire d'outils pour créer et éditer des outils"}
 
@@ -423,7 +424,7 @@ class CreateDrillOperationCommand:
     """Commande pour créer une opération d'usinage de perçage"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Drilling.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Tree_Drilling.svg"),
                 'MenuText': "Nouvelle opération de perçage",
                 'ToolTip': "Créer une nouvelle opération d'usinage pour les géométries de perçage"}
 
@@ -482,7 +483,7 @@ class BaptCommand:
     """Ma première commande"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
                 'MenuText': "Ma Commande",
                 'ToolTip': "Description de ma commande"}
 
@@ -497,7 +498,7 @@ class BaptCommand:
 class PostProcessGCodeCommand:
     """Commande pour générer un programme G-code à partir du projet CAM"""
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "PostProcess.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("PostProcess.svg"),
                 'MenuText': "Post-process G-code",
                 'ToolTip': "Générer un programme G-code à partir des opérations d'usinage"}
     def IsActive(self):

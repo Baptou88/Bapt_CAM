@@ -6,6 +6,7 @@ from PySide import QtCore, QtGui
 import json
 import sqlite3
 from BaptPreferences import BaptPreferences
+import BaptUtilities
 
 class Tool:
     """Classe représentant un outil d'usinage"""
@@ -71,7 +72,7 @@ class ToolDatabase:
             self.db_path = custom_path
         else:
             # Chemin par défaut vers le fichier de base de données
-            self.db_path = os.path.join(App.getUserAppDataDir(), "Bapt", "tools.db")
+            self.db_path = BaptUtilities.getToolsDbPath()
             
             # Créer le dossier s'il n'existe pas
             os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
