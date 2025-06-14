@@ -154,7 +154,12 @@ class BaptPreferences:
         
     def getToolsDbPath(self):
         """Obtenir le chemin de la base de données d'outils"""
-        return self.preferences.GetString("ToolsDbPath", "")
+        path = self.preferences.GetString("ToolsDbPath", "")
+        if not path or not os.path.isdir(os.path.dirname(path)):
+            path = os.path.join(App.getUserAppDataDir(), "Bapt", "tools.db")
+            # Créer le dossier s'il n'existe pas
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+        return path
 
     def getGCodeFolderPath(self):
         """Obtenir le dossier par défaut des programmes G-code"""

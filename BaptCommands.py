@@ -20,6 +20,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
 import BaptUtilities
+from Probe import probeFace
 
 class CreateOriginCommand:    
     """Commande pour créer une origine d'usinage (G54, G55, ...)."""
@@ -393,6 +394,9 @@ class CreateHotReloadCommand:
             reload(Surfacage)
             import BaptPostProcess
             reload(BaptPostProcess)
+            import probe
+            reload(probe)
+
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 
@@ -508,6 +512,35 @@ class PostProcessGCodeCommand:
     def Activated(self):
         BaptPostProcess.postprocess_gcode()
 
+class ProbeFaceCommand:
+    """Commande pour générer un Probing sur une face"""
+    def GetResources(self):
+        return {'Pixmap': BaptUtilities.getIconPath("ProbeSurface.svg"),
+                'MenuText': "Probing sur une face",
+                'ToolTip': "Générer un Probing sur une face"}
+    def IsActive(self):
+        return App.ActiveDocument is not None
+    def Activated(self):
+        #import probe.ProbeFace
+        
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Probe Face')
+        
+        obj = doc.addObject("Part::FeaturePython", "ProbeFace")
+        
+        
+        probeFace.ProbeFace(obj)
+
+        if obj.ViewObject:
+            probeFace.ViewProviderProbeFace(obj.ViewObject)
+
+
+        # Ouvrir l'éditeur
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+
+        doc.commitTransaction()
+
 # Enregistrer les commandes
 Gui.addCommand('Bapt_Command', BaptCommand())
 Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
@@ -523,3 +556,4 @@ Gui.addCommand('Bapt_CreateDrillOperation', CreateDrillOperationCommand())  # Aj
 Gui.addCommand('ImportMpf', BaptMpfReader.ImportMpfCommand())  # Ajouter la commande d'importation MPF
 Gui.addCommand('Bapt_PostProcessGCode', PostProcessGCodeCommand())
 Gui.addCommand('Bapt_CreateSurfacage', CreateSurfacageCommand())
+Gui.addCommand('Bapt_CreateProbeFace', ProbeFaceCommand())

@@ -96,7 +96,11 @@ class PocketOperation:
             loops = []
             current = shape
             while True:
-                offset = current.makeOffset2D(-offset_dist, fill=False, join=0, openResult=True)
+                #offset = current.makeOffset2D(-offset_dist, fill=False, join=0, openResult=True)
+
+                face = Part.Face(current)
+                offset = face.makeOffset(-offset_dist)
+
                 # On arrête si l'offset n'est plus fermé ou trop petit
                 if not offset or not hasattr(offset, 'Wires') or not offset.Wires:
                     break

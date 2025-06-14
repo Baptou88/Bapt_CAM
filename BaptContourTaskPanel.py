@@ -1,3 +1,4 @@
+from BaptCamProject import CamProject
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
@@ -61,6 +62,10 @@ class ContourTaskPanel:
         contourGroup.setLayout(contourLayout)
         layout.addWidget(contourGroup)
         
+        # ReverseOrder btn
+        self.reverseOrderButton = QtGui.QPushButton("Inverser l'ordre des arêtes")
+        self.reverseOrderButton.clicked.connect(self.reverseOrder)
+        layout.addWidget(self.reverseOrderButton)
         
         # Groupe Coupe
         contourGroup = QtGui.QGroupBox("Paramètres du contour")
@@ -131,7 +136,28 @@ class ContourTaskPanel:
         
         # Variable pour suivre l'état de sélection
         self.selectionMode = False
+        self.viewModeToRestore = None
         
+    
+    def reverseOrder(self):
+        """Inverser l'ordre des arêtes sélectionnées"""
+        if not hasattr(self.obj, "Edges") or not self.obj.Edges:
+            return
+        
+        a = []
+        # Inverser l'ordre des arêtes
+        for edge in self.obj.Edges:
+            print(edge)
+            for subElement in edge[1]:
+                print(subElement)
+                a.insert(0, (edge[0], [subElement]))
+        self.obj.Edges = a
+        print(f"new edges: {self.obj.Edges}")
+        #print(f"new edges reverse: {self.obj.Edges.reverse()}")
+        
+        # Mettre à jour l'affichage
+        self.updateEdgesLabel()
+    
     def updateEdgesLabel(self):
         """Met à jour l'affichage des arêtes sélectionnées"""
         if not hasattr(self.obj, "Edges") or not self.obj.Edges:
@@ -175,6 +201,25 @@ class ContourTaskPanel:
         # Activer le mode de sélection
         self.selectionMode = True
         self.confirmSelectionButton.setEnabled(True)
+
+
+        # recupere l'objet CamProject Parent
+        parent = self.obj.getParent()
+        print(f"parent: {parent.Name}")
+        while parent and not isinstance(parent, CamProject):
+        #while parent and not parent.Type == "CamProject":
+            parent = parent.getParent()
+            #print(f"parent: {parent.Name}")
+        parent = self.obj.getParent().getParent() #TODO fixme
+        if parent:
+            self.viewModeToRestore = parent.Model.ViewObject.DisplayMode
+            print(f"viewModeToRestore: {self.viewModeToRestore}")
+            print(f"viewModeToRestore: {parent.Model.Name}")
+            parent.Model.ViewObject.DisplayMode = u"Wireframe"
+        else:
+            print("No parent found")
+        self.selectable = self.obj.ViewObject.Selectable
+        self.obj.ViewObject.Selectable = False
         
         # Récupérer la sélection actuelle
         #current_selection = Gui.Selection.getSelectionEx()
@@ -204,6 +249,16 @@ class ContourTaskPanel:
         self.selectionMode = False
         self.confirmSelectionButton.setEnabled(False)
         
+        self.obj.ViewObject.Selectable = self.selectable
+
+        # recupere l'objet CamProject Parent
+        parent = self.obj.getParent()
+        while parent and not isinstance(parent, CamProject):
+            parent = parent.getParent()
+        parent = self.obj.getParent().getParent() #TODO fixme
+        if parent:
+            parent.Model.ViewObject.DisplayMode = self.viewModeToRestore
+        
         # Désactiver le mode de sélection
         Gui.Selection.removeSelectionGate()
         
@@ -219,10 +274,20 @@ class ContourTaskPanel:
         # Récupérer la sélection
         selection = Gui.Selection.getSelectionEx()
         
+        self.obj.ViewObject.Selectable = self.selectable
+        
+        # recupere l'objet CamProject Parent
+        parent = self.obj.getParent()
+        while parent and not isinstance(parent, CamProject):
+            parent = parent.getParent()
+        parent = self.obj.getParent().getParent() #TODO fixme
+        if parent:
+            parent.Model.ViewObject.DisplayMode = self.viewModeToRestore
+        
         App.Console.PrintMessage(f"Confirmation de la sélection: {len(selection)} objets sélectionnés.\n")
         
         if not selection:
-            App.Console.PrintMessage("Aucune arête sélectionnée.\n")
+            #App.Console.PrintMessage("Aucune arête sélectionnée.\n")
             return
         
         # Mettre à jour les arêtes sélectionnées
@@ -334,10 +399,10 @@ class ContourTaskPanel:
                         if vertex.Point.z > highest_z:
                             highest_z = vertex.Point.z
             #self.obj.Zref = highest_z
-        else:
-            App.Console.PrintWarning("Aucune arête sélectionnée, Zref non mis à jour.\n")
-        #debug
-        App.Console.PrintMessage(f"Zref mis à jour: {self.obj.Zref}\n")
+        # else:
+        #     App.Console.PrintWarning("Aucune arête sélectionnée, Zref non mis à jour.\n")
+        # #debug
+        # App.Console.PrintMessage(f"Zref mis à jour: {self.obj.Zref}\n")
         
         # # Mettre à jour les autres propriétés
         # self.obj.Zref = self.Zref.value()

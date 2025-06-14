@@ -4,6 +4,7 @@ import FreeCADGui as Gui
 import Part
 from FreeCAD import Base
 import BaptUtilities
+import math
 
 class ContournageCycle:
     """Représente un cycle d'usinage de contournage"""
@@ -84,238 +85,267 @@ class ContournageCycle:
         if prop in ["ToolDiameter", "CutDepth", "StepDown", "Direction", "ContourGeometryName", "ApproachType", "RetractType", "ApproachRetractLength", "ApproachRetractLength", "desactivated"]:
             self.execute(obj)
     
+    def calculatePasse(self,obj):
+        geom = self.getContourGeometry(obj)
+        if not geom:
+            return []
+        
+        Zref = geom.Zref
+        depth = geom.depth
+        prise = obj.StepDown
+
+        passes = []
+        
+        if geom.DepthMode == "Relatif":
+            depth = geom.Zref + geom.depth
+        
+        if Zref <= depth:
+            App.Console.PrintError("La hauteur de référence est inférieure ou égale à la profondeur de coupe.\n")
+            return []
+        
+        passeEquilibre = True
+
+        if passeEquilibre:
+            nbPasses = math.ceil(math.fabs(depth - Zref) / prise)
+            prise = math.fabs(depth - Zref) / nbPasses
+            for i in range(nbPasses):
+                passes.append(Zref - (i +1) * prise)
+        else:
+            while True:
+                if Zref - prise >= depth + prise:
+                    passes.append(depth)
+                    depth -= prise   
+                    break
+                else:
+                    passes.append(depth)
+                    
+        return passes
+        
+    def getContourGeometry(self, obj):
+        """Récupérer la géométrie du contour associée"""
+        if not hasattr(obj, "ContourGeometryName") or not obj.ContourGeometryName:
+            App.Console.PrintError("Aucune géométrie de contour associée.\n")
+            return None
+        
+        doc = obj.Document
+        for o in doc.Objects:
+            if o.Name == obj.ContourGeometryName:
+                return o
+        
+        App.Console.PrintError(f"Impossible de trouver la géométrie du contour '{obj.ContourGeometryName}'.\n")
+        return None
+    
     def execute(self, obj):
         """Mettre à jour la représentation visuelle"""
         if App.ActiveDocument.Restoring:
             return
 
-        obj.Shape = Part.Shape()
+        obj.Shape = Part.Shape() # Initialize shape
+        all_pass_shapes_collected = [] # To collect all edges/wires from all passes
 
+        passes_z_values = self.calculatePasse(obj)
+        App.Console.PrintMessage(f'Passes Z values: {passes_z_values}\n')
+        
         if obj.desactivated:
             return
 
-        # Vérifier si l'objet a une géométrie de contour associée
-        if not hasattr(obj, "ContourGeometryName") or not obj.ContourGeometryName:
-            #App.Console.PrintError("Aucune géométrie de contour associée.\n")
+        contour_geom = self.getContourGeometry(obj)
+        if not contour_geom:
+            App.Console.PrintError("ContourGeometry not found.\n")
             return
-        
-        # Récupérer la géométrie du contour
-        doc = obj.Document
-        contour = None
-        
-        for o in doc.Objects:
-            if o.Name == obj.ContourGeometryName:
-                contour = o
+
+        if not hasattr(contour_geom, "Shape") or not contour_geom.Shape or not contour_geom.Shape.Wires:
+            App.Console.PrintError("ContourGeometry Shape or Wires not found or empty.\n")
+            return
+
+        # Find the Zref wire from ContourGeometry.Shape.Wires
+        zref_wire_from_contour = None
+        contour_zref = contour_geom.Zref if hasattr(contour_geom, "Zref") else 0.0
+        for wire_in_geom in contour_geom.Shape.Wires:
+            if wire_in_geom.Edges and abs(wire_in_geom.Edges[0].Vertexes[0].Point.z - contour_zref) < 1e-3:
+                zref_wire_from_contour = wire_in_geom
                 break
         
-        if not contour:
-            App.Console.PrintError(f"Impossible de trouver la géométrie du contour '{obj.ContourGeometryName}'.\n")
-            return
-        
-        if not hasattr(contour, "Shape") or not contour.Shape:
-            App.Console.PrintError("La géométrie du contour n'a pas de forme valide.\n")
-            return
-        
-        # Créer une représentation visuelle de la trajectoire d'usinage
-        try:
-            # Récupérer la hauteur de référence depuis la géométrie du contour
-            z_ref = 0.0
-            if hasattr(contour, "Zref"):
-                z_ref = contour.Zref
-            
-            # Calculer le décalage en fonction du rayon de l'outil
-            offset = obj.ToolDiameter / 2.0
-            
-            # Déterminer la direction du décalage
-            # Pour l'usinage en avalant (Climb), le décalage est vers l'intérieur pour un contour horaire
-            # Pour l'usinage en opposition (Conventional), le décalage est vers l'extérieur pour un contour horaire
-            direction_contour = "Horaire"  # Valeur par défaut
-            if hasattr(contour, "Direction"):
-                direction_contour = contour.Direction
-                
-            direction_usinage = obj.Direction
-            
-            # Déterminer si le décalage est vers l'intérieur ou l'extérieur
-            decalage_interieur = False
-            if (direction_contour == "Horaire" and direction_usinage == "Climb") or \
-               (direction_contour == "Anti-horaire" and direction_usinage == "Conventional"):
-                decalage_interieur = True
-            
-            # Calculer le signe du décalage
-            offset_value = -offset if decalage_interieur else offset
-            
-            # Récupérer la forme du contour
-            shape = contour.Shape
-            
-            # Vérifier si le contour est fermé
-            is_closed = False
-            if hasattr(contour, "IsClosed"):
-                is_closed = contour.IsClosed
-            
-            # Créer le chemin d'outil avec makeOffset
-            path_shape = None
-            
-            # Ajuster la forme à la hauteur de référence (Zref)
-            # Créer une copie de la forme à la hauteur Zref
-            if hasattr(shape, "Wires") and shape.Wires:
-                # Prendre le premier wire si la forme en contient plusieurs
-                wire = shape.Wires[0]
-                
-                # Créer un wire ajusté à la hauteur Zref
-                adjusted_edges = []
-                for edge in wire.Edges:
-                    if isinstance(edge.Curve, Part.Line):
-                        # Pour une ligne droite
-                        p1 = edge.Vertexes[0].Point
-                        p2 = edge.Vertexes[1].Point
-                        p1_z = App.Vector(p1.x, p1.y, z_ref)
-                        p2_z = App.Vector(p2.x, p2.y, z_ref)
-                        adjusted_edges.append(Part.makeLine(p1_z, p2_z))
-                    elif isinstance(edge.Curve, Part.Circle):
-                        # Pour un arc ou un cercle
-                        circle = edge.Curve
-                        center = App.Vector(circle.Center.x, circle.Center.y, z_ref)
-                        axis = App.Vector(0, 0, 1)
-                        
-                        # Créer un nouveau cercle
-                        new_circle = Part.Circle(center, axis, circle.Radius)
-                        
-                        # Si c'est un arc (pas un cercle complet)
-                        if hasattr(edge, "FirstParameter") and hasattr(edge, "LastParameter"):
-                            first_param = edge.FirstParameter
-                            last_param = edge.LastParameter
-                            if first_param != last_param:
-                                adjusted_edges.append(Part.Edge(new_circle, first_param, last_param))
-                            else:
-                                adjusted_edges.append(Part.Edge(new_circle))
-                        else:
-                            adjusted_edges.append(Part.Edge(new_circle))
-                    else:
-                        # Pour les autres types de courbes, utiliser une approximation par points
-                        try:
-                            points = []
-                            for i in range(10):  # Utiliser 10 points pour l'approximation
-                                param = edge.FirstParameter + (edge.LastParameter - edge.FirstParameter) * i / 9
-                                point = edge.valueAt(param)
-                                point_z = App.Vector(point.x, point.y, z_ref)
-                                points.append(point_z)
-                            
-                            if len(points) >= 2:
-                                bspline = Part.BSplineCurve()
-                                bspline.interpolate(points)
-                                adjusted_edges.append(Part.Edge(bspline))
-                        except Exception as e:
-                            App.Console.PrintWarning(f"Erreur lors de l'ajustement d'une courbe complexe: {str(e)}\n")
-                
-                # Créer un wire ajusté
-                if adjusted_edges:
-                    try:
-                        # Trier les arêtes pour s'assurer qu'elles sont connectées
-                        sorted_edges = Part.__sortEdges__(adjusted_edges)
-                        adjusted_wire = Part.Wire(sorted_edges)
-                        
-                        # Vérifier si le wire est fermé
-                        if adjusted_wire.isClosed():
-                            # Pour un wire fermé, créer une face puis utiliser makeOffset
-                            try:
-                                face = Part.Face(adjusted_wire)
-                                offset_shape = face.makeOffset(offset_value)
-                                
-                                # Extraire le wire du résultat du décalage
-                                if isinstance(offset_shape, Part.Shape) and hasattr(offset_shape, "Wires") and offset_shape.Wires:
-                                    path_shape = offset_shape.Wires[0]
-                                else:
-                                    path_shape = offset_shape
-                                # Réordonner et afficher la séquence des points
-                                path_shape = self.reorder_wire(path_shape)
-                                App.Console.PrintMessage(f"Décalage créé avec makeOffset: {offset_value} mm\n")
-                            except Exception as e:
-                                App.Console.PrintError(f"Erreur lors de la création du décalage avec makeOffset: {str(e)}\n")
-                                
-                                # En cas d'échec, essayer avec makeOffset2D directement sur le wire
-                                try:
-                                    path_shape = adjusted_wire.makeOffset2D(offset_value, fill=False, join=0, openResult=True)
-                                    # Réordonner et afficher la séquence des points
-                                    path_shape = self.reorder_wire(path_shape)
-                                    App.Console.PrintMessage(f"Décalage créé avec makeOffset2D: {offset_value} mm\n")
-                                except Exception as e2:
-                                    App.Console.PrintError(f"Erreur lors de la création du décalage avec makeOffset2D: {str(e2)}\n")
-                        else:
-                            # Pour un wire ouvert, utiliser makeOffset2D
-                            try:
-                                path_shape = adjusted_wire.makeOffset2D(offset_value, fill=False, join=0, openResult=True)
-                                # Réordonner et afficher la séquence des points
-                                path_shape = self.reorder_wire(path_shape)
-                                App.Console.PrintMessage(f"Décalage créé avec makeOffset2D pour wire ouvert: {offset_value} mm\n")
-                            except Exception as e:
-                                App.Console.PrintError(f"Erreur lors de la création du décalage pour wire ouvert: {str(e)}\n")
-                    except Exception as e:
-                        App.Console.PrintError(f"Erreur lors de la création du wire ajusté: {str(e)}\n")
-            
-            # --- Ajout des segments d'approche et de sortie ---
-            approach_length = obj.ApproachRetractLength.Value if hasattr(obj, "ApproachRetractLength") else 12.0
-            approach_edges = []
-            retract_edges = []
-            
-            # Récupérer les points de départ et d'arrivée du wire
-            if hasattr(path_shape, "Vertexes") and len(path_shape.Vertexes) >= 2:
-                start = path_shape.Vertexes[0].Point
-                end = path_shape.Vertexes[-1].Point
-                #debug start end end
-                App.Console.PrintMessage(f"Start: {start}\n")
-                App.Console.PrintMessage(f"End: {end}\n")
-                
-                # Direction tangentielle au départ
-                tangent = None
-                if hasattr(path_shape, "Edges") and len(path_shape.Edges) > 0:
-                    try:
-                        tangent_vec = path_shape.Edges[0].tangentAt(0)
-                        if tangent_vec.Length > 0:
-                            tangent = tangent_vec.normalize()
-                    except Exception:
-                        tangent = None
-                approach = obj.ApproachType
-                # Approche
-                if approach == "Tangentielle" and tangent:
-                    approach_start = start - tangent.multiply(approach_length)
-                    approach_edge = Part.makeLine(approach_start, start)
-                    approach_edges.append(approach_edge)
-                elif approach == "Perpendiculaire" and tangent:
-                    perp = App.Vector(-tangent.y, tangent.x, tangent.z).normalize()
-                    approach_start = start - perp.multiply(approach_length)
-                    approach_edge = Part.makeLine(approach_start, start)
-                    approach_edges.append(approach_edge)
-                elif approach == "Hélicoïdale":
-                    # TODO: Implémenter une vraie approche hélicoïdale
-                    approach_edges.append(Part.makeLine(start - App.Vector(0, 0, approach_length), start))
-                # Sortie
-                tangent_end = None
-                if hasattr(path_shape, "Edges") and len(path_shape.Edges) > 0:
-                    try:
-                        tangent_end_vec = path_shape.Edges[-1].tangentAt(1)
-                        if tangent_end_vec.Length > 0:
-                            tangent_end = tangent_end_vec.normalize()
-                    except Exception:
-                        tangent_end = None
-                retract = obj.RetractType
-                if retract == "Tangentielle" and tangent_end:
-                    retract_end = end + tangent_end.multiply(-approach_length)
-                    retract_edges.append(Part.makeLine(end, retract_end))
-                elif retract == "Perpendiculaire" and tangent_end:
-                    perp_end = App.Vector(-tangent_end.y, tangent_end.x, tangent_end.z).normalize()
-                    retract_end = end + perp_end.multiply(-approach_length)
-                    retract_edges.append(Part.makeLine(end, retract_end))
-                elif retract == "Hélicoïdale":
-                    # TODO: Implémenter une vraie sortie hélicoïdale
-                    retract_edges.append(Part.makeLine(end, end + App.Vector(0, 0, approach_length)))
+        if not zref_wire_from_contour:
+            App.Console.PrintError("Zref wire not found in ContourGeometry.Shape.\n")
+            # Fallback: try to use the first wire if any
+            if contour_geom.Shape.Wires:
+                zref_wire_from_contour = contour_geom.Shape.Wires[0]
+                App.Console.PrintWarning("Using the first available wire as Zref wire fallback.\n")
+            else:
+                return
 
-            # Fusionner tous les segments
-            all_edges = approach_edges + path_shape.Edges + retract_edges
-            obj.Shape = Part.makeCompound(all_edges)
-            App.Console.PrintMessage("Chemin d'usinage (entrée, contour, sortie) créé avec succès.\n")
+        # --- Calculations needed once --- 
+        tool_offset_radius = obj.ToolDiameter / 2.0
+        direction_contour = contour_geom.Direction if hasattr(contour_geom, "Direction") else "Horaire"
+        direction_usinage = obj.Direction
+        
+        is_offset_inward = (direction_contour == "Horaire" and direction_usinage == "Climb") or \
+                           (direction_contour == "Anti-horaire" and direction_usinage == "Conventional")
+        actual_offset_value = -tool_offset_radius if is_offset_inward else tool_offset_radius
+        
+        is_contour_closed = contour_geom.IsClosed if hasattr(contour_geom, "IsClosed") else False
+        approach_length = obj.ApproachRetractLength
+        approach_type = obj.ApproachType
+        retract_type = obj.RetractType
+
+        #use Part.sortEdges to sort the edges of the wire
+        #zref_wire_from_contour = Part.sortEdges(zref_wire_from_contour)
+        # --- End of once-off calculations ---
+
+        previous_pass_actual_end_point = None
+        rapid_traverse_z = contour_zref + 2.0
+
+        for pass_z in passes_z_values:
+            App.Console.PrintMessage(f"Processing pass at Z = {pass_z}\n")
+            # current_pass_toolpath_segments list is removed as segments are added directly to all_pass_shapes_collected
+
+            # 1. Create wire at current pass_z by transforming zref_wire_from_contour
+            edges_for_current_pass_z = []
+            for edge in zref_wire_from_contour.Edges:
+                if isinstance(edge.Curve, Part.Line):
+                    p1, p2 = edge.Vertexes[0].Point, edge.Vertexes[1].Point
+                    edges_for_current_pass_z.append(Part.makeLine(App.Vector(p1.x, p1.y, pass_z), App.Vector(p2.x, p2.y, pass_z)))
+                elif isinstance(edge.Curve, Part.Circle):
+                    circ = edge.Curve
+                    center = App.Vector(circ.Center.x, circ.Center.y, pass_z)
+                    axis = App.Vector(0,0,1) # Assuming XY plane for contour
+                    new_circ_geom = Part.Circle(center, axis, circ.Radius)
+                    if hasattr(edge, "FirstParameter") and hasattr(edge, "LastParameter") and edge.FirstParameter != edge.LastParameter:
+                        edges_for_current_pass_z.append(Part.Edge(new_circ_geom, edge.FirstParameter, edge.LastParameter))
+                    else:
+                        edges_for_current_pass_z.append(Part.Edge(new_circ_geom))
+                else: # Fallback for other curve types (e.g., BSpline)
+                    points = [App.Vector(v.Point.x, v.Point.y, pass_z) for v in edge.Vertexes]
+                    if len(points) >= 2:
+                        # This is a simplification; for BSplines, control points at new Z would be better
+                        # For now, creating line segments between transformed vertices
+                        for i in range(len(points) - 1):
+                            edges_for_current_pass_z.append(Part.makeLine(points[i], points[i+1]))
+                    elif edge.CurveType == 'BSplineCurve': # More specific BSpline handling if possible
+                        try:
+                            bs_points = []
+                            num_samples = 20 # Or from a property
+                            for i in range(num_samples + 1):
+                                param = edge.FirstParameter + (edge.LastParameter - edge.FirstParameter) * i / num_samples
+                                pt_on_curve = edge.valueAt(param)
+                                bs_points.append(App.Vector(pt_on_curve.x, pt_on_curve.y, pass_z))
+                            if len(bs_points) >=2:
+                                bspline_at_z = Part.BSplineCurve()
+                                bspline_at_z.interpolate(bs_points)
+                                edges_for_current_pass_z.append(bspline_at_z.toShape())
+                        except Exception as e_bspline:
+                            App.Console.PrintError(f"Failed to transform BSpline for pass Z={pass_z}: {e_bspline}\n")                       
+            
+            if not edges_for_current_pass_z:
+                App.Console.PrintWarning(f"No edges created for wire at Z={pass_z}. Skipping pass.\n")
+                continue
+            wire_at_pass_z = Part.Wire(edges_for_current_pass_z)
+
+            # 2. Apply tool offset to wire_at_pass_z
+            offset_toolpath_wire = None
+            try:
+                if is_contour_closed:
+                    face_for_offset = Part.Face(wire_at_pass_z)
+                    offset_shape_result = face_for_offset.makeOffsetShape(actual_offset_value, 0.1, fill=False)
+                    if offset_shape_result.Wires:
+                        offset_toolpath_wire = offset_shape_result.Wires[0]
+                    elif offset_shape_result.Edges: # Sometimes returns a compound of edges
+                         offset_toolpath_wire = Part.Wire(offset_shape_result.Edges)
+                else:
+                    offset_shape_result = wire_at_pass_z.makeOffset2D(actual_offset_value, join=0, fill=False, openResult=True)
+                    if offset_shape_result.Wires:
+                        offset_toolpath_wire = offset_shape_result.Wires[0]
+                    elif offset_shape_result.Edges:
+                         offset_toolpath_wire = Part.Wire(offset_shape_result.Edges)
                 
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de la création du chemin d'usinage: {str(e)}\n")
+                if not offset_toolpath_wire or not offset_toolpath_wire.Edges:
+                    App.Console.PrintWarning(f"Offsetting failed or resulted in no edges for pass Z={pass_z}. Skipping pass.\n")
+                    continue
+            except Exception as e_offset:
+                App.Console.PrintError(f"Error during offset for pass Z={pass_z}: {e_offset}. Skipping pass.\n")
+                continue
+
+            # 3. Generate Approach and Retract for offset_toolpath_wire
+            core_toolpath_start_pt = offset_toolpath_wire.Edges[0].Vertexes[0].Point
+            core_toolpath_end_pt = offset_toolpath_wire.Edges[-1].Vertexes[-1].Point
+            start_pt = core_toolpath_start_pt # Used for tangent calculation legacy
+            end_pt = core_toolpath_end_pt # Used for tangent calculation legacy
+
+            pass_approach_edges = []
+            pass_retract_edges = []
+
+            first_toolpath_edge = offset_toolpath_wire.Edges[0]
+            last_toolpath_edge = offset_toolpath_wire.Edges[-1]
+            # start_pt and end_pt are now core_toolpath_start_pt and core_toolpath_end_pt
+
+            # Approach
+            try:
+                tangent_start_vec = first_toolpath_edge.tangentAt(0)
+                if tangent_start_vec.Length > 1e-6:
+                    tangent_start = tangent_start_vec.normalize()
+                    if approach_type == "Tangentielle":
+                        pass_approach_edges.append(Part.makeLine(start_pt - tangent_start.multiply(approach_length), start_pt))
+                    elif approach_type == "Perpendiculaire":
+                        perp_start = App.Vector(-tangent_start.y, tangent_start.x, 0).normalize() # Assuming XY plane
+                        pass_approach_edges.append(Part.makeLine(start_pt - perp_start.multiply(approach_length), start_pt))
+                # TODO: Add Helicoidal approach if needed, ensuring Z movement relative to pass_z
+            except Exception as e_approach_tangent:
+                App.Console.PrintWarning(f"Could not calculate start tangent for approach at Z={pass_z}: {e_approach_tangent}\n")
+
+            # Retract
+            try:
+                tangent_end_vec = last_toolpath_edge.tangentAt(last_toolpath_edge.LastParameter)
+                if tangent_end_vec.Length > 1e-6:
+                    tangent_end = tangent_end_vec.normalize()
+                    if retract_type == "Tangentielle":
+                        pass_retract_edges.append(Part.makeLine(end_pt, end_pt + tangent_end.multiply(approach_length)))
+                    elif retract_type == "Perpendiculaire":
+                        perp_end = App.Vector(-tangent_end.y, tangent_end.x, 0).normalize()
+                        pass_retract_edges.append(Part.makeLine(end_pt, end_pt + perp_end.multiply(approach_length)))
+                # TODO: Add Helicoidal retract
+            except Exception as e_retract_tangent:
+                App.Console.PrintWarning(f"Could not calculate end tangent for retract at Z={pass_z}: {e_retract_tangent}\n")
+            
+            # Determine the actual start point of this pass's full trajectory (including approach)
+            current_pass_trajectory_start_point = core_toolpath_start_pt # Default to core path start
+            if pass_approach_edges:
+                current_pass_trajectory_start_point = pass_approach_edges[0].Vertexes[0].Point
+            
+            # LINKING LOGIC: Add rapid move from previous pass end to current pass start
+            if previous_pass_actual_end_point: # If there was a previous pass
+                link_p1 = previous_pass_actual_end_point
+                link_p2 = App.Vector(link_p1.x, link_p1.y, rapid_traverse_z)
+                link_p3 = App.Vector(current_pass_trajectory_start_point.x, current_pass_trajectory_start_point.y, rapid_traverse_z)
+                link_p4 = current_pass_trajectory_start_point
+
+                all_pass_shapes_collected.append(Part.makeLine(link_p1, link_p2)) # Retract to rapid_traverse_z
+                all_pass_shapes_collected.append(Part.makeLine(link_p2, link_p3)) # Traverse at rapid_traverse_z
+                all_pass_shapes_collected.append(Part.makeLine(link_p3, link_p4)) # Plunge to current pass start
+
+            # Add current pass's trajectory segments (approach, core path, retract)
+            all_pass_shapes_collected.extend(pass_approach_edges)
+            all_pass_shapes_collected.extend(offset_toolpath_wire.Edges)
+            all_pass_shapes_collected.extend(pass_retract_edges)
+            
+            # Determine the actual end point of this pass's full trajectory (including retract) for the next iteration's link
+            current_pass_trajectory_end_point = core_toolpath_end_pt # Default to core path end
+            if pass_retract_edges:
+                current_pass_trajectory_end_point = pass_retract_edges[-1].Vertexes[-1].Point
+            previous_pass_actual_end_point = current_pass_trajectory_end_point
+        
+        
+            
+        if all_pass_shapes_collected:
+            try:
+                obj.Shape = Part.makeCompound(all_pass_shapes_collected)
+                App.Console.PrintMessage(f"Multi-pass toolpath generated with {len(passes_z_values)} passes.\n")
+            except Exception as e_compound:
+                App.Console.PrintError(f"Failed to create final compound shape: {e_compound}\n")
+                obj.Shape = Part.Shape() # Fallback to empty shape
+        else:
+            App.Console.PrintWarning("No toolpath segments generated for any pass.\n")
+            obj.Shape = Part.Shape()
     
     def __getstate__(self):
         """Appelé lors de la sauvegarde"""

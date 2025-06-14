@@ -344,6 +344,13 @@ class ViewProviderDrillGeometry:
                         
         return children
     
+    def onDelete(self, feature, subelements): # subelements is a tuple of strings
+        
+        App.Console.PrintMessage(f"onDelete de {feature.Object.Name}\n")
+        for child in feature.Object.Group:
+            App.ActiveDocument.removeObject(child.Name)
+        return True # If False is returned the object won't be deleted
+
     def onBeforeDelete(self, obj, subelements):
         """Supprime tous les enfants lors de la suppression du parent"""
         #debug
@@ -401,8 +408,12 @@ class ContourGeometry:
             obj.addProperty("App::PropertyBool", "IsClosed", "Contour", "Indique si le contour est fermé")
             obj.IsClosed = False
         
-        # Créer une forme vide
-        obj.Shape = Part.Shape()
+        if not hasattr(obj, "testShape"):
+            obj.addProperty("Part::PropertyPartShape", "testShape", "Subsection", "Description for tooltip")
+            obj.testShape = Part.Shape()
+
+
+        obj.Shape = obj.testShape
 
         obj.Proxy = self
 
@@ -422,12 +433,10 @@ class ContourGeometry:
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
         if prop in ["DepthMode"]:
-            App.Console.PrintMessage('changement \n')
             if obj.DepthMode == "Relatif":
                 obj.depth = obj.depth - obj.Zref
             else:
                 obj.depth = obj.Zref + obj.depth
-            App.Console.PrintMessage(' fin changement \n')
             self.execute(obj)
         elif prop in ["Edges", "Zref", "Direction", "depth"]:
             self.execute(obj)
@@ -441,7 +450,7 @@ class ContourGeometry:
             return
         try:
             if not hasattr(obj, "Edges") or not obj.Edges:
-                App.Console.PrintMessage("Aucune arête sélectionnée pour le contour.\n")
+                #App.Console.PrintMessage("Aucune arête sélectionnée pour le contour.\n")
                 return
             
             # Collecter toutes les arêtes sélectionnées
@@ -479,9 +488,16 @@ class ContourGeometry:
             # Créer des flèches pour indiquer la direction
             direction_arrows = []
             
-            for i, edge in enumerate(edges):
+            if False:
+                #sorted_edges = Part.__sortEdges__(obj.Edges)
+                #sorted_edges = Part.__sortEdges__(edges)
+                #sorted_edges = Part.sortEdges(list(edges))
+                sorted_edges = self.chain_edges_tolerant(edges)
+            else:
+                sorted_edges = edges
+
+            for i, edge in enumerate(sorted_edges):
                 # Créer des arêtes ajustées avec des couleurs différentes selon la sélection
-                
                 # Pour l'arête sélectionnée, utiliser une couleur différente et une largeur plus grande
                 edge_zref = self._create_adjusted_edge(edge, obj.Zref, selected= (i == selected_index))
 
@@ -489,15 +505,25 @@ class ContourGeometry:
                     edge_zfinal = self._create_adjusted_edge(edge, obj.Zref + obj.depth, selected=(i == selected_index))
                 else:
                     edge_zfinal = self._create_adjusted_edge(edge, obj.depth, selected=(i == selected_index))
-                
+
                 adjusted_edges_zref.append(edge_zref)
                 adjusted_edges_depth.append(edge_zfinal)
-                
                 # Créer une flèche pour indiquer la direction de l'arête
                 arrow = self._create_direction_arrow(edge, obj.Zref, size=2.0)
                 if arrow:
                     direction_arrows.append(arrow)
+
             
+            # Diagnostic avant création du wire
+            App.Console.PrintMessage(f"[DEBUG] Nombre d'arêtes pour le wire Zref: {len(adjusted_edges_zref)}\n")
+            for i, e in enumerate(adjusted_edges_zref):
+                try:
+                    start = e.Vertexes[0].Point
+                    end = e.Vertexes[-1].Point
+                    App.Console.PrintMessage(f"[DEBUG] Edge {i}: start={start}, end={end}\n")
+                except Exception as ex_diag:
+                    App.Console.PrintMessage(f"[DEBUG] Edge {i}: Erreur lors de l'accès aux vertex: {ex_diag}\n")
+
             try:
                 # Créer le fil à Zref
                 wire_zref = Part.Wire(adjusted_edges_zref)
@@ -505,11 +531,25 @@ class ContourGeometry:
                 # Créer le fil à depth
                 wire_zfinal = Part.Wire(adjusted_edges_depth)
                 
-                # Créer un compound contenant les deux fils et les flèches
+                # Créer les faces entre les arêtes correspondantes
+                faces = []
+                if len(adjusted_edges_zref) == len(adjusted_edges_depth):
+                    for i in range(len(adjusted_edges_zref)):
+                        try:
+                            face = Part.makeRuledSurface(adjusted_edges_zref[i], adjusted_edges_depth[i])
+                            faces.append(face)
+                        except Exception as e:
+                            App.Console.PrintError(f"Impossible de créer une face entre les arêtes {i}: {str(e)}\n")
+                else:
+                    App.Console.PrintError("Les listes d'arêtes ajustées n'ont pas la même taille, impossible de créer les faces.\n")
+
+                # Créer un compound contenant les deux fils, les flèches et les faces
                 shapes = [wire_zref, wire_zfinal]
                 shapes.extend(direction_arrows)
+                shapes.extend(faces) # Ajouter les faces ici
                 compound = Part.makeCompound(shapes)
                 obj.Shape = compound
+                obj.testShape = compound
                 
                 # Vérifier si le fil est fermé (utiliser le fil à Zref pour cette vérification)
                 if wire_zref.isClosed():
@@ -517,14 +557,23 @@ class ContourGeometry:
                 else:
                     obj.IsClosed = False
                 
+                autoRecomputeChildren = False
+                if autoRecomputeChildren:
+                    for child in obj.Group:
+                        child.recompute()
             except Exception as e:
                 App.Console.PrintError(f"Impossible de créer un fil à partir des arêtes sélectionnées: {str(e)}\n")
+                exc_type, exc_value, exc_traceback = sys.exc_info()
+                line_number = exc_traceback.tb_lineno
+                App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
+                App.Console.PrintError(f"[DEBUG] Les arêtes transmises à Part.Wire ne sont pas chaînées ou sont invalides.\n")
                 # Essayer de créer une forme composite si le fil échoue
                 try:
                     all_edges = adjusted_edges_zref
                     all_edges.extend(adjusted_edges_depth)
                     compound = Part.makeCompound(all_edges)
                     obj.Shape = compound
+                    obj.testShape = compound
                     App.Console.PrintMessage("Forme composite créée à la place du fil.\n")
                     return
                 except Exception as e2:
@@ -533,6 +582,9 @@ class ContourGeometry:
             
         except Exception as e:
             App.Console.PrintError(f"Erreur lors de l'exécution: {str(e)}\n")
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            line_number = exc_traceback.tb_lineno
+            App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
     
     def _create_adjusted_edge(self, edge, z_value, selected=False):
         """Crée une arête ajustée à une hauteur Z spécifique avec une couleur optionnelle
@@ -576,7 +628,7 @@ class ContourGeometry:
                     last_param = edge.LastParameter
                     
                     # Si les paramètres sont différents, c'est un arc
-                    if abs(last_param - first_param) < 6.28:  # Moins que 2*pi
+                    if abs(last_param - first_param) < math.tau:  # Moins que 2*pi
                         new_edge = Part.Edge(new_circle, first_param, last_param)
                     else:
                         # Cercle complet
@@ -608,6 +660,39 @@ class ContourGeometry:
         
         return new_edge
         
+
+    def chain_edges_tolerant(self, edges, tol=1e-3):
+        try:
+            if not edges:
+                return []
+            remaining = edges[:]
+            chain = [remaining.pop(0)]
+            App.Console.PrintMessage(f'chain: {chain}\n')
+            while remaining:
+                last_end = chain[-1].Vertexes[-1].Point
+                found = False
+                for i, e in enumerate(remaining):
+                    start = e.Vertexes[0].Point
+                    end = e.Vertexes[-1].Point
+                    if (last_end.sub(start)).Length < tol:
+                        chain.append(remaining.pop(i))
+                        found = True
+                        break
+                    elif (last_end.sub(end)).Length < tol:
+                        chain.append(remaining.pop(i).copy().reverse())
+                        found = True
+                        break
+                if not found:
+                    # Impossible de chaîner plus loin
+                    break
+            return chain
+        except Exception as e:
+            App.Console.PrintError(f"Erreur lors de la chaînage des arêtes: {str(e)}\n")
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            line_number = exc_traceback.tb_lineno
+            App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
+            return edges
+
     def _create_direction_arrow(self, edge, z_value, size=2.0):
         """Crée une petite flèche au milieu de l'arête pour indiquer la direction
         
@@ -692,22 +777,23 @@ class ContourGeometry:
 
     def updateEdgeColors(self, obj):
         """Met à jour les couleurs des arêtes en fonction de l'index sélectionné"""
+        App.Console.PrintMessage('updateEdgeColors\n')
         if not hasattr(obj, "SelectedEdgeIndex") or not hasattr(obj, "Edges") or not obj.Edges:
             return
-        
+
         selected_index = obj.SelectedEdgeIndex
         if selected_index < 0:
             # Aucune sélection, restaurer les couleurs normales
             self.execute(obj)
             return
-        
+
         try:
             # Collecter toutes les arêtes
             all_edges = []
             for sub in obj.Edges:
                 obj_ref = sub[0]
                 sub_names = sub[1]
-                
+
                 for sub_name in sub_names:
                     if "Edge" in sub_name:
                         try:
@@ -812,7 +898,10 @@ class ViewProviderContourGeometry:
         vobj.PointColor = (1.0, 0.0, 0.0)  # Rouge
         vobj.LineWidth = 4.0  # Largeur de ligne plus grande
         vobj.PointSize = 6.0  # Taille des points plus grande
-        
+
+        vobj.ShapeAppearance[0].DiffuseColor = (255,170,0)
+        vobj.Transparency = 85
+
         # Ajouter une propriété pour la couleur des arêtes sélectionnées
         if not hasattr(vobj, "SelectedEdgeColor"):
             vobj.addProperty("App::PropertyColor", "SelectedEdgeColor", "Display", "Color of selected edges")
@@ -967,3 +1056,9 @@ class ViewProviderContourGeometry:
         if state and "ObjectName" in state and state["ObjectName"]:
             self.Object = App.ActiveDocument.getObject(state["ObjectName"])
         return None
+
+    def onDelete(self,feature, subelements): # subelements is a tuple of strings
+
+        for child in feature.Object.Group:
+            App.ActiveDocument.removeObject(child.Name)
+        return True # If False is returned the object won't be deleted

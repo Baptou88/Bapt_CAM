@@ -213,5 +213,8 @@ def postprocess_gcode():
         with open(filename, 'w') as f:
             f.write(gcode)
         App.Console.PrintMessage(f"G-code généré et sauvegardé dans : {filename}\n")
+        
+
+
     except Exception as e:
         App.Console.PrintError(f"Erreur lors de la sauvegarde du G-code : {str(e)}\n")
