@@ -4,10 +4,12 @@ import FreeCADGui as Gui
 from PySide import QtCore, QtGui
 
 class ContourTaskPanel:
-    def __init__(self, obj):
+    def __init__(self, obj,deleteOnReject):
         # Garder une référence à l'objet
         self.obj = obj
         
+        self.deleteOnReject = deleteOnReject
+
         # Créer l'interface utilisateur
         self.form = QtGui.QWidget()
         self.form.setWindowTitle("Éditer le contour")
@@ -429,7 +431,8 @@ class ContourTaskPanel:
         # Désactiver le mode de sélection si actif
         if self.selectionMode:
             Gui.Selection.removeSelectionGate()
-        
+        if self.deleteOnReject:
+            App.ActiveDocument.removeObject(self.obj.Name)
         Gui.Control.closeDialog()
         return False
     

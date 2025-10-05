@@ -1,15 +1,15 @@
-import FreeCAD as App
-import FreeCADGui as Gui
-import Part
+import FreeCAD as App # type: ignore
+import FreeCADGui as Gui # type: ignore
+import Part # type: ignore
 import os
-from FreeCAD import Base
-from PySide import QtCore, QtGui
+from FreeCAD import Base # type: ignore
+from PySide import QtCore, QtGui  # type: ignore
 import math
 import sys
 import BaptUtilities
 
 try:
-    from pivy import coin
+    from pivy import coin # type: ignore
 except ImportError:
     App.Console.PrintError("Impossible d'importer le module coin. La mise en surbrillance des arêtes ne fonctionnera pas correctement.\n")
 
@@ -444,6 +444,36 @@ class ContourGeometry:
             # Mettre à jour les couleurs des arêtes lorsque la sélection change
             self.updateEdgeColors(obj)
 
+    def debugEdge(self,edge, name =""):
+        # Diagnostic avant création du wire
+            App.Console.PrintMessage(f"[DEBUG] Nombre d'arêtes pour {name}: {len(edge)}\n")
+            for i, e in enumerate(edge):
+                try:
+                    start = e.Vertexes[0].Point
+                    # Arrondir à 3 chiffres après la virgule
+                    start = App.Vector(round(start.x, 3), round(start.y, 3), round(start.z, 3))
+                    end = e.Vertexes[-1].Point
+                    end = App.Vector(round(end.x, 3), round(end.y, 3), round(end.z, 3))
+                    App.Console.PrintMessage(f"[DEBUG] Edge {i}: start={start}, end={end,}, firstParam={e.FirstParameter}, lastParam={e.LastParameter}\n")
+                except Exception as ex_diag:
+                    App.Console.PrintMessage(f"[DEBUG] Edge {i}: Erreur lors de l'accès aux vertex: {ex_diag}\n")
+            App.Console.PrintMessage(f"[DEBUG] Fin du diagnostic pour {name}\n")
+
+    def projeter_edges_sur_plan(self,edgess,plan):
+        """Fonction pour projeter une liste d'arêtes sur un plan"""
+        try:
+            projections = []
+            for edge in edgess:
+                # Projection de l'arête sur le plan
+                projection = edge.makeParallelProjection(plan,App.Vector(0, 0, 1))  
+                projections.append(projection)
+        except Exception as e:
+            App.Console.PrintError(f"Erreur lors de la projection des arêtes: {str(e)}\n")
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            App.Console.PrintMessage(f'Erreur à la ligne {exc_tb.tb_lineno}\n')
+            return []
+        return projections
+    
     def execute(self, obj):
         """Mettre à jour la représentation visuelle du contour"""
         if App.ActiveDocument.Restoring:
@@ -481,26 +511,43 @@ class ContourGeometry:
             if hasattr(obj, "SelectedEdgeIndex"):
                 selected_index = obj.SelectedEdgeIndex
             
+            #planZRef = Part.Plane(Base.Vector(0, 0, obj.Zref), Base.Vector(0, 0, 1))  # Plan à Zref
+            # planZFinal = Part.Plane(Base.Vector(0, 0, (obj.Zref + obj.depth) if obj.DepthMode == "Relatif" else obj.depth), Base.Vector(0, 0, 1))  # Plan à 
+            
             # Créer des arêtes ajustées à la hauteur Zref et à depth
             adjusted_edges_zref = []
             adjusted_edges_depth = []
             
+            # App.Console.PrintMessage(f"edges avant projection: {len(edges)}\n")
+            # App.Console.PrintMessage(f"planZRef: {planZRef}\n")
+
+            # adjusted_edges_zref = self.projeter_edges_sur_plan(edges,planZRef)
+            # adjusted_edges_depth = self.projeter_edges_sur_plan(edges,planZFinal)
+            
             # Créer des flèches pour indiquer la direction
             direction_arrows = []
             
-            if False:
-                #sorted_edges = Part.__sortEdges__(obj.Edges)
-                #sorted_edges = Part.__sortEdges__(edges)
-                #sorted_edges = Part.sortEdges(list(edges))
-                sorted_edges = self.chain_edges_tolerant(edges)
-            else:
-                sorted_edges = edges
+            
+            #sorted_edges = self.order_edges(edges)  # Trier les arêtes par ordre croissant de edges
+            sorted_edges = Part.__sortEdges__(edges)  
+            #sorted_edges = Part.sortEdges(list(edges))[0] #https://github.com/FreeCAD/FreeCAD/commit/1031644fa
+            #sorted_edges = edges.copy()  # Faire une copie des arêtes pour le tri
+            self.debugEdge(sorted_edges, "Sorted Edges")
+
+            
+            if not sorted_edges:
+                App.Console.PrintError("Aucune arête valide après le tri.\n")
+                obj.Shape = Part.Shape()  # Shape vide
+                obj.testShape = Part.Shape()
+                obj.IsClosed = False
+                return
 
             for i, edge in enumerate(sorted_edges):
                 # Créer des arêtes ajustées avec des couleurs différentes selon la sélection
                 # Pour l'arête sélectionnée, utiliser une couleur différente et une largeur plus grande
                 edge_zref = self._create_adjusted_edge(edge, obj.Zref, selected= (i == selected_index))
-
+                #edge_zref = edge
+                
                 if obj.DepthMode == "Relatif":
                     edge_zfinal = self._create_adjusted_edge(edge, obj.Zref + obj.depth, selected=(i == selected_index))
                 else:
@@ -514,15 +561,7 @@ class ContourGeometry:
                     direction_arrows.append(arrow)
 
             
-            # Diagnostic avant création du wire
-            App.Console.PrintMessage(f"[DEBUG] Nombre d'arêtes pour le wire Zref: {len(adjusted_edges_zref)}\n")
-            for i, e in enumerate(adjusted_edges_zref):
-                try:
-                    start = e.Vertexes[0].Point
-                    end = e.Vertexes[-1].Point
-                    App.Console.PrintMessage(f"[DEBUG] Edge {i}: start={start}, end={end}\n")
-                except Exception as ex_diag:
-                    App.Console.PrintMessage(f"[DEBUG] Edge {i}: Erreur lors de l'accès aux vertex: {ex_diag}\n")
+            self.debugEdge(adjusted_edges_zref, "Zref")
 
             try:
                 # Créer le fil à Zref
@@ -545,6 +584,7 @@ class ContourGeometry:
 
                 # Créer un compound contenant les deux fils, les flèches et les faces
                 shapes = [wire_zref, wire_zfinal]
+                # shapes = [wire_zref]
                 shapes.extend(direction_arrows)
                 shapes.extend(faces) # Ajouter les faces ici
                 compound = Part.makeCompound(shapes)
@@ -561,6 +601,7 @@ class ContourGeometry:
                 if autoRecomputeChildren:
                     for child in obj.Group:
                         child.recompute()
+
             except Exception as e:
                 App.Console.PrintError(f"Impossible de créer un fil à partir des arêtes sélectionnées: {str(e)}\n")
                 exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -599,13 +640,14 @@ class ContourGeometry:
         """
         new_edge = None
         
+        p1 = edge.Vertexes[0].Point
+        p2 = edge.Vertexes[1].Point
+        # Créer de nouveaux points avec Z = z_value
+        new_p1 = App.Vector(p1.x, p1.y, z_value)
+        new_p2 = App.Vector(p2.x, p2.y, z_value)
+
         if isinstance(edge.Curve, Part.Line):
             # Pour une ligne droite
-            p1 = edge.Vertexes[0].Point
-            p2 = edge.Vertexes[1].Point
-            # Créer de nouveaux points avec Z = z_value
-            new_p1 = App.Vector(p1.x, p1.y, z_value)
-            new_p2 = App.Vector(p2.x, p2.y, z_value)
             # Créer une nouvelle ligne
             new_edge = Part.makeLine(new_p1, new_p2)
         elif isinstance(edge.Curve, Part.Circle):
@@ -614,31 +656,36 @@ class ContourGeometry:
             center = circle.Center
             new_center = App.Vector(center.x, center.y, z_value)
             # Créer un nouvel axe Z
-            new_axis = App.Vector(0, 0, 1)
+            new_axis = edge.Curve.Axis
             radius = circle.Radius
-            
             # Créer un nouveau cercle
             new_circle = Part.Circle(new_center, new_axis, radius)
-            
-            # Vérifier si c'est un arc (pas un cercle complet) en utilisant les paramètres
-            # au lieu des attributs AngleXU et AngleXV qui peuvent ne pas exister
-            try:
-                if hasattr(edge, "FirstParameter") and hasattr(edge, "LastParameter"):
-                    first_param = edge.FirstParameter
-                    last_param = edge.LastParameter
-                    
-                    # Si les paramètres sont différents, c'est un arc
-                    if abs(last_param - first_param) < math.tau:  # Moins que 2*pi
-                        new_edge = Part.Edge(new_circle, first_param, last_param)
-                    else:
-                        # Cercle complet
-                        new_edge = Part.Edge(new_circle)
-                else:
-                    # Cercle complet par défaut
-                    new_edge = Part.Edge(new_circle)
-            except Exception as e:
-                App.Console.PrintWarning(f"Erreur lors de la création d'un arc: {str(e)}. Création d'un cercle complet.\n")
-                new_edge = Part.Edge(new_circle)
+            # On récupère les angles d'origine
+            u1, u2 = edge.ParameterRange
+            # Si l'arc d'origine est CW, il faut inverser la courbe
+            orig_start = edge.valueAt(u1)
+            orig_end = edge.valueAt(u2)
+            # # On vérifie le sens en comparant les points projetés
+            new_edge = Part.Edge(new_circle, u1, u2)
+            new_edge = new_edge.reversed()
+            if (p1 - orig_start).Length > 1e-6 or (p2 - orig_end).Length > 1e-6:
+                # Les points sont inversés, il faut inverser la courbe
+                pass
+               
+        elif isinstance(edge.Curve,Part.Ellipse):
+            # Pour une ellipse
+            ellipse = edge.Curve
+            center = ellipse.Center
+            new_center = App.Vector(center.x, center.y, z_value)
+            # Créer un nouvel axe Z
+            new_axis = App.Vector(0, 0, 1)
+            major_radius = ellipse.MajorRadius
+            minor_radius = ellipse.MinorRadius
+            # On récupère les angles d'origine
+            u1, u2 = edge.ParameterRange
+            # Créer une nouvelle ellipse
+            new_ellipse = Part.Ellipse(new_center, new_axis, major_radius, minor_radius)
+            new_edge = Part.Edge(new_ellipse, u1, u2)
         else:
             # Pour les autres types de courbes, utiliser une approximation par points
             points = []
@@ -660,39 +707,127 @@ class ContourGeometry:
         
         return new_edge
         
+    def order_edges(self, edges, tol=1e-5):
+        """
+        Trie et oriente les edges pour qu'ils forment une chaîne continue.
+        Gère tous les cas de correspondance de sommets.
+        """
+        import Part  # type: ignore
 
-    def chain_edges_tolerant(self, edges, tol=1e-3):
+        if not edges:
+            return []
         try:
-            if not edges:
-                return []
-            remaining = edges[:]
-            chain = [remaining.pop(0)]
-            App.Console.PrintMessage(f'chain: {chain}\n')
-            while remaining:
-                last_end = chain[-1].Vertexes[-1].Point
+
+            unused = list(edges)
+            ordered = [unused.pop(0)]
+
+            while unused:
+                # first = ordered[0].Vertexes[0].Point
+                # last = ordered[-1].Vertexes[-1].Point
+                first = ordered[0].valueAt(ordered[0].FirstParameter)
+                last = ordered[-1].valueAt(ordered[-1].LastParameter)
                 found = False
-                for i, e in enumerate(remaining):
-                    start = e.Vertexes[0].Point
-                    end = e.Vertexes[-1].Point
-                    if (last_end.sub(start)).Length < tol:
-                        chain.append(remaining.pop(i))
+                for i, edge in enumerate(unused):
+                    start = edge.Vertexes[0].Point
+                    end = edge.Vertexes[-1].Point
+                    # Cas 1 : la fin du dernier = début du suivant (cas normal)
+                    if (start - last).Length < tol:
+                        ordered.append(edge)
+                        unused.pop(i)
                         found = True
                         break
-                    elif (last_end.sub(end)).Length < tol:
-                        chain.append(remaining.pop(i).copy().reverse())
+                    # Cas 2 : la fin du dernier = fin du suivant (il faut inverser)
+                    elif (end - last).Length < tol:
+                        reversed_edge = self.reverse_edge(edge)
+                        ordered.append(reversed_edge)
+                        unused.pop(i)
+                        found = True
+                        break
+                    # Cas 3 : le début du premier = fin du suivant (ajouter au début, inversé)
+                    elif (end - first).Length < tol:
+                        reversed_edge = self.reverse_edge(edge)
+                        ordered.insert(0, reversed_edge)
+                        unused.pop(i)
+                        found = True
+                        break
+                    # Cas 4 : le début du premier = début du suivant (ajouter au début)
+                    elif (start - first).Length < tol:
+                        ordered.insert(0, edge)
+                        unused.pop(i)
                         found = True
                         break
                 if not found:
-                    # Impossible de chaîner plus loin
-                    break
-            return chain
+                    return None
+                for idx, e in enumerate(ordered):
+                    App.Console.PrintMessage(f"Edge {idx}: {e.Vertexes[0].Point} -> {e.Vertexes[-1].Point}\n")
+            return ordered
         except Exception as e:
-            App.Console.PrintError(f"Erreur lors de la chaînage des arêtes: {str(e)}\n")
+            App.Console.PrintError(f"Erreur order_edges: {str(e)}\n")
             exc_type, exc_value, exc_traceback = sys.exc_info()
             line_number = exc_traceback.tb_lineno
             App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
-            return edges
+    
+    def reverse_edge(self, edge):
+        """
+        Retourne un nouvel edge inversé, compatible avec les arcs et segments.
+        """
+        import Part  # type: ignore
+        curve = edge.Curve
+        return edge.reversed()
+        try:
+            curve = edge.Curve
+            # Pour les courbes paramétrées (arc, ligne, etc.)
+            if isinstance(edge.Curve, Part.Circle):
+                # Pour un arc ou un cercle
+                circle = edge.Curve
+                center = circle.Center
+                new_center = App.Vector(center.x, center.y, center.z)
+                # Créer un nouvel axe Z
+                new_axis = circle.Axis #*-1
+                App.Console.PrintMessage(f"new dir {new_axis}\n")
+                radius = circle.Radius
+                
+                # Créer un nouveau cercle
+                new_circle = Part.Circle(new_center, new_axis, radius)
+                # return Part.Edge(new_circle, edge.FirstParameter, edge.LastParameter)
+                # return Part.Edge(new_circle, edge.LastParameter, edge.FirstParameter)
+                #convertir les paramètres de l'arc en paramètres de cercle
+                arctspt = edge.valueAt(edge.FirstParameter)  
+                arcendpt = edge.valueAt(edge.LastParameter) 
 
+                midParam = (edge.LastParameter - edge.FirstParameter) * 0.5 + edge.FirstParameter
+                arcmidpt = edge.valueAt(midParam)
+                App.Console.PrintMessage(f"Reversing edge: {edge.FirstParameter}, {edge.LastParameter}, {midParam}\n")
+                App.Console.PrintMessage(f"Arc2 start point: {arctspt}, end point: {arcendpt}, mid point: {arcmidpt}\n")
+                
+                #first_param = -math.tau + first_param
+                # Si les paramètres sont différents, c'est un arc
+                # if abs(last_param - first_param) < math.tau:  # Moins que 2*pi
+                #     print(f"Arc détecté avec paramètres {first_param} et {last_param}\n")
+                #     new_edge = Part.Edge(new_circle, last_param, first_param)
+                # else:
+                #     # Cercle complet
+                #     new_edge = Part.Edge(new_circle)
+                #new_edge = Part.ArcOfCircle(new_circle,arctspt,arcmidpt,arcendpt)
+                new_edge = Part.ArcOfCircle(new_circle,0,1.57).toShape()
+                # new_edge = Part.ArcOfCircle(0,math.pi/2,math.pi).toShape()
+                App.Console.PrintMessage(f"Reversing edge: {new_edge.FirstParameter}, {new_edge.LastParameter}\n")
+                return new_edge
+        
+            reversed_curve = curve.reversed()
+            reversed_curve = curve
+            # On inverse aussi les paramètres de début et de fin
+            return Part.Edge(reversed_curve, edge.ParameterRange[1], edge.ParameterRange[0])
+        except Exception as e :
+            App.Console.PrintError(f"Erreur lors de l'inversion de l'arête: {str(e)}\n")
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            line_number = exc_traceback.tb_lineno
+            App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
+            # Fallback pour les lignes simples
+            new_edge = edge.copy()
+            new_edge.reverse()
+            return new_edge
+        
     def _create_direction_arrow(self, edge, z_value, size=2.0):
         """Crée une petite flèche au milieu de l'arête pour indiquer la direction
         
@@ -774,6 +909,17 @@ class ContourGeometry:
     def __setstate__(self, state):
         """Désérialisation"""
         return None
+
+    def dumps(self):
+        """__getstat__(self) ... called when receiver is saved.
+        Can safely be overwritten by subclasses."""
+        return None
+
+    def loads(self, state):
+        """__getstat__(self) ... called when receiver is restored.
+        Can safely be overwritten by subclasses."""
+        return None
+
 
     def updateEdgeColors(self, obj):
         """Met à jour les couleurs des arêtes en fonction de l'index sélectionné"""
@@ -893,6 +1039,8 @@ class ViewProviderContourGeometry:
         vobj.Proxy = self
         self.Object = vobj.Object
         
+        self.deleteOnReject = True  
+
         # Définir la couleur rouge pour le contour
         vobj.LineColor = (1.0, 0.0, 0.0)  # Rouge
         vobj.PointColor = (1.0, 0.0, 0.0)  # Rouge
@@ -906,6 +1054,19 @@ class ViewProviderContourGeometry:
         if not hasattr(vobj, "SelectedEdgeColor"):
             vobj.addProperty("App::PropertyColor", "SelectedEdgeColor", "Display", "Color of selected edges")
             vobj.SelectedEdgeColor = (0.0, 1.0, 1.0)  # Cyan par défaut
+    def deleteObjectsOnReject(self):
+        """
+        deleteObjectsOnReject() ... return true if all objects should
+        be created if the user hits cancel. This is used during the initial
+        edit session, if the user does not press OK, it is assumed they've
+        changed their mind about creating the operation.
+        """
+        
+        return hasattr(self, "deleteOnReject") and self.deleteOnReject
+    def setDeleteObjectsOnReject(self, state=False):
+        #♦Path.Log.track()
+        self.deleteOnReject = state
+        return self.deleteOnReject
     
     def getIcon(self):
         """Retourne l'icône"""
@@ -1028,8 +1189,9 @@ class ViewProviderContourGeometry:
             # Recharger le module pour prendre en compte les modifications
             importlib.reload(BaptContourTaskPanel)
             # Créer et afficher le panneau
-            panel = BaptContourTaskPanel.ContourTaskPanel(vobj.Object)
+            panel = BaptContourTaskPanel.ContourTaskPanel(vobj.Object,self.setDeleteObjectsOnReject())
             Gui.Control.showDialog(panel)
+            self.deleteOnReject = False
             return True
         except Exception as e:
             App.Console.PrintError(f"Erreur lors de l'ouverture du panneau d'édition: {str(e)}\n")

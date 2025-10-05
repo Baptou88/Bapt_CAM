@@ -12,6 +12,17 @@ Therefore, I wanted to develop software that would meet my needs, and I found Fr
 
 ![Bapt's CAM Workbench Screenshot](/resources/image.bmp)
 
+## Philosophy and goal
+
+1. After working for several years on a numerically controlled machine and CAD software to create programs, I found that it was easier to first correctly create machining geometries before actually defining machining cycles. This is why in this project it is necessary to create "DrillGeometry" and "ContourGeometry" objects.
+
+## TODO's
+
+[ ] create an automatic drill recognition feature that will group all holes with the same diameter and create the corresponding "drillGeometry" objects
+[ ] create an object "Path" who represent a gcode path and allows its visualization
+    [ ] implement G41/G42 commands (ultime goal)
+    [ ] implement M90/M91 commands
+    
 ## Installation
 
 1. Copy the folder `Bapt` into the `Mod` folder of your FreeCAD installation.

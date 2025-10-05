@@ -394,8 +394,8 @@ class CreateHotReloadCommand:
             reload(Surfacage)
             import BaptPostProcess
             reload(BaptPostProcess)
-            import probe
-            reload(probe)
+            from Probe import probeFace
+            reload(probeFace)
 
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")

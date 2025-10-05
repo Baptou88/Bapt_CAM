@@ -4,7 +4,7 @@ import Part
 from FreeCAD import Base
 import os
 import BaptUtilities
-from PySide2 import QtWidgets
+from PySide import QtWidgets
 
 class Stock:
     """Classe pour gérer le brut d'usinage"""
@@ -60,7 +60,7 @@ class Stock:
         """Mettre à jour la forme du brut en fonction des propriétés"""
         if not hasattr(obj,"WorkPlane"):
             return
-        App.Console.PrintMessage(f'updateShape {obj.Placement.Base}\n')
+        # App.Console.PrintMessage(f'updateShape {obj.Placement.Base}\n')
         placement = obj.Placement
         obj.Shape = Part.Shape()
         
