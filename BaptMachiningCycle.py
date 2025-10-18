@@ -1,4 +1,5 @@
 import os
+import sys
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
@@ -35,7 +36,7 @@ class ContournageCycle:
         
         # Propriétés pour les paramètres d'usinage
         if not hasattr(obj, "ToolDiameter"):
-            obj.addProperty("App::PropertyLength", "ToolDiameter", "Tool", "Diamètre de l'outil")
+            obj.addProperty("App::PropertyFloat", "ToolDiameter", "Tool", "Diamètre de l'outil")
             obj.ToolDiameter = 6.0
         
         if not hasattr(obj, "CutDepth"):
@@ -69,6 +70,19 @@ class ContournageCycle:
             obj.addProperty("App::PropertyLength", "ApproachRetractLength", "Approche", "Longueur de l'approche/sortie")
             obj.ApproachRetractLength = 12.0  # Valeur par défaut en mm
 
+        if not hasattr(obj, "Compensation"):
+            obj.addProperty("App::PropertyEnumeration", "Compensation", "Toolpath", "Type de compensation d'outil")
+            obj.Compensation = ["Ordinateur", "Machine", "Ordinateur + G41/G42", "Aucune"]
+            obj.Compensation = "Ordinateur"
+
+        if not hasattr(obj, "SurepAxiale"):
+            obj.addProperty("App::PropertyFloat", "SurepAxiale", "Toolpath", "Surépaisseur axiale")
+            obj.SurepAxiale = 0.0
+        
+        if not hasattr(obj, "SurepRadiale"):
+            obj.addProperty("App::PropertyFloat", "SurepRadiale", "Toolpath", "Surépaisseur radiale")
+            obj.SurepAxiale = 0.0
+
         if not hasattr(obj, "desactivated"):
             obj.addProperty("App::PropertyBool", "desactivated", "General", "Désactiver le cycle")
             obj.desactivated = False
@@ -82,7 +96,7 @@ class ContournageCycle:
 
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        if prop in ["ToolDiameter", "CutDepth", "StepDown", "Direction", "ContourGeometryName", "ApproachType", "RetractType", "ApproachRetractLength", "ApproachRetractLength", "desactivated"]:
+        if prop in ["ToolDiameter", "CutDepth", "StepDown", "Direction", "ContourGeometryName", "ApproachType", "RetractType", "ApproachRetractLength", "ApproachRetractLength", "desactivated", "Compensation", "SurepAxiale", "SurepRadiale"]:
             self.execute(obj)
     
     def calculatePasse(self,obj):
@@ -91,13 +105,15 @@ class ContournageCycle:
             return []
         
         Zref = geom.Zref
-        depth = geom.depth
+        depth = geom.depth 
         prise = obj.StepDown
 
         passes = []
         
         if geom.DepthMode == "Relatif":
-            depth = geom.Zref + geom.depth
+            depth = geom.Zref + geom.depth + obj.SurepAxiale
+        else:
+            depth = geom.depth + obj.SurepAxiale
         
         if Zref <= depth:
             App.Console.PrintError("La hauteur de référence est inférieure ou égale à la profondeur de coupe.\n")
@@ -124,7 +140,7 @@ class ContournageCycle:
     def getContourGeometry(self, obj):
         """Récupérer la géométrie du contour associée"""
         if not hasattr(obj, "ContourGeometryName") or not obj.ContourGeometryName:
-            App.Console.PrintError("Aucune géométrie de contour associée.\n")
+            #App.Console.PrintError("Aucune géométrie de contour associée.\n")
             return None
         
         doc = obj.Document
@@ -253,17 +269,30 @@ class ContournageCycle:
                     elif offset_shape_result.Edges: # Sometimes returns a compound of edges
                          offset_toolpath_wire = Part.Wire(offset_shape_result.Edges)
                 else:
-                    offset_shape_result = wire_at_pass_z.makeOffset2D(actual_offset_value, join=0, fill=False, openResult=True)
+                    if actual_offset_value > 0:
+                        actual_offset_value_surep = actual_offset_value + obj.SurepRadiale
+                    else:
+                        actual_offset_value_surep = actual_offset_value - obj.SurepRadiale
+                    offset_shape_result = wire_at_pass_z.makeOffset2D(actual_offset_value_surep,  openResult=True)#join=0, fill=False,
+                    App.Console.PrintMessage(f"{actual_offset_value}\n")
+                    # App.Console.PrintMessage(f"{wire_at_pass_z}\n")
+                    # App.Console.PrintMessage(f"{offset_shape_result}\n")
+                    # App.Console.PrintMessage(f"{offset_shape_result.Wires}\n")
+                    # App.Console.PrintMessage(f"{offset_shape_result.Wires[0]}\n")
+                    if obj.Compensation == "Machine":
+                        offset_shape_result = offset_shape_result.Wires[0].makeOffset2D(-actual_offset_value,  openResult=True)#join=0, fill=False, 
                     if offset_shape_result.Wires:
                         offset_toolpath_wire = offset_shape_result.Wires[0]
                     elif offset_shape_result.Edges:
-                         offset_toolpath_wire = Part.Wire(offset_shape_result.Edges)
+                        offset_toolpath_wire = Part.Wire(offset_shape_result.Edges)
                 
-                if not offset_toolpath_wire or not offset_toolpath_wire.Edges:
-                    App.Console.PrintWarning(f"Offsetting failed or resulted in no edges for pass Z={pass_z}. Skipping pass.\n")
-                    continue
-            except Exception as e_offset:
-                App.Console.PrintError(f"Error during offset for pass Z={pass_z}: {e_offset}. Skipping pass.\n")
+
+            except Exception as e:
+
+                App.Console.PrintError(f"Error during offset for pass Z={pass_z}: {e}. Skipping pass.\n")
+                exc_type, exc_value, exc_traceback = sys.exc_info()
+                line_number = exc_traceback.tb_lineno
+                App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
                 continue
 
             # 3. Generate Approach and Retract for offset_toolpath_wire
@@ -288,7 +317,7 @@ class ContournageCycle:
                         pass_approach_edges.append(Part.makeLine(start_pt - tangent_start.multiply(approach_length), start_pt))
                     elif approach_type == "Perpendiculaire":
                         perp_start = App.Vector(-tangent_start.y, tangent_start.x, 0).normalize() # Assuming XY plane
-                        pass_approach_edges.append(Part.makeLine(start_pt - perp_start.multiply(approach_length), start_pt))
+                        pass_approach_edges.append(Part.makeLine(start_pt + perp_start.multiply(approach_length), start_pt))
                 # TODO: Add Helicoidal approach if needed, ensuring Z movement relative to pass_z
             except Exception as e_approach_tangent:
                 App.Console.PrintWarning(f"Could not calculate start tangent for approach at Z={pass_z}: {e_approach_tangent}\n")

@@ -54,6 +54,14 @@ class BaptPreferences:
         tools_db_layout.addLayout(buttons_layout)
         
         tools_db_group.setLayout(tools_db_layout)
+
+        #toggle auto child update
+        self.auto_child_update_checkbox = QtGui.QCheckBox("Mise à jour automatique des enfants")
+        self.auto_child_update_checkbox.setToolTip("Si activé, les objets enfants seront mis à jour automatiquement lorsque l'objet parent est modifié.")
+        layout.addWidget(self.auto_child_update_checkbox)
+        #self.auto_child_update_checkbox.setChecked(BaptUtilities.getAutoChildUpdate())
+        #self.auto_child_update_checkbox.stateChanged.connect(self.onAutoChildUpdateChanged)
+
         layout.addWidget(tools_db_group)
         
         # Ajouter un espace extensible en bas
@@ -68,7 +76,15 @@ class BaptPreferences:
         # Load settings
         self.preferences = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Bapt")
         self.loadSettings()
-        
+    
+    def onAutoChildUpdateChanged(self, state):
+        """Gérer le changement de l'option de mise à jour automatique des enfants"""
+        is_checked = state == QtCore.Qt.Checked
+
+    def getAutoChildUpdate(self):
+        """Obtenir l'état de la mise à jour automatique des enfants"""
+        return self.preferences.GetBool("AutoChildUpdate", True)    
+
     def chooseExistingDb(self):
         """Sélectionner une base de données existante"""
         path = QtGui.QFileDialog.getOpenFileName(
@@ -146,11 +162,13 @@ class BaptPreferences:
         """Enregistrer les paramètres"""
         self.preferences.SetString("ToolsDbPath", self.toolsDbPath.text())
         self.preferences.SetString("GCodeFolderPath", self.gcodeFolderPath.text())
+        self.preferences.SetBool("AutoChildUpdate", self.auto_child_update_checkbox.isChecked())
         
     def loadSettings(self):
         """Charger les paramètres"""
         self.toolsDbPath.setText(self.preferences.GetString("ToolsDbPath", ""))
         self.gcodeFolderPath.setText(self.preferences.GetString("GCodeFolderPath", ""))
+        self.auto_child_update_checkbox.setChecked(self.preferences.GetBool("AutoChildUpdate", True))
         
     def getToolsDbPath(self):
         """Obtenir le chemin de la base de données d'outils"""

@@ -12,6 +12,7 @@ import BaptGeometry
 import BaptMachiningCycle
 import BaptOrigin
 import BaptPocketOperation
+import BaptContourEditableGeometry
 import BaptMpfReader
 import BaptTools
 import BaptPostProcess
@@ -54,8 +55,9 @@ class CreatePocketOperationCommand:
         doc.openTransaction('Create Pocket Operation')
         contour_geometry = Gui.Selection.getSelection()[0]
         obj = BaptPocketOperation.createPocketOperation(contour=contour_geometry)
-        if obj.ViewObject:
-            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        # if obj.ViewObject:
+        #     BaptPocketOperation.ViewProviderPocketOperation(obj.ViewObject)
+        #     obj.ViewObject.Proxy.setEdit(obj.ViewObject)
         doc.recompute()
         doc.commitTransaction()
         App.Console.PrintMessage(f"Opération de poche créée et liée à {contour_geometry.Label}.\n")
@@ -368,6 +370,66 @@ class CreateContourGeometryCommand:
 
         App.ActiveDocument.commitTransaction()
 
+
+class CreateContourEditableGeometryCommand:
+    """Commande pour créer une géométrie de contour editable via Sketcher"""
+
+    def GetResources(self):
+        return {'Pixmap': BaptUtilities.getIconPath("Tree_Contour.svg"),
+                'MenuText': "Nouvelle géométrie de contour editable",
+                'ToolTip': "Créer une nouvelle géométrie de contour pour l'usinage"}
+
+    def IsActive(self):
+        """La commande est active si un projet CAM est sélectionné"""
+        sel = Gui.Selection.getSelection()
+        if not sel:
+            return False
+        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject"
+
+    def Activated(self):
+        """Créer une nouvelle géométrie de contour"""
+
+        App.ActiveDocument.openTransaction('Create Contour Geometry')
+
+        # Obtenir le projet CAM sélectionné
+        project = Gui.Selection.getSelection()[0]
+        
+        # Créer l'objet avec le bon type pour avoir une Shape
+        obj = App.ActiveDocument.addObject("Part::FeaturePython", "ContourEditableGeometry")
+        #obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "ContourGeometry")
+        obj.addExtension("App::GroupExtensionPython")
+
+        # Ajouter la fonctionnalité
+        BaptContourEditableGeometry.ContourEditableGeometry(obj)
+        
+        # Ajouter le ViewProvider
+        if obj.ViewObject:
+            BaptContourEditableGeometry.ViewProviderContourEditableGeometry(obj.ViewObject)
+        #     obj.ViewObject.LineColor = (1.0, 0.0, 0.0)  # Rouge
+        #     obj.ViewObject.PointColor = (1.0, 0.0, 0.0)  # Rouge
+        #     obj.ViewObject.LineWidth = 4.0  # Largeur de ligne plus grande
+        #     obj.ViewObject.PointSize = 6.0  # Taille des points plus grande
+
+        # Ajouter au groupe Geometry
+        geometry_group = project.Proxy.getGeometryGroup(project)
+        geometry_group.addObject(obj)
+                
+        # Message de confirmation
+        App.Console.PrintMessage("Géométrie de contour editable créée.\n")
+        
+        App.ActiveDocument.recompute()
+
+        # Ouvrir le panneau de tâches pour l'édition
+        # Gui.Selection.clearSelection()
+        # Gui.Selection.addSelection(obj)
+        # Gui.ActiveDocument.setEdit(obj.Name)
+
+        # Ouvrir l'éditeur
+        # if obj.ViewObject:
+        #     obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+
+        App.ActiveDocument.commitTransaction()
+
 class CreateHotReloadCommand:
     def GetResources(self):
         return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
@@ -548,6 +610,7 @@ Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
 Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
 Gui.addCommand('Bapt_CreateContourGeometry', CreateContourGeometryCommand())
+Gui.addCommand('Bapt_CreateContourEditableGeometry', CreateContourEditableGeometryCommand())
 Gui.addCommand('Bapt_CreateMachiningCycle', CreateContourCommand())
 Gui.addCommand('Bapt_CreatePocketOperation', CreatePocketOperationCommand())
 Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())

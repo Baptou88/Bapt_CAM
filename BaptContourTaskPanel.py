@@ -2,6 +2,7 @@ from BaptCamProject import CamProject
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
+import sys
 
 class ContourTaskPanel:
     def __init__(self, obj,deleteOnReject):
@@ -188,10 +189,14 @@ class ContourTaskPanel:
                 # Déterminer le type d'élément (ligne droite, arc, etc.)
                 try:
                     element = obj.Shape.getElement(subElement)
-                    elementType = element.Curve.__class__.__name__
+                    # elementType = element.Curve.__class__.__name__
+                    elementType = getattr(element,"ShapeType","Inconnu4")
                     self.edgesTable.setItem(row, 2, QtGui.QTableWidgetItem(elementType))
-                except:
-                    self.edgesTable.setItem(row, 2, QtGui.QTableWidgetItem("Inconnu"))
+                except Exception as e:
+                    self.edgesTable.setItem(row, 2, QtGui.QTableWidgetItem("Inconnu3"))
+                    App.Console.PrintError(f" {str(e)}\n")
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
                 
                 row += 1
         
@@ -215,8 +220,8 @@ class ContourTaskPanel:
         parent = self.obj.getParent().getParent() #TODO fixme
         if parent:
             self.viewModeToRestore = parent.Model.ViewObject.DisplayMode
-            print(f"viewModeToRestore: {self.viewModeToRestore}")
-            print(f"viewModeToRestore: {parent.Model.Name}")
+            # print(f"viewModeToRestore: {self.viewModeToRestore}")
+            # print(f"viewModeToRestore: {parent.Model.Name}")
             parent.Model.ViewObject.DisplayMode = u"Wireframe"
         else:
             print("No parent found")
@@ -438,42 +443,17 @@ class ContourTaskPanel:
     
     def getStandardButtons(self):
         """Définir les boutons standard"""
-        return int(QtGui.QDialogButtonBox.Ok |
-                  QtGui.QDialogButtonBox.Cancel)
+        return int(QtGui.QDialogButtonBox.Ok | 
+                   QtGui.QDialogButtonBox.Apply|
+                   QtGui.QDialogButtonBox.Cancel)
 
-    def updateEdgesTable(self):
-        """Met à jour le tableau des arêtes"""
-        self.edgesTable.clearContents()
-        
-        if not hasattr(self.obj, "Edges") or not self.obj.Edges:
-            self.edgesTable.setRowCount(0)
-            return
-        
-        # Compter le nombre total d'arêtes
-        total_edges = sum(len(sub[1]) for sub in self.obj.Edges)
-        self.edgesTable.setRowCount(total_edges)
-        
-        # Ajouter chaque arête au tableau
-        row = 0
-        for sub in self.obj.Edges:
-            obj = sub[0]
-            for subElement in sub[1]:
-                self.edgesTable.setItem(row, 0, QtGui.QTableWidgetItem(obj.Label))
-                self.edgesTable.setItem(row, 1, QtGui.QTableWidgetItem(subElement))
-                
-                # Déterminer le type d'élément (ligne droite, arc, etc.)
-                try:
-                    element = obj.Shape.getElement(subElement)
-                    elementType = element.Curve.__class__.__name__
-                    self.edgesTable.setItem(row, 2, QtGui.QTableWidgetItem(elementType))
-                except:
-                    self.edgesTable.setItem(row, 2, QtGui.QTableWidgetItem("Inconnu"))
-                
-                row += 1
-        
-        # Ajuster la taille des colonnes
-        self.edgesTable.resizeColumnsToContents()
-        
+    def clicked(self, button):
+        """clicked(button) ... callback invoked when the user presses any of the task panel buttons."""
+        if button == QtGui.QDialogButtonBox.Apply:
+            #self.panelGetFields()
+            #self.setClean()
+            App.ActiveDocument.recompute()
+
     def onTableSelectionChanged(self):
         """Gère la sélection d'une ligne dans le tableau"""
         selected_rows = self.edgesTable.selectedIndexes()
