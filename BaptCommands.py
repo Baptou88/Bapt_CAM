@@ -12,6 +12,7 @@ import BaptGeometry
 import BaptMachiningCycle
 import BaptOrigin
 import BaptPocketOperation
+import BaptContourEditableGeometry
 import BaptMpfReader
 import BaptTools
 import BaptPostProcess
@@ -19,11 +20,13 @@ from Op import Surfacage
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
+import BaptUtilities
+from Probe import probeFace
 
 class CreateOriginCommand:    
     """Commande pour créer une origine d'usinage (G54, G55, ...)."""
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Origin.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Origin.svg"),
                 'MenuText': "Nouvelle Origine",
                 'ToolTip': "Créer une nouvelle origine d'usinage (G54, G55, ...)."}
     def IsActive(self):
@@ -39,7 +42,7 @@ class CreateOriginCommand:
 class CreatePocketOperationCommand:
     """Commande pour créer une opération de poche basée sur ContourGeometry"""
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Pocket.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Pocket.svg"),
                 'MenuText': "Nouvelle opération de poche",
                 'ToolTip': "Créer une nouvelle opération de poche pour l'usinage"}
 
@@ -52,8 +55,9 @@ class CreatePocketOperationCommand:
         doc.openTransaction('Create Pocket Operation')
         contour_geometry = Gui.Selection.getSelection()[0]
         obj = BaptPocketOperation.createPocketOperation(contour=contour_geometry)
-        if obj.ViewObject:
-            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        # if obj.ViewObject:
+        #     BaptPocketOperation.ViewProviderPocketOperation(obj.ViewObject)
+        #     obj.ViewObject.Proxy.setEdit(obj.ViewObject)
         doc.recompute()
         doc.commitTransaction()
         App.Console.PrintMessage(f"Opération de poche créée et liée à {contour_geometry.Label}.\n")
@@ -62,7 +66,7 @@ class CreateContourCommand:
     """Commande pour créer un Contournage"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Contournage.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Contournage.svg"),
                 'MenuText': "Nouveau Contournage",
                 'ToolTip': "Créer un nouveau contournage pour l'usinage"}
 
@@ -141,7 +145,7 @@ class CreateDrillGeometryCommand:
     """Commande pour créer une géométrie de perçage"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Drilling.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Tree_Drilling.svg"),
                 'MenuText': "Nouvelle géométrie de perçage",
                 'ToolTip': "Créer une nouvelle géométrie de perçage"}
 
@@ -164,6 +168,7 @@ class CreateDrillGeometryCommand:
         # Créer l'objet avec le type DocumentObjectGroupPython pour pouvoir contenir des enfants
         #obj = doc.addObject("App::DocumentObjectGroupPython", "DrillGeometry")
         obj = doc.addObject("Part::FeaturePython", "DrillGeometry")
+        obj.addExtension("App::GroupExtensionPython")
         
         # Ajouter la fonctionnalité
         drill = BaptGeometry.DrillGeometry(obj)
@@ -191,7 +196,7 @@ class CreateSurfacageCommand:
     """Commande pour créer un nouveau surfacage"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Surfacage.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Surfacage.svg"),
                 'MenuText': "Nouveau Surfacage",
                 'ToolTip': "Créer un nouveau surfacage"}
 
@@ -249,7 +254,7 @@ class CreateCamProjectCommand:
     """Commande pour créer un nouveau projet CAM"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
                 'MenuText': "Nouveau Projet CAM",
                 'ToolTip': "Créer un nouveau projet d'usinage"}
 
@@ -278,20 +283,20 @@ class CreateCamProjectCommand:
         if obj.ViewObject:
             BaptCamProject.ViewProviderCamProject(obj.ViewObject)
         
-        from BaptCamProject import ObjSelector
-        dlg = ObjSelector()
-        if dlg.exec_():
-            model = dlg.getSelectedObject()
-            if model:
-                model.ViewObject.Visibility = False
-                import Draft
-                clone = Draft.clone(model)
-                clone.Label = f"Clone_{model.Label}"
-                clone.ViewObject.Visibility = True
-                clone.ViewObject.Transparency = 50
+        # from BaptCamProject import ObjSelector
+        # dlg = ObjSelector()
+        # if dlg.exec_():
+        #     model = dlg.getSelectedObject()
+        #     if model:
+        #         model.ViewObject.Visibility = False
+        #         import Draft
+        #         clone = Draft.clone(model)
+        #         clone.Label = f"Clone_{model.Label}"
+        #         clone.ViewObject.Visibility = True
+        #         clone.ViewObject.Transparency = 50
 
-                obj.Model = clone
-                obj.addObject(clone)
+        #         obj.Model = clone
+        #         obj.addObject(clone)
         # Recomputer
         doc.recompute()
         
@@ -310,7 +315,7 @@ class CreateContourGeometryCommand:
     """Commande pour créer une géométrie de contour"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Contour.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Tree_Contour.svg"),
                 'MenuText': "Nouvelle géométrie de contour",
                 'ToolTip': "Créer une nouvelle géométrie de contour pour l'usinage"}
 
@@ -332,7 +337,8 @@ class CreateContourGeometryCommand:
         # Créer l'objet avec le bon type pour avoir une Shape
         obj = App.ActiveDocument.addObject("Part::FeaturePython", "ContourGeometry")
         #obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "ContourGeometry")
-        
+        obj.addExtension("App::GroupExtensionPython")
+
         # Ajouter la fonctionnalité
         contour = BaptGeometry.ContourGeometry(obj)
         
@@ -364,9 +370,69 @@ class CreateContourGeometryCommand:
 
         App.ActiveDocument.commitTransaction()
 
+
+class CreateContourEditableGeometryCommand:
+    """Commande pour créer une géométrie de contour editable via Sketcher"""
+
+    def GetResources(self):
+        return {'Pixmap': BaptUtilities.getIconPath("Tree_Contour.svg"),
+                'MenuText': "Nouvelle géométrie de contour editable",
+                'ToolTip': "Créer une nouvelle géométrie de contour pour l'usinage"}
+
+    def IsActive(self):
+        """La commande est active si un projet CAM est sélectionné"""
+        sel = Gui.Selection.getSelection()
+        if not sel:
+            return False
+        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject"
+
+    def Activated(self):
+        """Créer une nouvelle géométrie de contour"""
+
+        App.ActiveDocument.openTransaction('Create Contour Geometry')
+
+        # Obtenir le projet CAM sélectionné
+        project = Gui.Selection.getSelection()[0]
+        
+        # Créer l'objet avec le bon type pour avoir une Shape
+        obj = App.ActiveDocument.addObject("Part::FeaturePython", "ContourEditableGeometry")
+        #obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "ContourGeometry")
+        obj.addExtension("App::GroupExtensionPython")
+
+        # Ajouter la fonctionnalité
+        BaptContourEditableGeometry.ContourEditableGeometry(obj)
+        
+        # Ajouter le ViewProvider
+        if obj.ViewObject:
+            BaptContourEditableGeometry.ViewProviderContourEditableGeometry(obj.ViewObject)
+        #     obj.ViewObject.LineColor = (1.0, 0.0, 0.0)  # Rouge
+        #     obj.ViewObject.PointColor = (1.0, 0.0, 0.0)  # Rouge
+        #     obj.ViewObject.LineWidth = 4.0  # Largeur de ligne plus grande
+        #     obj.ViewObject.PointSize = 6.0  # Taille des points plus grande
+
+        # Ajouter au groupe Geometry
+        geometry_group = project.Proxy.getGeometryGroup(project)
+        geometry_group.addObject(obj)
+                
+        # Message de confirmation
+        App.Console.PrintMessage("Géométrie de contour editable créée.\n")
+        
+        App.ActiveDocument.recompute()
+
+        # Ouvrir le panneau de tâches pour l'édition
+        # Gui.Selection.clearSelection()
+        # Gui.Selection.addSelection(obj)
+        # Gui.ActiveDocument.setEdit(obj.Name)
+
+        # Ouvrir l'éditeur
+        # if obj.ViewObject:
+        #     obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+
+        App.ActiveDocument.commitTransaction()
+
 class CreateHotReloadCommand:
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
                 'MenuText': "Hot Reload",
                 'ToolTip': "Recharge les modules Bapt"}
     def IsActive(self):
@@ -390,6 +456,9 @@ class CreateHotReloadCommand:
             reload(Surfacage)
             import BaptPostProcess
             reload(BaptPostProcess)
+            from Probe import probeFace
+            reload(probeFace)
+
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 
@@ -405,7 +474,7 @@ class ToolsManagerCommand:
     """Commande pour ouvrir le gestionnaire d'outils"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
                 'MenuText': "Gestionnaire d'outils",
                 'ToolTip': "Ouvrir le gestionnaire d'outils pour créer et éditer des outils"}
 
@@ -423,7 +492,7 @@ class CreateDrillOperationCommand:
     """Commande pour créer une opération d'usinage de perçage"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Drilling.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("Tree_Drilling.svg"),
                 'MenuText': "Nouvelle opération de perçage",
                 'ToolTip': "Créer une nouvelle opération d'usinage pour les géométries de perçage"}
 
@@ -482,7 +551,7 @@ class BaptCommand:
     """Ma première commande"""
 
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
                 'MenuText': "Ma Commande",
                 'ToolTip': "Description de ma commande"}
 
@@ -497,13 +566,42 @@ class BaptCommand:
 class PostProcessGCodeCommand:
     """Commande pour générer un programme G-code à partir du projet CAM"""
     def GetResources(self):
-        return {'Pixmap': os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "PostProcess.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("PostProcess.svg"),
                 'MenuText': "Post-process G-code",
                 'ToolTip': "Générer un programme G-code à partir des opérations d'usinage"}
     def IsActive(self):
         return App.ActiveDocument is not None
     def Activated(self):
         BaptPostProcess.postprocess_gcode()
+
+class ProbeFaceCommand:
+    """Commande pour générer un Probing sur une face"""
+    def GetResources(self):
+        return {'Pixmap': BaptUtilities.getIconPath("ProbeSurface.svg"),
+                'MenuText': "Probing sur une face",
+                'ToolTip': "Générer un Probing sur une face"}
+    def IsActive(self):
+        return App.ActiveDocument is not None
+    def Activated(self):
+        #import probe.ProbeFace
+        
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Probe Face')
+        
+        obj = doc.addObject("Part::FeaturePython", "ProbeFace")
+        
+        
+        probeFace.ProbeFace(obj)
+
+        if obj.ViewObject:
+            probeFace.ViewProviderProbeFace(obj.ViewObject)
+
+
+        # Ouvrir l'éditeur
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+
+        doc.commitTransaction()
 
 # Enregistrer les commandes
 Gui.addCommand('Bapt_Command', BaptCommand())
@@ -512,6 +610,7 @@ Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
 Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
 Gui.addCommand('Bapt_CreateContourGeometry', CreateContourGeometryCommand())
+Gui.addCommand('Bapt_CreateContourEditableGeometry', CreateContourEditableGeometryCommand())
 Gui.addCommand('Bapt_CreateMachiningCycle', CreateContourCommand())
 Gui.addCommand('Bapt_CreatePocketOperation', CreatePocketOperationCommand())
 Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())
@@ -520,3 +619,4 @@ Gui.addCommand('Bapt_CreateDrillOperation', CreateDrillOperationCommand())  # Aj
 Gui.addCommand('ImportMpf', BaptMpfReader.ImportMpfCommand())  # Ajouter la commande d'importation MPF
 Gui.addCommand('Bapt_PostProcessGCode', PostProcessGCodeCommand())
 Gui.addCommand('Bapt_CreateSurfacage', CreateSurfacageCommand())
+Gui.addCommand('Bapt_CreateProbeFace', ProbeFaceCommand())

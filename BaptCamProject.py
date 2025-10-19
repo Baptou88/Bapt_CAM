@@ -3,7 +3,8 @@ import FreeCADGui as Gui
 import Part
 from FreeCAD import Base
 import os
-from PySide2 import QtWidgets
+import BaptUtilities
+from PySide import QtWidgets
 
 class Stock:
     """Classe pour gérer le brut d'usinage"""
@@ -18,20 +19,52 @@ class Stock:
         
         self.Type = "Stock"
         self.parent = parent
+        App.Console.PrintMessage(f'Creating Stock object with parent: {parent.Label}\n')
+        App.Console.PrintMessage(f'Creating Stock object with parent: {parent.Name}\n')
+        App.Console.PrintMessage(f'Creating Stock object with Model: {parent.Model.Label}\n')
+        App.Console.PrintMessage(f'Creating Stock object with Model: {parent.Model.Name}\n')
         
+        App.Console.PrintMessage(f'Model bounding box: {parent.Model.Shape.BoundBox}\n')
+        App.Console.PrintMessage(f'Model bounding box: {parent.Model.Shape.BoundBox.XMin} {parent.Model.Shape.BoundBox.XMax} {parent.Model.Shape.BoundBox.XLength}\n')
+
         # Ajouter les propriétés si elles n'existent pas déjà
-        if not hasattr(obj, "Length"):
-            obj.addProperty("App::PropertyLength", "Length", "Stock", "Longueur du brut")
-            obj.Length = 100.0
+        # if not hasattr(obj, "Length"):
+        #     obj.addProperty("App::PropertyLength", "Length", "Stock", "Longueur du brut")
+        #     #obj.Length = parent.Model.Shape.BoundBox.XLength if parent and hasattr(parent, "Model") and hasattr(parent.Model, "Shape") else 200.0
+        #     obj.Length = 100.0
+
+        # if not hasattr(obj, "Width"):
+        #     obj.addProperty("App::PropertyLength", "Width", "Stock", "Largeur du brut")
+        #     obj.Width = 100.0
         
-        if not hasattr(obj, "Width"):
-            obj.addProperty("App::PropertyLength", "Width", "Stock", "Largeur du brut")
-            obj.Width = 100.0
+        # if not hasattr(obj, "Height"):
+        #     obj.addProperty("App::PropertyLength", "Height", "Stock", "Hauteur du brut")
+        #     obj.Height = 50.0
         
-        if not hasattr(obj, "Height"):
-            obj.addProperty("App::PropertyLength", "Height", "Stock", "Hauteur du brut")
-            obj.Height = 50.0
+        if not hasattr(obj, "XNeg"):
+            obj.addProperty("App::PropertyFloat", "XNeg", "Stock", "Extension négative en X")
+            obj.XNeg = 1.0
+
+        if not hasattr(obj, "YNeg"):
+            obj.addProperty("App::PropertyFloat", "YNeg", "Stock", "Extension négative en Y")
+            obj.YNeg = 1.0
         
+        if not hasattr(obj, "ZNeg"):
+            obj.addProperty("App::PropertyFloat", "ZNeg", "Stock", "Extension négative en Z")
+            obj.ZNeg = 1.0
+        
+        if not hasattr(obj, "XPos"):
+            obj.addProperty("App::PropertyFloat", "XPos", "Stock", "Extension positive en X")
+            obj.XPos = 1.0
+
+        if not hasattr(obj, "YPos"):
+            obj.addProperty("App::PropertyFloat", "YPos", "Stock", "Extension positive en Y")
+            obj.YPos = 1.0
+
+        if not hasattr(obj, "ZPos"):
+            obj.addProperty("App::PropertyFloat", "ZPos", "Stock", "Extension positive en Z")
+            obj.ZPos = 1.0
+
         # if not hasattr(obj, "Origin"):
         #     obj.addProperty("App::PropertyVector", "Origin", "Stock", "Origine du brut")
         #     obj.Origin = App.Vector(0, 0, 0)
@@ -40,6 +73,10 @@ class Stock:
             obj.addProperty("App::PropertyEnumeration", "WorkPlane", "Stock", "Plan de travail")
             obj.WorkPlane = ["XY", "XZ", "YZ"]
             obj.WorkPlane = "XY"
+
+        if not hasattr(obj, "Material"):
+            obj.addProperty("App::PropertyMaterial", "Material", "Stock", "Matériau du brut")
+            obj.Material = App.Material()
         
         # Créer une forme initiale
         self.updateShape(obj)
@@ -59,26 +96,45 @@ class Stock:
         """Mettre à jour la forme du brut en fonction des propriétés"""
         if not hasattr(obj,"WorkPlane"):
             return
-        App.Console.PrintMessage(f'updateShape {obj.Placement.Base}\n')
-        placement = obj.Placement
+        
+        # if obj.Length <= 0 or obj.Width <= 0 or obj.Height <= 0:
+        #     App.Console.PrintMessage(f'updateShape {obj.Placement.Base}\n')
+        #     return
+        # placement = obj.Placement
         obj.Shape = Part.Shape()
         
-        
-        # Créer la boîte en fonction du plan de travail
-        if obj.WorkPlane == "XY":
-            box = Part.makeBox(obj.Length, obj.Width, obj.Height)
-        elif obj.WorkPlane == "XZ":
-            box = Part.makeBox(obj.Length, obj.Height, obj.Width)
-        else:  # YZ
-            box = Part.makeBox(obj.Height, obj.Length, obj.Width)
-        
-        # Assigner la forme
-        obj.Shape = box
-        obj.Placement = placement
+        modelBbox = self.parent.Model.Shape.BoundBox
+
+        if False:
+            # Créer la boîte en fonction du plan de travail
+            if obj.WorkPlane == "XY":
+                box = Part.makeBox(obj.Length, obj.Width, obj.Height)
+            elif obj.WorkPlane == "XZ":
+                box = Part.makeBox(obj.Length, obj.Height, obj.Width)
+            else:  # YZ
+                box = Part.makeBox(obj.Height, obj.Length, obj.Width)
+            
+            # Assigner la forme
+            obj.Shape = box
+            obj.Placement = placement
+        else:
+            # Créer la boîte centrée sur le modèle avec les extensions
+            xMin = modelBbox.XMin - obj.XNeg
+            yMin = modelBbox.YMin - obj.YNeg
+            zMin = modelBbox.ZMin - obj.ZNeg
+            length = modelBbox.XLength + obj.XNeg + obj.XPos
+            width = modelBbox.YLength + obj.YNeg + obj.YPos
+            height = modelBbox.ZLength + obj.ZNeg + obj.ZPos
+
+            box = Part.makeBox(length, width, height, App.Vector(xMin, yMin, zMin))
+            obj.Shape = box
+            #obj.Placement =  App.Placement(App.Vector(modelBbox.XMin, modelBbox.YMin, modelBbox.ZMin), App.Rotation(App.Vector(0,0,1),0))
     
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
         if prop in ["Length", "Width", "Height", "WorkPlane"]:
+            self.updateShape(obj)
+        elif prop in ["XNeg", "YNeg", "ZNeg", "XPos", "YPos", "ZPos"]:
             self.updateShape(obj)
     
     def __getstate__(self):
@@ -104,7 +160,7 @@ class ViewProviderStock:
     
     def getIcon(self):
         """Retourne l'icône"""
-        return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Tree_Stock.svg")
+        return BaptUtilities.getIconPath("Tree_Stock.svg")
     
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""
@@ -246,11 +302,19 @@ class CamProject:
         # Créer le groupe Geometry
         self.getGeometryGroup(obj)
         
+       
+        self.getModel(obj)
+
+        #obj.recompute()
+
         # Créer ou obtenir l'objet Stock
         self.getStock(obj)
         
         # Obtenir l'objet Origin
         self.origin = self.getOrigin(obj)
+        
+        # Créer ou obtenir l'objet Tools
+        self.getToolsGroup(obj)
         
         # Assigner le proxy à la fin pour éviter les problèmes de récursion
         obj.Proxy = self
@@ -258,6 +322,32 @@ class CamProject:
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
         self.__init__(obj)
+    
+    def getModel(self, obj):
+        """Obtenir ou créer l'objet Model pour le projet"""
+        if hasattr(obj, "Model") and obj.Model:
+            return obj.Model
+        
+        App.Console.PrintMessage("Model not found in project. Creating new model.\n")
+        
+        dlg = ObjSelector()
+        if dlg.exec_():
+            selected_obj = dlg.getSelectedObject()
+            if selected_obj:
+                selected_obj.ViewObject.Visibility = False
+                import Draft
+                clone = Draft.clone(selected_obj)
+                clone.Label = f"Clone_{selected_obj.Label}"
+                clone.ViewObject.Visibility = True
+                clone.ViewObject.Transparency = 50
+                obj.Model = clone
+                obj.addObject(clone)
+                clone.recompute()
+                bbox = selected_obj.Shape.BoundBox
+                # App.Console.PrintMessage(f"Dimensions: X={bbox.XLength} Y={bbox.YLength} Z={bbox.ZLength}\n")
+                # print(f"X Range: {bbox.XMin} to {bbox.XMax}")
+                # print(f"Y Range: {bbox.YMin} to {bbox.YMax}")
+                # print(f"Z Range: {bbox.ZMin} to {bbox.ZMax}")
     
     def getOperationsGroup(self, obj):
         """Obtenir ou créer le groupe Operations"""
@@ -325,7 +415,9 @@ class CamProject:
         # Vérifier si le stock existe déjà
         if hasattr(obj, "Group"):
             for child in obj.Group:
+                App.Console.PrintMessage(f'Checking child: {child.Name}\n')
                 if child.Name.startswith("Stock"):
+                    App.Console.PrintMessage(f'Stock found: {child.Name}\n')
                     stock = child
                     break
         
@@ -333,39 +425,78 @@ class CamProject:
         if not stock:
             stock = App.ActiveDocument.addObject("Part::FeaturePython", "Stock")
             Stock(stock, obj)
-            
+
+            # Ajouter le stock au groupe
+            obj.addObject(stock)
+            obj.Group.append(stock)
+
             # Ajouter le ViewProvider
             if stock.ViewObject:
                 ViewProviderStock(stock.ViewObject)
             
-            dlg = BoundingBoxSelector()
-            if dlg.exec_():
-                bbox = dlg.getSelectedBoundingBox()
-                if bbox:
-                    # App.Console.PrintMessage(f"Dimensions: X={bbox.XLength} Y={bbox.YLength} Z={bbox.ZLength}\n")
-                    # print(f"X Range: {bbox.XMin} to {bbox.XMax}")
-                    # print(f"Y Range: {bbox.YMin} to {bbox.YMax}")
-                    # print(f"Z Range: {bbox.ZMin} to {bbox.ZMax}")
-                    stock.Length = bbox.XLength
-                    stock.Width = bbox.YLength
-                    stock.Height = bbox.ZLength
-                    stock.Placement = App.Placement(App.Vector(bbox.XMin, bbox.YMin, bbox.ZMin), App.Rotation(App.Vector(0,0,1),0))
-                    App.Console.PrintMessage(f"Stock created: {stock.Name}\n")
-                    App.Console.PrintMessage(f"Stock origin: {stock.Placement.Base}\n")
-                    #stock.Origin = App.Vector(bbox.XMin, bbox.YMin, bbox.ZMin)
-                else:
-                    App.Console.PrintMessage("Aucun objet sélectionné.\n")
-                    # Initialiser les propriétés du stock
-                    stock.Length = 100.0
-                    stock.Width = 100.0
-                    stock.Height = 50.0
-                    stock.Placement.Base = App.Vector(0, 0, 0)
+            
+
+                #self.updateStockShape(obj)
+
+                
+            # dlg = BoundingBoxSelector()
+            # if dlg.exec_():
+            #     bbox = dlg.getSelectedBoundingBox()
+            #     if bbox:
+            #         # App.Console.PrintMessage(f"Dimensions: X={bbox.XLength} Y={bbox.YLength} Z={bbox.ZLength}\n")
+            #         # print(f"X Range: {bbox.XMin} to {bbox.XMax}")
+            #         # print(f"Y Range: {bbox.YMin} to {bbox.YMax}")
+            #         # print(f"Z Range: {bbox.ZMin} to {bbox.ZMax}")
+            #         stock.Length = bbox.XLength
+            #         stock.Width = bbox.YLength
+            #         stock.Height = bbox.ZLength
+            #         stock.Placement = App.Placement(App.Vector(bbox.XMin, bbox.YMin, bbox.ZMin), App.Rotation(App.Vector(0,0,1),0))
+            #         App.Console.PrintMessage(f"Stock created: {stock.Name}\n")
+            #         App.Console.PrintMessage(f"Stock origin: {stock.Placement.Base}\n")
+            #         #stock.Origin = App.Vector(bbox.XMin, bbox.YMin, bbox.ZMin)
+            #     else:
+            #         App.Console.PrintMessage("Aucun objet sélectionné.\n")
+            #         # Initialiser les propriétés du stock
+            #         stock.Length = 100.0
+            #         stock.Width = 100.0
+            #         stock.Height = 50.0
+            #         stock.Placement.Base = App.Vector(0, 0, 0)
+
             stock.WorkPlane = obj.WorkPlane
             
-            # Ajouter le stock au groupe
-            obj.addObject(stock)
+            
         
         return stock
+    
+    # def updateStockShape(self, obj):
+    #     """Mettre à jour la forme du stock en fonction de l'objet modèle"""
+    #     stock = self.getStock(obj)
+    #     model = obj.Model
+    #     if stock and model and hasattr(model, "Shape"):
+    #         bbox = model.Shape.BoundBox
+    #         stock.Length = bbox.XLength
+    #         stock.Width = bbox.YLength
+    #         stock.Height = bbox.ZLength
+    #         stock.Placement = App.Placement(App.Vector(bbox.XMin, bbox.YMin, bbox.ZMin), App.Rotation(App.Vector(0,0,1),0))
+            
+
+    def getToolsGroup(self, obj):
+        """Obtenir ou créer le groupe Tools"""
+        tools_group = None
+        
+        # Vérifier si le groupe existe déjà
+        for child in obj.Group:
+            if child.Name.startswith("Tools"):
+                tools_group = child
+                break
+        
+        # Créer le groupe s'il n'existe pas
+        if not tools_group:
+            tools_group = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "Tools")
+            tools_group.Label = "Tools"
+            obj.addObject(tools_group)
+        
+        return tools_group
     
     def execute(self, obj):
         """Mettre à jour le projet"""
@@ -397,7 +528,7 @@ class ViewProviderCamProject:
     
     def getIcon(self):
         """Retourne l'icône"""
-        return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "BaptWorkbench.svg")
+        return BaptUtilities.getIconPath("BaptWorkbench.svg")
         
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""

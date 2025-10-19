@@ -3,6 +3,7 @@ import FreeCADGui as Gui
 from PySide import QtGui
 from pivy import coin
 import Part 
+import BaptUtilities
 from utils import PointSelectionObserver
 import math
 import os
@@ -120,9 +121,9 @@ class ViewProviderSurfacage:
         vobj.addProperty("App::PropertyColor", "Feed", "Display", "Color of the path").Feed = (0.0, 1.0, 0.0)
 
     def getIcon(self):
-        return os.path.join(App.getHomePath(), "Mod", "Bapt", "resources", "icons", "Surfacage.svg")
+        return BaptUtilities.getIconPath("Surfacage.svg")
 
-        return ":/icons/surfacage.svg"
+        #return ":/icons/surfacage.svg"
 
     def attach(self,vobj):
         #self.updateColors()

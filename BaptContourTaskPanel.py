@@ -1,12 +1,16 @@
+from BaptCamProject import CamProject
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
+import sys
 
 class ContourTaskPanel:
-    def __init__(self, obj):
+    def __init__(self, obj,deleteOnReject):
         # Garder une référence à l'objet
         self.obj = obj
         
+        self.deleteOnReject = deleteOnReject
+
         # Créer l'interface utilisateur
         self.form = QtGui.QWidget()
         self.form.setWindowTitle("Éditer le contour")
@@ -61,6 +65,10 @@ class ContourTaskPanel:
         contourGroup.setLayout(contourLayout)
         layout.addWidget(contourGroup)
         
+        # ReverseOrder btn
+        self.reverseOrderButton = QtGui.QPushButton("Inverser l'ordre des arêtes")
+        self.reverseOrderButton.clicked.connect(self.reverseOrder)
+        layout.addWidget(self.reverseOrderButton)
         
         # Groupe Coupe
         contourGroup = QtGui.QGroupBox("Paramètres du contour")
@@ -120,8 +128,8 @@ class ContourTaskPanel:
         # Connecter les signaux pour l'actualisation en temps réel
         self.confirmSelectionButton.clicked.connect(self.confirmSelection)
         self.direction.currentTextChanged.connect(self.updateContour)
-        self.Zref.valueChanged.connect(self.updateContour)
-        self.depth.valueChanged.connect(self.updateContour)
+        self.Zref.valueChanged.connect(self.updateZref)
+        self.depth.valueChanged.connect(self.updateDepth)
         
         # Connecter les signaux pour le changement de mode de profondeur
         if self.obj.DepthMode == "Relatif":
@@ -131,7 +139,28 @@ class ContourTaskPanel:
         
         # Variable pour suivre l'état de sélection
         self.selectionMode = False
+        self.viewModeToRestore = None
         
+    
+    def reverseOrder(self):
+        """Inverser l'ordre des arêtes sélectionnées"""
+        if not hasattr(self.obj, "Edges") or not self.obj.Edges:
+            return
+        
+        a = []
+        # Inverser l'ordre des arêtes
+        for edge in self.obj.Edges:
+            print(edge)
+            for subElement in edge[1]:
+                print(subElement)
+                a.insert(0, (edge[0], [subElement]))
+        self.obj.Edges = a
+        print(f"new edges: {self.obj.Edges}")
+        #print(f"new edges reverse: {self.obj.Edges.reverse()}")
+        
+        # Mettre à jour l'affichage
+        self.updateEdgesLabel()
+    
     def updateEdgesLabel(self):
         """Met à jour l'affichage des arêtes sélectionnées"""
         if not hasattr(self.obj, "Edges") or not self.obj.Edges:
@@ -160,10 +189,14 @@ class ContourTaskPanel:
                 # Déterminer le type d'élément (ligne droite, arc, etc.)
                 try:
                     element = obj.Shape.getElement(subElement)
-                    elementType = element.Curve.__class__.__name__
+                    # elementType = element.Curve.__class__.__name__
+                    elementType = getattr(element,"ShapeType","Inconnu4")
                     self.edgesTable.setItem(row, 2, QtGui.QTableWidgetItem(elementType))
-                except:
-                    self.edgesTable.setItem(row, 2, QtGui.QTableWidgetItem("Inconnu"))
+                except Exception as e:
+                    self.edgesTable.setItem(row, 2, QtGui.QTableWidgetItem("Inconnu3"))
+                    App.Console.PrintError(f" {str(e)}\n")
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
                 
                 row += 1
         
@@ -175,6 +208,25 @@ class ContourTaskPanel:
         # Activer le mode de sélection
         self.selectionMode = True
         self.confirmSelectionButton.setEnabled(True)
+
+
+        # recupere l'objet CamProject Parent
+        parent = self.obj.getParent()
+        print(f"parent: {parent.Name}")
+        while parent and not isinstance(parent, CamProject):
+        #while parent and not parent.Type == "CamProject":
+            parent = parent.getParent()
+            #print(f"parent: {parent.Name}")
+        parent = self.obj.getParent().getParent() #TODO fixme
+        if parent:
+            self.viewModeToRestore = parent.Model.ViewObject.DisplayMode
+            # print(f"viewModeToRestore: {self.viewModeToRestore}")
+            # print(f"viewModeToRestore: {parent.Model.Name}")
+            parent.Model.ViewObject.DisplayMode = u"Wireframe"
+        else:
+            print("No parent found")
+        self.selectable = self.obj.ViewObject.Selectable
+        self.obj.ViewObject.Selectable = False
         
         # Récupérer la sélection actuelle
         #current_selection = Gui.Selection.getSelectionEx()
@@ -204,6 +256,16 @@ class ContourTaskPanel:
         self.selectionMode = False
         self.confirmSelectionButton.setEnabled(False)
         
+        self.obj.ViewObject.Selectable = self.selectable
+
+        # recupere l'objet CamProject Parent
+        parent = self.obj.getParent()
+        while parent and not isinstance(parent, CamProject):
+            parent = parent.getParent()
+        parent = self.obj.getParent().getParent() #TODO fixme
+        if parent:
+            parent.Model.ViewObject.DisplayMode = self.viewModeToRestore
+        
         # Désactiver le mode de sélection
         Gui.Selection.removeSelectionGate()
         
@@ -219,10 +281,20 @@ class ContourTaskPanel:
         # Récupérer la sélection
         selection = Gui.Selection.getSelectionEx()
         
+        self.obj.ViewObject.Selectable = self.selectable
+        
+        # recupere l'objet CamProject Parent
+        parent = self.obj.getParent()
+        while parent and not isinstance(parent, CamProject):
+            parent = parent.getParent()
+        parent = self.obj.getParent().getParent() #TODO fixme
+        if parent:
+            parent.Model.ViewObject.DisplayMode = self.viewModeToRestore
+        
         App.Console.PrintMessage(f"Confirmation de la sélection: {len(selection)} objets sélectionnés.\n")
         
         if not selection:
-            App.Console.PrintMessage("Aucune arête sélectionnée.\n")
+            #App.Console.PrintMessage("Aucune arête sélectionnée.\n")
             return
         
         # Mettre à jour les arêtes sélectionnées
@@ -265,7 +337,8 @@ class ContourTaskPanel:
             self.relativeDepthRadio.clicked.disconnect(self.depthModeChanged)
         #     # Passage en mode relatif
         #     #self.depth.setRange(-100, 0)
-            self.depth.setValue(current_value - self.Zref.value())
+            #self.depth.setValue(current_value - self.Zref.value())
+            
             self.depth.setSuffix(" mm (relatif)")
             self.obj.DepthMode = "Relatif"
         else:
@@ -274,12 +347,21 @@ class ContourTaskPanel:
             self.relativeDepthRadio.clicked.connect(self.depthModeChanged)
         #     # Passage en mode absolu
         #     #self.depth.setRange(0.1, 100)
-            self.depth.setValue(self.Zref.value() + current_value)
+            #self.depth.setValue(self.Zref.value() + current_value)
+            
             self.depth.setSuffix(" mm (absolu)")
             self.obj.DepthMode = "Absolu"
-        
+        App.Console.PrintMessage('fin calcul\n')
         # Mettre à jour le contour
         self.updateContour()
+
+    def updateZref(self):
+        """Met à jour Zref"""
+        self.obj.Zref = self.Zref.value()
+
+    def updateDepth(self):
+        """Met à jour depth"""
+        self.obj.depth = self.depth.value()
 
     def updateContour(self):
         """Met à jour le contour en fonction des paramètres"""
@@ -287,19 +369,21 @@ class ContourTaskPanel:
         self.obj.Direction = self.direction.currentText()
         
         # Mettre à jour Zref
-        self.obj.Zref = self.Zref.value()
+        # self.obj.Zref = self.Zref.value()
         
-        self.obj.depth = self.depth.value()
+        # self.obj.depth = self.depth.value()
+        self.Zref.setValue(self.obj.Zref)
+        self.depth.setValue(self.obj.depth)
         
         # Mettre à jour le mode de profondeur
-        if self.relativeDepthRadio.isChecked():
+        #if self.relativeDepthRadio.isChecked():
             # Mode relatif: depth = Zref + valeur relative (négative)
             #self.obj.depth = self.Zref.value() + self.depth.value()
-            self.obj.DepthMode = "Relatif"
-        else:
+            #self.obj.DepthMode = "Relatif"
+        #else:
             # Mode absolu: depth = valeur absolue
             #self.obj.depth = self.depth.value()
-            self.obj.DepthMode = "Absolu"
+            #self.obj.DepthMode = "Absolu"
         
         self.obj.Document.recompute()
     
@@ -322,10 +406,10 @@ class ContourTaskPanel:
                         if vertex.Point.z > highest_z:
                             highest_z = vertex.Point.z
             #self.obj.Zref = highest_z
-        else:
-            App.Console.PrintWarning("Aucune arête sélectionnée, Zref non mis à jour.\n")
-        #debug
-        App.Console.PrintMessage(f"Zref mis à jour: {self.obj.Zref}\n")
+        # else:
+        #     App.Console.PrintWarning("Aucune arête sélectionnée, Zref non mis à jour.\n")
+        # #debug
+        # App.Console.PrintMessage(f"Zref mis à jour: {self.obj.Zref}\n")
         
         # # Mettre à jour les autres propriétés
         # self.obj.Zref = self.Zref.value()
@@ -352,48 +436,24 @@ class ContourTaskPanel:
         # Désactiver le mode de sélection si actif
         if self.selectionMode:
             Gui.Selection.removeSelectionGate()
-        
+        if self.deleteOnReject:
+            App.ActiveDocument.removeObject(self.obj.Name)
         Gui.Control.closeDialog()
         return False
     
     def getStandardButtons(self):
         """Définir les boutons standard"""
-        return int(QtGui.QDialogButtonBox.Ok |
-                  QtGui.QDialogButtonBox.Cancel)
+        return int(QtGui.QDialogButtonBox.Ok | 
+                   QtGui.QDialogButtonBox.Apply|
+                   QtGui.QDialogButtonBox.Cancel)
 
-    def updateEdgesTable(self):
-        """Met à jour le tableau des arêtes"""
-        self.edgesTable.clearContents()
-        
-        if not hasattr(self.obj, "Edges") or not self.obj.Edges:
-            self.edgesTable.setRowCount(0)
-            return
-        
-        # Compter le nombre total d'arêtes
-        total_edges = sum(len(sub[1]) for sub in self.obj.Edges)
-        self.edgesTable.setRowCount(total_edges)
-        
-        # Ajouter chaque arête au tableau
-        row = 0
-        for sub in self.obj.Edges:
-            obj = sub[0]
-            for subElement in sub[1]:
-                self.edgesTable.setItem(row, 0, QtGui.QTableWidgetItem(obj.Label))
-                self.edgesTable.setItem(row, 1, QtGui.QTableWidgetItem(subElement))
-                
-                # Déterminer le type d'élément (ligne droite, arc, etc.)
-                try:
-                    element = obj.Shape.getElement(subElement)
-                    elementType = element.Curve.__class__.__name__
-                    self.edgesTable.setItem(row, 2, QtGui.QTableWidgetItem(elementType))
-                except:
-                    self.edgesTable.setItem(row, 2, QtGui.QTableWidgetItem("Inconnu"))
-                
-                row += 1
-        
-        # Ajuster la taille des colonnes
-        self.edgesTable.resizeColumnsToContents()
-        
+    def clicked(self, button):
+        """clicked(button) ... callback invoked when the user presses any of the task panel buttons."""
+        if button == QtGui.QDialogButtonBox.Apply:
+            #self.panelGetFields()
+            #self.setClean()
+            App.ActiveDocument.recompute()
+
     def onTableSelectionChanged(self):
         """Gère la sélection d'une ligne dans le tableau"""
         selected_rows = self.edgesTable.selectedIndexes()
