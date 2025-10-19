@@ -1,0 +1,15 @@
+{
+    // "git.autofetch": true,
+    // "editor.multiCursorModifier": "ctrlCmd",
+    "python.pythonPath": "/usr/bin/python3",
+    "python.envFile": "${workspaceFolder}/.env",
+    "python.autoComplete.extraPaths": [
+        "D:/Program Files/FreeCAD 1.0/bin",
+        "D:/Program Files/FreeCAD 1.0/lib",
+        "D:/Program Files/FreeCAD 1.0/Ext",
+        "D:/Program Files/FreeCAD 1.0/Gui",
+        "D:/Program Files/FreeCAD 1.0/Mod",
+
+    ],
+    // "python.languageServer": "Pylance"
+}

@@ -286,8 +286,8 @@ def generate_gcode_for_ops(ops):
                     gcode_lines.append(f"S{spindle} M3")
                     current_spindle = spindle
                 if feed:
-                    gcode_lines.append(f"F{feed}")
-                    current_feed = feed
+                    gcode_lines.append(f"F{feed.value}")
+                    current_feed = feed.value
                 current_tool = tool_id
             gcode_lines.append(f"(Perçage: {obj.Label})")
             points = []

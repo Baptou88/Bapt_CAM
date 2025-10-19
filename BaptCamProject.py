@@ -16,7 +16,7 @@ class Stock:
             obj: L'objet FreeCAD
             parent: L'objet parent (CamProject)
         """
-            
+        
         self.Type = "Stock"
         self.parent = parent
         App.Console.PrintMessage(f'Creating Stock object with parent: {parent.Label}\n')
