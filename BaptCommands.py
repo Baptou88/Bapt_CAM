@@ -283,20 +283,20 @@ class CreateCamProjectCommand:
         if obj.ViewObject:
             BaptCamProject.ViewProviderCamProject(obj.ViewObject)
         
-        from BaptCamProject import ObjSelector
-        dlg = ObjSelector()
-        if dlg.exec_():
-            model = dlg.getSelectedObject()
-            if model:
-                model.ViewObject.Visibility = False
-                import Draft
-                clone = Draft.clone(model)
-                clone.Label = f"Clone_{model.Label}"
-                clone.ViewObject.Visibility = True
-                clone.ViewObject.Transparency = 50
+        # from BaptCamProject import ObjSelector
+        # dlg = ObjSelector()
+        # if dlg.exec_():
+        #     model = dlg.getSelectedObject()
+        #     if model:
+        #         model.ViewObject.Visibility = False
+        #         import Draft
+        #         clone = Draft.clone(model)
+        #         clone.Label = f"Clone_{model.Label}"
+        #         clone.ViewObject.Visibility = True
+        #         clone.ViewObject.Transparency = 50
 
-                obj.Model = clone
-                obj.addObject(clone)
+        #         obj.Model = clone
+        #         obj.addObject(clone)
         # Recomputer
         doc.recompute()
         
