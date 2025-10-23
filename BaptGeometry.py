@@ -593,7 +593,7 @@ class ContourGeometry:
                 self.debugEdge(edge,i,"")
 
                 # Créer une flèche pour indiquer la direction de l'arête
-                arrow = self._create_direction_arrow(edge, obj.Zref, size=2.0)
+                arrow = self._create_direction_arrow(obj, edge, size=2.0)
                 if arrow:
                     direction_arrows.append(arrow)
 
@@ -882,7 +882,7 @@ class ContourGeometry:
             new_edge.reverse()
             return new_edge
 
-    def _create_direction_arrow(self, edge, z_value, size=2.0):
+    def _create_direction_arrow(self, obj, edge, size=2.0):
         """Crée une petite flèche au milieu de l'arête pour indiquer la direction
 
         Args:
@@ -898,7 +898,7 @@ class ContourGeometry:
             # Point milieu paramétrique
             mid_param = (edge.FirstParameter + edge.LastParameter) / 2.0
             mid_point = edge.valueAt(mid_param)
-            mid_point_z = App.Vector(mid_point.x, mid_point.y, z_value)
+            mid_point_z = App.Vector(mid_point.x, mid_point.y, obj.Zref)
 
             # Tangente au point milieu
             tangent = edge.tangentAt(mid_param)
@@ -908,12 +908,14 @@ class ContourGeometry:
             tangent = tangent.normalize()
 
             # Inverser la tangente si l'orientation de l'arête est inversée
-            try:
-                if hasattr(edge.Vertexes[0], "Orientation") and edge.Vertexes[0].Orientation == "Reversed":
-                    #tangent = tangent.multiply(-1)
-                    pass
-            except Exception:
-                pass
+            # try:
+            #     if hasattr(edge.Vertexes[0], "Orientation"): # and edge.Vertexes[0].Orientation == "Reversed":
+            #         tangent = tangent.multiply(-1)
+            #         pass
+            # except Exception:
+            #     pass
+            if hasattr(obj, "Direction") and obj.Direction == "Anti-horaire":
+                tangent = tangent.multiply(-1)
 
             # Projet de la tangente sur XY et normalisation
             tangent_z = App.Vector(tangent.x, tangent.y, 0.0)
@@ -921,7 +923,7 @@ class ContourGeometry:
                 # Cas pathologique (tangente verticale) : utiliser direction calculée pour les cercles
                 if isinstance(edge.Curve, Part.Circle):
                     center = edge.Curve.Center
-                    center_z = App.Vector(center.x, center.y, z_value)
+                    center_z = App.Vector(center.x, center.y, obj.Zref)
                     radius_vector = mid_point_z.sub(center_z)
                     tangent_z = App.Vector(-radius_vector.y, radius_vector.x, 0.0)
                 else:
