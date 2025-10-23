@@ -18,6 +18,7 @@ class abstractParser:
 
     def isEnd(self):
         return self.cursor >= len(self.content) - 1
+    
     def hasNext(self):
         return self.cursor < len(self.content) -1
 

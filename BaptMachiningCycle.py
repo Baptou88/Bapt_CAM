@@ -5,6 +5,7 @@ import FreeCADGui as Gui
 import Part
 from FreeCAD import Base
 import BaptUtilities
+from utils import Contour
 import math
 
 class ContournageCycle:
@@ -296,21 +297,27 @@ class ContournageCycle:
                 continue
 
             # 3. Generate Approach and Retract for offset_toolpath_wire
-            core_toolpath_start_pt = offset_toolpath_wire.Edges[0].Vertexes[0].Point
-            core_toolpath_end_pt = offset_toolpath_wire.Edges[-1].Vertexes[-1].Point
+
+            indexOfFirstPoint = Contour.getFirstPoint([offset_toolpath_wire])
+            App.Console.PrintMessage(f"Index of first point for pass Z={pass_z}: {indexOfFirstPoint}\n")
+            
+            first_toolpath_edge = offset_toolpath_wire.Edges[0]
+            last_toolpath_edge = offset_toolpath_wire.Edges[-1]
+
+            core_toolpath_start_pt = first_toolpath_edge.Vertexes[0].Point
+            core_toolpath_end_pt = last_toolpath_edge.Edges[-1].Vertexes[-1].Point
             start_pt = core_toolpath_start_pt # Used for tangent calculation legacy
             end_pt = core_toolpath_end_pt # Used for tangent calculation legacy
 
             pass_approach_edges = []
             pass_retract_edges = []
 
-            first_toolpath_edge = offset_toolpath_wire.Edges[0]
-            last_toolpath_edge = offset_toolpath_wire.Edges[-1]
+            App.Console.PrintMessage(f"first point: {core_toolpath_start_pt}, last point: {core_toolpath_end_pt}\n")
             # start_pt and end_pt are now core_toolpath_start_pt and core_toolpath_end_pt
 
             # Approach
             try:
-                tangent_start_vec = first_toolpath_edge.tangentAt(0)
+                tangent_start_vec = first_toolpath_edge.tangentAt(first_toolpath_edge.FirstParameter)
                 if tangent_start_vec.Length > 1e-6:
                     tangent_start = tangent_start_vec.normalize()
                     if approach_type == "Tangentielle":

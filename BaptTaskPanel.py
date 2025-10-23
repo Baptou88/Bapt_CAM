@@ -136,7 +136,8 @@ class CamProjectTaskPanel:
         
         # Initialiser les valeurs
         self.workPlane.setCurrentText(obj.WorkPlane)
-        self.model.setCurrentText(obj.Model.Name)
+        if obj.Model:
+            self.model.setCurrentText(obj.Model.Name)
 
         if self.stock:
             if hasattr(self.stock, "Length"):

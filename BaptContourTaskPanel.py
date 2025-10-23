@@ -3,6 +3,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
 import sys
+from utils.PointSelectionObserver import PointSelectionObserver
 
 class ContourTaskPanel:
     def __init__(self, obj,deleteOnReject):
@@ -14,8 +15,17 @@ class ContourTaskPanel:
         # Créer l'interface utilisateur
         self.form = QtGui.QWidget()
         self.form.setWindowTitle("Éditer le contour")
-        layout = QtGui.QVBoxLayout(self.form)
-        
+        main_layout = QtGui.QVBoxLayout(self.form)
+
+        # Utiliser des sections repliables verticales (accordion)
+        self.contourSection = CollapsibleSection("Contour", expanded=True)
+        self.advancedSection = CollapsibleSection("Avancé", expanded=False)
+        main_layout.addWidget(self.contourSection)
+        main_layout.addWidget(self.advancedSection)
+        main_layout.addStretch(1)
+
+        # Par commodité, créer une référence 'layout' vers la zone de contenu du 1er onglet
+        layout = self.contourSection.content_layout
         # Groupe Contour
         contourGroup = QtGui.QGroupBox("Contour")
         contourLayout = QtGui.QFormLayout()
@@ -77,10 +87,20 @@ class ContourTaskPanel:
         # Hauteur de référence
         self.Zref = QtGui.QDoubleSpinBox()
         self.Zref.setRange(-1000, 1000)
-        self.Zref.setDecimals(2)
+        self.Zref.setDecimals(3)
         self.Zref.setSuffix(" mm")
         self.Zref.setValue(obj.Zref)
-        contourLayout.addRow("Zref:", self.Zref)
+        #contourLayout.addRow("Zref:", self.Zref)
+        zref_container = QtGui.QWidget()
+        zref_h = QtGui.QHBoxLayout()
+        zref_h.setContentsMargins(0,0,0,0)
+        zref_h.addWidget(self.Zref)
+        self.pickZrefButton = QtGui.QPushButton("<-")
+        self.pickZrefButton.setToolTip("Définir Zref au point le plus haut du contour sélectionné")
+        self.pickZrefButton.clicked.connect(self.startPickZref)
+        zref_h.addWidget(self.pickZrefButton)
+        zref_container.setLayout(zref_h)
+        contourLayout.addRow("Zref:", zref_container)
         
         # Mode de profondeur (absolu ou relatif)
         self.depthModeLayout = QtGui.QHBoxLayout()
@@ -116,8 +136,18 @@ class ContourTaskPanel:
             self.depth.setValue(obj.depth)
             self.depth.setSuffix(" mm (absolu)")
         
-        self.depth.setDecimals(2)
-        contourLayout.addRow("depth:", self.depth)
+        self.depth.setDecimals(3)
+        #contourLayout.addRow("depth:", self.depth)
+        depth_container = QtGui.QWidget()
+        depth_h = QtGui.QHBoxLayout()
+        depth_h.setContentsMargins(0,0,0,0)
+        depth_h.addWidget(self.depth)
+        self.pickDepthButton = QtGui.QPushButton("<-")
+        self.pickDepthButton.setToolTip("Définir depth en cliquant sur un point du modèle")
+        self.pickDepthButton.clicked.connect(self.startPickDepth)
+        depth_h.addWidget(self.pickDepthButton)
+        depth_container.setLayout(depth_h)
+        contourLayout.addRow("Depth:", depth_container)
         
         contourGroup.setLayout(contourLayout)
         layout.addWidget(contourGroup)
@@ -423,7 +453,12 @@ class ContourTaskPanel:
         #     # Mode absolu: depth = valeur absolue
         #     #self.obj.depth = self.depth.value()
         #     self.obj.DepthMode = "Absolu"
-        
+
+        if hasattr(self,"_clickObserver") and self._clickObserver:
+            self._clickObserver.disable()
+            self._clickObserver = None
+            self.clickObserverActive = False
+
         # Recomputer
         self.obj.Document.recompute()
         
@@ -438,6 +473,11 @@ class ContourTaskPanel:
             Gui.Selection.removeSelectionGate()
         if self.deleteOnReject:
             App.ActiveDocument.removeObject(self.obj.Name)
+        if self._clickObserver:
+            self._clickObserver.disable()
+            self._clickObserver = None
+            self.clickObserverActive = False
+
         Gui.Control.closeDialog()
         return False
     
@@ -495,3 +535,89 @@ class ContourTaskPanel:
         
         # Recomputer pour mettre à jour l'affichage
         self.obj.Document.recompute()
+
+    # ---- PICK Z handling ----
+    def startPickZref(self):
+        """Démarre l'observation pour récupérer une coordonnée Z et l'appliquer à Zref"""
+        App.Console.PrintMessage("Pick Zref: cliquez sur un point du modèle pour récupérer Z.\n")
+        self._start_point_observer(target="Zref")
+        self.pickZrefButton.setEnabled(False)
+
+    def startPickDepth(self):
+        """Démarre l'observation pour récupérer une coordonnée Z et l'appliquer à depth"""
+        App.Console.PrintMessage("Pick depth: cliquez sur un point du modèle pour récupérer Z.\n")
+        self._start_point_observer(target="depth")
+        self.pickDepthButton.setEnabled(False)
+    
+
+    def _start_point_observer(self, target):
+        # éviter doublons
+        try:
+            if hasattr(self, "clickObserverActive") and self.clickObserverActive:
+                App.Console.PrintMessage("Observation de point déjà active.\n")
+                return
+        except Exception:
+            pass
+        self.clickObserverActive = True
+        self._pickingTarget = target
+        # Ajouter l'observer via PointSelectionObserver
+       
+        try:
+            # PointSelectionObserver doit prendre en paramètre une fonction callback
+            # qui recevra un Base.Vector (ou équivalent). Il doit fournir start()/stop()
+            self._clickObserver = PointSelectionObserver(self._on_point_picked)
+            self._clickObserver.enable()
+
+        except Exception:
+            App.Console.PrintWarning("Impossible d'ajouter l'observer de sélection (PointSelectionObserver unavailable).\n")
+            self.clickObserverActive = False
+            self._clickObserver = None
+            return
+        # guider l'utilisateur
+       
+
+    def _on_point_picked(self,point):
+        """Callback appelé par l'observer quand un point est sélectionné"""
+        if self._pickingTarget == "Zref":
+            self.Zref.setValue(point.z)
+        elif self._pickingTarget == "depth":
+            self.depth.setValue(point.z)
+        else:
+            App.Console.PrintWarning(f"Target inconnu pour la sélection de point: {self._pickingTarget}\n")
+        self.clickObserverActive = False
+        self._clickObserver = None
+        self.pickZrefButton.setEnabled(True)
+        self.pickDepthButton.setEnabled(True)
+
+class CollapsibleSection(QtGui.QWidget):
+    """Section repliable (accordion) verticale : header clickable + contenu visible/caché."""
+    def __init__(self, title, parent=None, expanded=True):
+        super(CollapsibleSection, self).__init__(parent)
+        self.header = QtGui.QPushButton(title)
+        self.header.setCheckable(True)
+        self.header.setChecked(expanded)
+        # Style minimal pour ressembler à un onglet repliant
+        self.header.setStyleSheet("text-align: left; font-weight: bold;")
+        self.header.clicked.connect(self._toggle)
+
+        self.content = QtGui.QWidget()
+        self.content_layout = QtGui.QVBoxLayout(self.content)
+        self.content_layout.setContentsMargins(6, 6, 6, 6)
+        self.content_layout.setSpacing(6)
+        self.content.setVisible(expanded)
+
+        lay = QtGui.QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(self.header)
+        lay.addWidget(self.content)
+
+    def _toggle(self):
+        shown = self.header.isChecked()
+        self.content.setVisible(shown)
+
+    def addWidget(self, widget):
+        self.content_layout.addWidget(widget)
+
+    def addLayout(self, layout):
+        self.content.setLayout(layout)

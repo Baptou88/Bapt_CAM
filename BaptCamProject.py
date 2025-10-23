@@ -9,23 +9,23 @@ from PySide import QtWidgets
 class Stock:
     """Classe pour gérer le brut d'usinage"""
     
-    def __init__(self, obj, parent=None):
+    def __init__(self, obj):
         """Initialise l'objet Stock
         
         Args:
             obj: L'objet FreeCAD
-            parent: L'objet parent (CamProject)
+
         """
         
         self.Type = "Stock"
-        self.parent = parent
-        App.Console.PrintMessage(f'Creating Stock object with parent: {parent.Label}\n')
-        App.Console.PrintMessage(f'Creating Stock object with parent: {parent.Name}\n')
-        App.Console.PrintMessage(f'Creating Stock object with Model: {parent.Model.Label}\n')
-        App.Console.PrintMessage(f'Creating Stock object with Model: {parent.Model.Name}\n')
         
-        App.Console.PrintMessage(f'Model bounding box: {parent.Model.Shape.BoundBox}\n')
-        App.Console.PrintMessage(f'Model bounding box: {parent.Model.Shape.BoundBox.XMin} {parent.Model.Shape.BoundBox.XMax} {parent.Model.Shape.BoundBox.XLength}\n')
+        # App.Console.PrintMessage(f'Creating Stock object with parent: {parent.Label}\n')
+        # App.Console.PrintMessage(f'Creating Stock object with parent: {parent.Name}\n')
+        # App.Console.PrintMessage(f'Creating Stock object with Model: {parent.Model.Label}\n')
+        # App.Console.PrintMessage(f'Creating Stock object with Model: {parent.Model.Name}\n')
+        
+        # App.Console.PrintMessage(f'Model bounding box: {parent.Model.Shape.BoundBox}\n')
+        # App.Console.PrintMessage(f'Model bounding box: {parent.Model.Shape.BoundBox.XMin} {parent.Model.Shape.BoundBox.XMax} {parent.Model.Shape.BoundBox.XLength}\n')
 
         # Ajouter les propriétés si elles n'existent pas déjà
         # if not hasattr(obj, "Length"):
@@ -79,9 +79,20 @@ class Stock:
             obj.Material = App.Material()
         
         # Créer une forme initiale
-        self.updateShape(obj)
+        #self.updateShape(obj)
 
         obj.Proxy = self
+    
+    def getParent(self, obj):
+        """Obtenir l'objet parent du projet"""
+        for o in obj.InList:
+            if hasattr(o, "Group"):
+                for child in o.Group:
+                    App.Console.PrintMessage(f'Checking child: {child.Name}  {obj.Name}\n')
+                    if child.Name == obj.Name:
+                        return o
+        App.Console.PrintMessage("Parent CamProject not found for Stock object.\n")
+        return None
     
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
@@ -100,12 +111,37 @@ class Stock:
         # if obj.Length <= 0 or obj.Width <= 0 or obj.Height <= 0:
         #     App.Console.PrintMessage(f'updateShape {obj.Placement.Base}\n')
         #     return
-        # placement = obj.Placement
+        App.Console.PrintMessage(f'avant placement \n')
+        #placement = obj.Placement
+        App.Console.PrintMessage(f'APRES placement \n')
         obj.Shape = Part.Shape()
-        
-        modelBbox = self.parent.Model.Shape.BoundBox
+        modelBbox = None
+        model = self.getParent(obj).Model
+        if model is not None:
+            modelBbox = model.Shape.BoundBox
+        if modelBbox is None:
+            
+            App.Console.PrintMessage("No object selected for Model.\n")
+            # delete property xneg...
+            for prop in ["XNeg", "YNeg", "ZNeg", "XPos", "YPos", "ZPos"]:
+                if hasattr(obj, prop):
+                    obj.removeProperty(prop)
+            
+            for prop in ["Length", "Width", "Height"]:
+                if not hasattr(obj, "Length"):
+                    obj.addProperty("App::PropertyLength", "Length", "Stock", "Longueur du brut")
+                    #obj.Length = parent.Model.Shape.BoundBox.XLength if parent and hasattr(parent, "Model") and hasattr(parent.Model, "Shape") else 200.0
+                    obj.Length = 100.0
 
-        if False:
+                if not hasattr(obj, "Width"):
+                    obj.addProperty("App::PropertyLength", "Width", "Stock", "Largeur du brut")
+                    obj.Width = 100.0
+                
+                if not hasattr(obj, "Height"):
+                    obj.addProperty("App::PropertyLength", "Height", "Stock", "Hauteur du brut")
+                    obj.Height = 50.0
+
+        if hasattr(obj, "Length") and hasattr(obj, "Width") and hasattr(obj, "Height"):
             # Créer la boîte en fonction du plan de travail
             if obj.WorkPlane == "XY":
                 box = Part.makeBox(obj.Length, obj.Width, obj.Height)
@@ -116,7 +152,7 @@ class Stock:
             
             # Assigner la forme
             obj.Shape = box
-            obj.Placement = placement
+            #obj.Placement = placement
         else:
             # Créer la boîte centrée sur le modèle avec les extensions
             xMin = modelBbox.XMin - obj.XNeg
@@ -132,7 +168,8 @@ class Stock:
     
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        if prop in ["Length", "Width", "Height", "WorkPlane"]:
+        App.Console.PrintMessage(f'Stock property changed: {prop}\n')
+        if prop in ["Length", "Width", "Height", "WorkPlane","Placement"]:
             self.updateShape(obj)
         elif prop in ["XNeg", "YNeg", "ZNeg", "XPos", "YPos", "ZPos"]:
             self.updateShape(obj)
@@ -305,7 +342,7 @@ class CamProject:
        
         self.getModel(obj)
 
-        #obj.recompute()
+        obj.recompute()
 
         # Créer ou obtenir l'objet Stock
         self.getStock(obj)
@@ -415,21 +452,21 @@ class CamProject:
         # Vérifier si le stock existe déjà
         if hasattr(obj, "Group"):
             for child in obj.Group:
-                App.Console.PrintMessage(f'Checking child: {child.Name}\n')
+                #App.Console.PrintMessage(f'Checking child: {child.Name}\n')
                 if child.Name.startswith("Stock"):
-                    App.Console.PrintMessage(f'Stock found: {child.Name}\n')
+                    #App.Console.PrintMessage(f'Stock found: {child.Name}\n')
                     stock = child
                     break
         
         # Créer le stock s'il n'existe pas
         if not stock:
             stock = App.ActiveDocument.addObject("Part::FeaturePython", "Stock")
-            Stock(stock, obj)
+            Stock(stock)
 
             # Ajouter le stock au groupe
             obj.addObject(stock)
             obj.Group.append(stock)
-
+            
             # Ajouter le ViewProvider
             if stock.ViewObject:
                 ViewProviderStock(stock.ViewObject)
