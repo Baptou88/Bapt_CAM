@@ -1,3 +1,4 @@
+from BaptPath import baseOp
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
@@ -7,11 +8,12 @@ from FreeCAD import Base
 from PySide import QtCore, QtGui
 import BaptUtilities
 
-class DrillOperation:
+class DrillOperation(baseOp):
     """Classe représentant une opération d'usinage de perçage"""
     
     def __init__(self, obj):
         """Ajoute les propriétés"""
+        super().__init__(obj)
         obj.Proxy = self
         self.Type = "DrillOperation"
         

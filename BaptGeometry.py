@@ -1147,6 +1147,7 @@ class ViewProviderContourGeometry:
         """
 
         return hasattr(self, "deleteOnReject") and self.deleteOnReject
+    
     def setDeleteObjectsOnReject(self, state=False):
         #♦Path.Log.track()
         self.deleteOnReject = state

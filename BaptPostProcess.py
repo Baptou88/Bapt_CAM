@@ -216,22 +216,23 @@ def generate_gcode_for_ops(ops):
                     current_feed = feed
                 current_tool = tool_id
             gcode_lines.append(f"(Surfacage: {obj.Label})")
-            last_pt = None
-            for edge in obj.Shape.Edges:
-                v1 = edge.Vertexes[0].Point
-                v2 = edge.Vertexes[1].Point
-                if last_pt is None or (v1.x != last_pt.x or v1.y != last_pt.y or v1.z != last_pt.z):
-                    gcode_lines.append(f"G0 X{v1.x:.3f} Y{v1.y:.3f} Z{v1.z:.3f}")
-                if hasattr(edge, 'Curve') and edge.Curve and getattr(edge.Curve, "TypeId", "") == 'Part::GeomCircle':
-                    circle = edge.Curve
-                    center = circle.Center
-                    I = center.x - v1.x
-                    J = center.y - v1.y
-                    gcode_cmd = 'G2' if getattr(edge, "Orientation", "") == 'Forward' else 'G3'
-                    gcode_lines.append(f"{gcode_cmd} X{v2.x:.3f} Y{v2.y:.3f} I{I:.3f} J{J:.3f} Z{v2.z:.3f}")
-                else:
-                    gcode_lines.append(f"G1 X{v2.x:.3f} Y{v2.y:.3f} Z{v2.z:.3f}")
-                last_pt = v2
+            # last_pt = None
+            # for edge in obj.Shape.Edges:
+            #     v1 = edge.Vertexes[0].Point
+            #     v2 = edge.Vertexes[1].Point
+            #     if last_pt is None or (v1.x != last_pt.x or v1.y != last_pt.y or v1.z != last_pt.z):
+            #         gcode_lines.append(f"G0 X{v1.x:.3f} Y{v1.y:.3f} Z{v1.z:.3f}")
+            #     if hasattr(edge, 'Curve') and edge.Curve and getattr(edge.Curve, "TypeId", "") == 'Part::GeomCircle':
+            #         circle = edge.Curve
+            #         center = circle.Center
+            #         I = center.x - v1.x
+            #         J = center.y - v1.y
+            #         gcode_cmd = 'G2' if getattr(edge, "Orientation", "") == 'Forward' else 'G3'
+            #         gcode_lines.append(f"{gcode_cmd} X{v2.x:.3f} Y{v2.y:.3f} I{I:.3f} J{J:.3f} Z{v2.z:.3f}")
+            #     else:
+            #         gcode_lines.append(f"G1 X{v2.x:.3f} Y{v2.y:.3f} Z{v2.z:.3f}")
+            #     last_pt = v2
+            gcode_lines.append(obj.Gcode)
 
         # --- Contournage ---
         if obj.Proxy.Type == 'ContournageCycle' and hasattr(obj, 'Shape'):

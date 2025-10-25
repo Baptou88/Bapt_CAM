@@ -40,14 +40,15 @@ class absinc(Enum):
     G90 = 0
     G91 = 1
 
-class test:
+class baseOp:
     
     def __init__(self,obj):
+        App.Console.PrintMessage("Initializing baseOp object proxy for: {}\n".format(__class__.__name__))
         if not hasattr(obj, "Gcode"):
             obj.addProperty("App::PropertyString", "Gcode", "Gcode", "Gcode").Gcode = ""
             #obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
             
-        obj.Proxy = self
+        # obj.Proxy = self
         
     def onChanged(self, fp, prop):
         self.execute(fp)
@@ -62,10 +63,11 @@ class test:
         """Désérialisation"""
         return None
     
-class ViewProviderProxy:
+class baseOpViewProviderProxy:
     def __init__(self, obj):
         "Set this object as the proxy object of the actual view provider"
-
+        App.Console.PrintMessage("Initializing baseOpViewProviderProxy for: {}\n".format(__class__.__name__))
+        self.deleteOnReject = True
         self.pick_radius = 5  # pixels
 
         if not hasattr(obj, "Rapid"):
@@ -79,12 +81,14 @@ class ViewProviderProxy:
         self.colors = {"red": (1.0, 0.0, 0.0),
                        "green": (0.0, 1.0, 0.0),
                        "blue": (0.0, 0.0, 1.0)}
-        self.Object = obj.Object
-        obj.Proxy = self
+        
+        
+        # self.Object = obj.Object
+        # obj.Proxy = self
 
     def onChanged(self, vp, prop):
         ''' Print the name of the property that has changed '''
-        App.Console.PrintMessage("Change property: " + str(prop) + "\n")
+        #App.Console.PrintMessage("Change property: " + str(prop) + "\n")
 
     def __getstate__(self):
         ''' When saving the document this object gets stored using Python's cPickle module.
@@ -100,6 +104,8 @@ class ViewProviderProxy:
         return None
     
     def attach(self, obj):
+        App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
+        self.pick_radius = 5
         self.my_displaymode = coin.SoGroup()
 
         self.rapid_group = coin.SoSeparator()
@@ -353,7 +359,7 @@ class ViewProviderProxy:
                         break
 
                 ln = self.lines[self.line]
-                App.Console.PrintMessage("Processing line {}: {}\n".format(self.line, ln))
+                #App.Console.PrintMessage("Processing line {}: {}\n".format(self.line, ln))
                 self.line += 1
                 up = ln.upper()
                 # consider only movement commands G0/G00 and G1/G01
@@ -603,10 +609,15 @@ class ViewProviderProxy:
         action2.triggered.connect(lambda: self.startSimulation(vobj))
         return True
     
+    def setDeleteOnReject(self, val):
+        self.deleteOnReject = val
+        return self.deleteOnReject
+    
     def setEdit(self, vobj):
         """Open the editor for the Gcode property"""
         App.Gui.activateWorkbench("DraftWorkbench")
         App.Gui.showEdit(vobj.Object, "Gcode")
+        self.deleteOnReject = False
 
     def startSimulation(self, vobj):
         """Start the G-code simulation animation"""
@@ -619,7 +630,10 @@ class ViewProviderProxy:
         #control.show()
         FreeCADGui.Control.showDialog(control)
 
-        
+    def doubleClicked(self, vobj):
+        self.setEdit(vobj)
+        return True
+     
     def getDisplayModes(self, obj):
         "Return a list of display modes."
         modes = ["My_Display_Mode"]
@@ -632,6 +646,56 @@ class ViewProviderProxy:
     def setDisplayMode(self, mode):
         return mode
 
+class path(baseOp):
+    def __init__(self, obj):
+        App.Console.PrintMessage("Initializing path object proxy for: {}\n".format(__class__.__name__))
+        super().__init__(obj)
+        obj.Proxy = self
+    def execute(self, obj):
+        return super().execute(obj)
+        
+    def onChanged(self, fp, prop):
+        return super().onChanged(fp, prop)
+    
+    def onDocumentRestored(self, obj):
+        """Appelé lors de la restauration du document"""
+        App.Console.PrintMessage("Restoring document for object: {}\n".format(obj.Name))
+        self.__init__(obj)
+
+class pathViewProviderProxy(baseOpViewProviderProxy):
+    def __init__(self, obj):
+        App.Console.PrintMessage("Initializing path view provider proxy for: {}\n".format(__class__.__name__))
+        super().__init__(obj)
+
+        self.Object = obj.Object
+        obj.Proxy = self
+    
+    def attach(self, obj):
+        App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
+        self.Object = obj.Object
+        return super().attach(obj)
+    
+    # def setupContextMenu(self, vobj, menu):
+    #     return super().setupContextMenu(vobj, menu)
+    
+    def getDefaultDisplayMode(self):
+        return super().getDefaultDisplayMode()
+    
+    def setDisplayMode(self, mode):
+        return super().setDisplayMode(mode)
+    
+    def getDisplayModes(self, obj):
+        return super().getDisplayModes(obj)
+
+    
+    
+    def setEdit(self, vobj):
+        #return super().setEdit(vobj)
+        taskPanel = GcodeEditorTaskPanel(vobj.Object)
+        FreeCADGui.Control.showDialog(taskPanel)
+        
+        return True
+    
 class memory():
     def __init__(self):
         #labels tableau de string et int
@@ -642,7 +706,37 @@ class memory():
     def addLabel(self, key, value):
         self.labels[key]= value
 
+class GcodeEditorTaskPanel:
+    def __init__(self, obj):
+        self.obj = obj
+        self.form = QtGui.QWidget()
+        self.form.setWindowTitle("Gcode Editor")
+        layout = QtGui.QVBoxLayout(self.form)
 
+        self.textEdit = QtGui.QPlainTextEdit()
+        self.textEdit.setPlainText(self.obj.Gcode)
+        layout.addWidget(self.textEdit)
+
+        self.buttonBox = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        layout.addWidget(self.buttonBox)
+
+    def accept(self):
+        self.obj.Gcode = self.textEdit.toPlainText()
+        FreeCADGui.Control.closeDialog()
+
+    def reject(self):
+        FreeCADGui.Control.closeDialog()
+
+    def getStandardButtons(self):
+        """Définir les boutons standard"""
+        return int(QtGui.QDialogButtonBox.Ok |
+                   QtGui.QDialogButtonBox.Apply |
+                  QtGui.QDialogButtonBox.Cancel)
+    
+
+    
 class GcodeAnimator:
     """
     Simule le parcours d'usinage en déplaçant un marqueur (sphere) le long des segments
@@ -946,18 +1040,27 @@ class GcodeAnimationControl():
         self.updateTimer.stop()
         #super(GcodeAnimationControl, self).closeEvent(event)
 
-
+    def accept(self):
+        self.stop()
+        FreeCADGui.Control.closeDialog()
+        return True
+    
+    def reject(self):
+        self.stop()
+        FreeCADGui.Control.closeDialog()
+        return False
+    
 def create():
     doc = App.ActiveDocument
     if doc is None:
         doc = App.newDocument() 
     obj = doc.addObject("App::FeaturePython","Test")
 
-    test(obj)
+    baseOp(obj)
     #obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\nREPEAT LABEL1 P=2\n"
     
     obj.Gcode ="R1=10\nG0 X0 Y0 Z10\nG1 Z0 F500\nLABEL1:\nG91\nG1 Z-2\nG90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nREPEAT LABEL1 P=R1\nG0 Z10\n"
-    ViewProviderProxy(obj.ViewObject)
+    baseOpViewProviderProxy(obj.ViewObject)
 
     vp = obj.ViewObject.Proxy
     vp.animator = GcodeAnimator(vp)

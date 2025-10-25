@@ -202,10 +202,16 @@ class CreateSurfacageCommand:
 
     def IsActive(self):
         """La commande est active si un document est ouvert"""
+        App.Console.PrintMessage("Vérification de l'activation de la commande Surfacage...\n")
         sel = Gui.Selection.getSelection()
-        if not sel:
-            return False
-        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject"
+        if sel:
+            if hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject":
+                return True
+        obj = Gui.activeView().getActiveObject("camproject")
+        App.Console.PrintMessage(f"Active camproject: {obj.Name}\n")
+        if obj:
+            return True
+        return False
 
     def Activated(self):
         """Créer un nouveau surfacage"""
@@ -220,12 +226,25 @@ class CreateSurfacageCommand:
         # Créer l'objet surfacage
         obj = doc.addObject("Part::FeaturePython", "Surfacage")
         
-
-        project = Gui.Selection.getSelection()[0]
-
+        project = None
+        activeProject = Gui.activeView().getActiveObject("camproject")
+        selecteProject = Gui.Selection.getSelection()[0]
+        if selecteProject and hasattr(selecteProject, "Proxy") and selecteProject.Proxy.Type == "CamProject":
+            project = selecteProject
+        elif activeProject and hasattr(activeProject, "Proxy") and activeProject.Proxy.Type == "CamProject":
+            project = activeProject
+        else:
+            App.Console.PrintError("Aucun projet CAM actif ou sélectionné.\n")
+            doc.commitTransaction()
+            return
+        
         # Ajouter la fonctionnalité
         Surfacage.Surfacage(obj)
         
+        model = project.Proxy.getModel(project)
+        if model is not None:
+            obj.Depth = model.Shape.BoundBox.ZMax
+
         # Ajouter le ViewProvider
         if obj.ViewObject:
             Surfacage.ViewProviderSurfacage(obj.ViewObject)
@@ -298,6 +317,8 @@ class CreateCamProjectCommand:
         #         obj.Model = clone
         #         obj.addObject(clone)
         # Recomputer
+        Gui.activeView().setActiveObject("camproject",obj)
+
         doc.recompute()
         
         # Ouvrir l'éditeur
@@ -619,13 +640,14 @@ class TestPathCommand:
         obj = doc.addObject("App::FeaturePython","Test")
 
         import BaptPath
-        BaptPath.test(obj)
+        App.Console.PrintMessage("Testing BaptPath.path...\n")
+        BaptPath.path(obj)
         
         #obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
 
         obj.Gcode = "R1=10\nG0 X0 Y0 Z10\nG1 Z0 F500\nLABEL1:\nG91\nG1 Z-2\nG90\nG1 X16 Y0\nG3 X20 Y4 I0 J4 \nG1 X20 Y20\nG1 X0 Y20\nG1 X0 Y0\nREPEAT LABEL1 P=R1\nG0 Z10\n"
 
-        BaptPath.ViewProviderProxy(obj.ViewObject)
+        BaptPath.pathViewProviderProxy(obj.ViewObject)
 
         # Ajouter au groupe Operations
         operations_group = project.Proxy.getOperationsGroup(project)
