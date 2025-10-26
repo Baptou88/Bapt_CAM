@@ -1,6 +1,7 @@
 # https://forum.freecad.org/viewtopic.php?t=100312&sid=a77831c5cae7ee6feb8cf340f0e19dc6
 from collections import deque
 import math
+import sys
 import FreeCAD as App
 import FreeCADGui
 from pivy import coin
@@ -624,7 +625,7 @@ class baseOpViewProviderProxy:
         vp = vobj.Proxy
         vp.animator = GcodeAnimator(vp)
         vp.animator.load_paths(include_rapid=True)
-        vp.animator.start(speed_mm_s=20.0)
+        # vp.animator.start(speed_mm_s=20.0)
 
         control = GcodeAnimationControl(vp.animator)
         #control.show()
@@ -758,6 +759,19 @@ class GcodeAnimator:
         self.speed = 20.0  # mm / sec
         self.include_rapid = False
 
+        self.tool = None
+        if hasattr(self.vp.Object, "Tool") and self.vp.Object.Tool is not None:
+            self.tool = self.vp.Object.Tool
+        
+        self.stock = None
+        project = FreeCADGui.activeView().getActiveObject("camproject")  #FIXME 
+        if project:
+            #App.Console.PrintMessage(f'project name : {project.Name}\n')
+            self.stock = project.Proxy.getStock(project)
+            
+        self.frequence_cut = 20
+        self.indice_frequence_cut = 0
+
         # animation state
         self.segments = []      # list of (p0,p1) tuples
         self.seg_index = 0
@@ -875,7 +889,16 @@ class GcodeAnimator:
         # set translation to point (x,y,z)
         try:
             self.marker_trans.translation.setValue(point[0], point[1], point[2])
-        except Exception:
+            self.tool.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0,0,0,1))
+            self.tool.recompute()
+            self.indice_frequence_cut += 1
+            if self.frequence_cut != 0 and self.indice_frequence_cut % self.frequence_cut == 0:
+                self.stock.Shape = self.stock.Shape.cut(self.tool.Shape)
+                
+        except Exception as e:
+            App.Console.PrintError(f" {str(e)}\n")
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
             pass
 
     def _on_timer(self):
@@ -973,6 +996,16 @@ class GcodeAnimationControl():
         self.speedSpinBox.valueChanged.connect(self.speedChanged)
         speedLayout.addWidget(self.speedSpinBox)
         
+        # Contrôle de frequence
+        frequenceLayout = QtGui.QHBoxLayout()
+        frequenceLayout.addWidget(QtGui.QLabel("Frequence:"))
+        self.frequenceSpinBox = QtGui.QDoubleSpinBox()
+        self.frequenceSpinBox.setRange(0., 1000.0)
+        self.frequenceSpinBox.setValue(self.animator.frequence_cut)
+        self.frequenceSpinBox.setSuffix(" mm/s")
+        self.frequenceSpinBox.valueChanged.connect(self.frequenceChanged)
+        frequenceLayout.addWidget(self.frequenceSpinBox)
+        
         # Include Rapid moves checkbox
         self.rapidCheckBox = QtGui.QCheckBox("Include Rapid Moves")
         self.rapidCheckBox.setChecked(self.animator.include_rapid)
@@ -986,6 +1019,7 @@ class GcodeAnimationControl():
         
         layout.addLayout(btnLayout)
         layout.addLayout(speedLayout)
+        layout.addLayout(frequenceLayout)
         layout.addWidget(self.rapidCheckBox)
         
         # Timer pour mettre à jour l'état des boutons
@@ -994,6 +1028,9 @@ class GcodeAnimationControl():
         self.updateTimer.start(100)  # 10 Hz
         
         self.updateButtons()
+
+        if self.animator.tool is not None:
+            self.animator.tool.Visibility = True
     
     def play(self):
         """Démarre ou reprend l'animation"""
@@ -1020,6 +1057,9 @@ class GcodeAnimationControl():
         """Appelé quand la vitesse change"""
         self.animator.set_speed(value)
     
+    def frequenceChanged(self,value):
+        self.animator.frequence_cut = value
+
     def rapidChanged(self, state):
         """Appelé quand la case Include Rapid change"""
         include_rapid = (state == QtCore.Qt.Checked)
@@ -1042,11 +1082,15 @@ class GcodeAnimationControl():
 
     def accept(self):
         self.stop()
+        if self.animator.tool is not None:
+            self.animator.tool.Visibility = False
         FreeCADGui.Control.closeDialog()
         return True
     
     def reject(self):
         self.stop()
+        if self.animator.tool is not None:
+            self.animator.tool.Visibility = False
         FreeCADGui.Control.closeDialog()
         return False
     

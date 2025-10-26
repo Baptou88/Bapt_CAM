@@ -328,7 +328,7 @@ class CamProject:
     def __init__(self, obj):
         """Ajoute les propriétés"""
         self.Type = "CamProject"
-        
+        self.Object = obj
         # Transformer l'objet en groupe
         #obj.addExtension("App::GroupExtensionPython")
         
@@ -363,7 +363,7 @@ class CamProject:
         self.origin = self.getOrigin(obj)
         
         # Créer ou obtenir l'objet Tools
-        self.getToolsGroup(obj)
+        self.getToolsGroup()
         
         # Assigner le proxy à la fin pour éviter les problèmes de récursion
         obj.Proxy = self
@@ -529,12 +529,12 @@ class CamProject:
     #         stock.Placement = App.Placement(App.Vector(bbox.XMin, bbox.YMin, bbox.ZMin), App.Rotation(App.Vector(0,0,1),0))
             
 
-    def getToolsGroup(self, obj):
+    def getToolsGroup(self):
         """Obtenir ou créer le groupe Tools"""
         tools_group = None
         
         # Vérifier si le groupe existe déjà
-        for child in obj.Group:
+        for child in self.Object.Group:
             if child.Name.startswith("Tools"):
                 tools_group = child
                 break
@@ -543,7 +543,7 @@ class CamProject:
         if not tools_group:
             tools_group = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "Tools")
             tools_group.Label = "Tools"
-            obj.addObject(tools_group)
+            self.Object.addObject(tools_group)
         
         return tools_group
     

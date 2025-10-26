@@ -10,6 +10,7 @@ class ToolSelectorDialog(QtGui.QDialog):
         self.current_tool_id = current_tool_id
         self.selected_tool_id = -1
         self.selected_tool_name = ""
+        self.selected_tool = None
         self.setup_ui()
         self.load_tools()
     
@@ -169,6 +170,8 @@ class ToolSelectorDialog(QtGui.QDialog):
             row = selected_items[0].row()
             self.selected_tool_id = int(self.tool_table.item(row, 0).text())
             self.selected_tool_name = self.tool_table.item(row, 1).text()
+            db = ToolDatabase()
+            self.selected_tool = db.get_tool_by_id(self.selected_tool_id)
             super(ToolSelectorDialog, self).accept()
         else:
             # Aucune sélection, ne rien faire

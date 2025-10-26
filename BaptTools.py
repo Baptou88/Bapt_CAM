@@ -144,6 +144,34 @@ class ToolDatabase:
         conn.close()
         return tools
     
+    def get_tool_by_id(self, tool_id):
+        """Récupère un outil par son ID"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch FROM tools WHERE id=?", (tool_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            tool = Tool(
+                id=row[0],
+                name=row[1],
+                type=row[2],
+                diameter=row[3],
+                length=row[4],
+                flutes=row[5],
+                material=row[6],
+                comment=row[7],
+                point_angle=row[8],
+                torus_radius=row[9],
+                thread_pitch=row[10]
+            )
+            conn.close()
+            return tool
+        else:
+            conn.close()
+            return None
+    
     def add_tool(self, tool):
         """Ajoute un outil à la base de données"""
         conn = sqlite3.connect(self.db_path)

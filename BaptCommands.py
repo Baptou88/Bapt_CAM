@@ -202,13 +202,13 @@ class CreateSurfacageCommand:
 
     def IsActive(self):
         """La commande est active si un document est ouvert"""
-        App.Console.PrintMessage("Vérification de l'activation de la commande Surfacage...\n")
+
         sel = Gui.Selection.getSelection()
         if sel:
             if hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject":
                 return True
         obj = Gui.activeView().getActiveObject("camproject")
-        App.Console.PrintMessage(f"Active camproject: {obj.Name}\n")
+
         if obj:
             return True
         return False
@@ -226,21 +226,25 @@ class CreateSurfacageCommand:
         # Créer l'objet surfacage
         obj = doc.addObject("Part::FeaturePython", "Surfacage")
         
+        o = []
         project = None
         activeProject = Gui.activeView().getActiveObject("camproject")
-        selecteProject = Gui.Selection.getSelection()[0]
-        if selecteProject and hasattr(selecteProject, "Proxy") and selecteProject.Proxy.Type == "CamProject":
-            project = selecteProject
-        elif activeProject and hasattr(activeProject, "Proxy") and activeProject.Proxy.Type == "CamProject":
-            project = activeProject
-        else:
+        if Gui.Selection.getSelection():
+            selecteItem = Gui.Selection.getSelection()[0]
+            if selecteItem and hasattr(selecteItem, "Proxy") and selecteItem.Proxy.Type == "CamProject":
+                o.append(selecteItem)
+        if activeProject and hasattr(activeProject, "Proxy") and activeProject.Proxy.Type == "CamProject":
+            o.append(activeProject)
+        if len(o) == 0:
             App.Console.PrintError("Aucun projet CAM actif ou sélectionné.\n")
             doc.commitTransaction()
             return
         
+        project = o[0]
+        
         # Ajouter la fonctionnalité
         Surfacage.Surfacage(obj)
-        
+        App.Console.PrintMessage(f"Création du surfacage dans le projet {project.Label}\n")
         model = project.Proxy.getModel(project)
         if model is not None:
             obj.Depth = model.Shape.BoundBox.ZMax
