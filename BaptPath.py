@@ -7,6 +7,7 @@ import FreeCADGui
 from pivy import coin
 from enum import Enum 
 from PySide import QtGui,QtCore
+import Mesh,MeshPart
 
 
 """
@@ -350,6 +351,48 @@ class baseOpViewProviderProxy:
             coords_list.append(b)
             idx_list.extend([i, i+1, -1])
             self.ordered_segments.append(("rapid" if coords_list is rapid_coords else "feed", a, b))
+
+        def executeCycle():
+            new = self.cur
+
+            if self.mem.current_cycle["type"] == 81:
+
+                a = list(new[0:2])
+                a.append(self.mem.current_cycle["Z"])
+                new = tuple(a)
+
+                append_segment(feed_coords,feed_idx,self.cur,new)
+                self.cur = new
+                a = list(new[0:2])
+                a.append(self.mem.current_cycle["R"])
+                new = tuple(a)
+                append_segment(rapid_coords,rapid_idx,self.cur,new)
+                self.cur = new
+
+            elif self.mem.current_cycle["type"] == 83:
+                start_z = self.cur[-1]
+                final_Z = self.mem.current_cycle["Z"]
+                done = start_z
+                prisePasse = self.mem.current_cycle["Q"]
+                while done > final_Z:
+                    done = done-prisePasse
+                    if done < final_Z:
+                        prisePasse = final_Z
+                    a = list(new[0:2])
+                    a.append(done)
+                    new = tuple(a)
+
+                    append_segment(feed_coords,feed_idx,self.cur,new)
+                    self.cur = new
+                    a = list(new[0:2])
+                    a.append(self.mem.current_cycle["R"])
+                    new = tuple(a)
+                    append_segment(rapid_coords,rapid_idx,self.cur,new)
+                    self.cur = new
+                    
+            else:
+                raise ValueError()
+
         def processGcode():
             while self.line < len(self.lines):
 
@@ -368,10 +411,15 @@ class baseOpViewProviderProxy:
                     new = parse_xyz(ln, self.cur, self.absinc_mode)
                     append_segment(rapid_coords, rapid_idx, self.cur, new)
                     self.cur = new
+                    if self.mem.current_cycle is not None:
+                        executeCycle()
+
                 elif up.startswith("G1") or up.startswith("G01"):
                     new = parse_xyz(ln, self.cur, self.absinc_mode)
                     append_segment(feed_coords, feed_idx, self.cur, new)
                     self.cur = new
+                    if self.mem.current_cycle is not None:
+                        executeCycle()
                 elif up.startswith("G2") or up.startswith("G3"):
                     # Circular interpolation. Prefer I/J (center offsets). If only R given, compute center(s).
                     is_ccw = up.startswith("G3")
@@ -484,6 +532,43 @@ class baseOpViewProviderProxy:
                 elif up.startswith("G42"):
                     self.comp_mode = comp.G42
 
+                elif up.startswith("G80"):
+                    self.mem.current_cycle = None
+                elif up.startswith("G81"):
+                    up.removeprefix("G81")
+                    tokens = up.split(" ")
+                    d = dict()
+                    for t in tokens:
+                        if t.upper().startswith("X"):
+                            d["X"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                        if t.upper().startswith("Y"):
+                            d["Y"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                        if t.upper().startswith("Z"):
+                            d["Z"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                        if t.upper().startswith("R"):
+                            d["R"] = float(t[1:]) 
+                    self.mem.current_cycle = {"type":81,"Z":d["Z"],"R":d["R"]}
+                    executeCycle()
+
+                elif up.startswith("G83"):
+                    up.removeprefix("G83")
+                    tokens = up.split(" ")
+                    d = dict()
+                    for t in tokens:
+                        if t.upper().startswith("X"):
+                            d["X"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                        if t.upper().startswith("Y"):
+                            d["Y"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                        if t.upper().startswith("Z"):
+                            d["Z"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                        if t.upper().startswith("R"):
+                            d["R"] = float(t[1:]) 
+                        if t.upper().startswith("Q"):
+                            d["Q"] = float(t[1:])
+                            if d["Q"] <= 0: raise ValueError() 
+                    self.mem.current_cycle = {"type":83,"Z":d["Z"],"R":d["R"],"Q":d["Q"]}
+                    executeCycle()
+
                 elif up.startswith("G90") :
                     self.absinc_mode = absinc.G90
                 elif up.startswith("G91") :
@@ -564,8 +649,11 @@ class baseOpViewProviderProxy:
                     # other lines may still change position if they contain coords
                     App.Console.PrintMessage("Ignoring line: {}\n".format(ln))
                     if any(t.upper().startswith(("X","Y","Z")) for t in ln.split()):
-                        new = parse_xyz(ln, cur)
-                        cur = new
+                        new = parse_xyz(ln, self.cur)
+                        self.cur = new
+                        if self.mem.current_cycle is not None:
+                            executeCycle()
+                        
         
         
         
@@ -703,6 +791,8 @@ class memory():
         self.labels = {}
         self.queue = deque()
         self.variables = {}
+        self.current_cycle = None
+        self.absincMode = absinc.G90
 
     def addLabel(self, key, value):
         self.labels[key]= value
@@ -760,14 +850,22 @@ class GcodeAnimator:
         self.include_rapid = False
 
         self.tool = None
-        if hasattr(self.vp.Object, "Tool") and self.vp.Object.Tool is not None:
-            self.tool = self.vp.Object.Tool
-        
+        self.toolMesh = None
         self.stock = None
+
+        self.stockMesh = None
         project = FreeCADGui.activeView().getActiveObject("camproject")  #FIXME 
         if project:
             #App.Console.PrintMessage(f'project name : {project.Name}\n')
             self.stock = project.Proxy.getStock(project)
+            self.stockMesh = App.activeDocument().addObject("Mesh::Feature", "stockMesh")
+            self.stockMesh.Mesh = MeshPart.meshFromShape(Shape=self.stock.Shape, MaxLength=5)
+            if hasattr(self.vp.Object, "Tool") and self.vp.Object.Tool is not None:
+                self.tool = self.vp.Object.Tool
+                self.toolMesh = App.activeDocument().addObject("Mesh::Feature", "toolMesh")
+                self.toolMesh.Mesh = MeshPart.meshFromShape(Shape=self.tool.Shape, MaxLength=5)
+
+        
             
         self.frequence_cut = 20
         self.indice_frequence_cut = 0
@@ -890,16 +988,37 @@ class GcodeAnimator:
         try:
             self.marker_trans.translation.setValue(point[0], point[1], point[2])
             self.tool.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0,0,0,1))
+            self.toolMesh.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0,0,0,1))
             self.tool.recompute()
             self.indice_frequence_cut += 1
             if self.frequence_cut != 0 and self.indice_frequence_cut % self.frequence_cut == 0:
                 self.stock.Shape = self.stock.Shape.cut(self.tool.Shape)
-                
+            #☺self.updateMesh(App.Vector(point[0],point[1],point[2]))
         except Exception as e:
             App.Console.PrintError(f" {str(e)}\n")
             exc_type, exc_obj, exc_tb = sys.exc_info()
             App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
             pass
+
+    def updateMesh(self, outil_pos):
+        tolerance = 0.01
+        m = self.stockMesh.Mesh
+        new_facets = []
+        # for f in m.Facets:
+        #     d = sum([(App.Vector(p) - outil_pos).Length for p in f.Points]) / 3
+        #     if d > self.tool.Radius:
+        #         new_facets.append(f)
+        for f in m.Facets:
+            inside_count = 0
+            for p in f.Points:
+                global_p = App.Vector(p)
+                if self.toolMesh.isInside(global_p,tolerance,True):
+                    inside_count += 1
+                    if inside_count < 2 :
+                        new_facets.append(f)
+
+        newMesh = Mesh.Mesh(new_facets)
+        self.stockMesh.Mesh = newMesh
 
     def _on_timer(self):
         # single step of animation based on timer interval and speed
