@@ -16,7 +16,7 @@ def list_machining_operations(obj):
         App.Console.PrintMessage(f"Objet: {obj.Label}\n")
     ops = []
     if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type in [
-        'ContournageCycle', 'DrillOperation', 'Surfacage']:
+        'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path']:
         ops.append(obj)
     # Parcours récursif des groupes/enfants
     if hasattr(obj, 'Group') and obj.Group:

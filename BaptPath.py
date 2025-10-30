@@ -755,6 +755,7 @@ class path(baseOp):
     def __init__(self, obj):
         App.Console.PrintMessage("Initializing path object proxy for: {}\n".format(__class__.__name__))
         super().__init__(obj)
+        self.Type = "Path"
         obj.Proxy = self
     def execute(self, obj):
         return super().execute(obj)
@@ -792,7 +793,9 @@ class pathViewProviderProxy(baseOpViewProviderProxy):
     def getDisplayModes(self, obj):
         return super().getDisplayModes(obj)
 
-    
+    def getIcon(self):
+        if not self.Object.Active:
+            return BaptUtilities.getIconPath("operation_disabled.svg")
     
     def setEdit(self, vobj):
         #return super().setEdit(vobj)
