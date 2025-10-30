@@ -2,6 +2,7 @@
 from collections import deque
 import math
 import sys
+import BaptUtilities
 import FreeCAD as App
 import FreeCADGui
 from pivy import coin
@@ -49,7 +50,9 @@ class baseOp:
         if not hasattr(obj, "Gcode"):
             obj.addProperty("App::PropertyString", "Gcode", "Gcode", "Gcode").Gcode = ""
             #obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
-            
+        if not hasattr(obj,"Active"):
+            obj.addProperty("App::PropertyBool","Active","Gcode","Active")
+            obj.Active = True
         # obj.Proxy = self
         
     def onChanged(self, fp, prop):
@@ -71,6 +74,7 @@ class baseOpViewProviderProxy:
         App.Console.PrintMessage("Initializing baseOpViewProviderProxy for: {}\n".format(__class__.__name__))
         self.deleteOnReject = True
         self.pick_radius = 5  # pixels
+        self.icon = "BaptWorkbench.svg"
 
         if not hasattr(obj, "Rapid"):
             obj.addProperty("App::PropertyColor", "Rapid", "Gcode", "Color for rapid moves")
@@ -88,6 +92,11 @@ class baseOpViewProviderProxy:
         # self.Object = obj.Object
         # obj.Proxy = self
 
+
+    def onDocumentRestored(self, obj):
+        """Appelé lors de la restauration du document"""
+        raise Exception("Must be Overided")
+    
     def onChanged(self, vp, prop):
         ''' Print the name of the property that has changed '''
         #App.Console.PrintMessage("Change property: " + str(prop) + "\n")
@@ -696,8 +705,15 @@ class baseOpViewProviderProxy:
 
         action2 = menu.addAction("Simulate Toolpath")
         action2.triggered.connect(lambda: self.startSimulation(vobj))
+
+        action_Toggle = QtGui.QAction(FreeCADGui.getIcon("Std_TransformManip.svg"), "Active Op", menu)
+        QtCore.QObject.connect(action_Toggle, QtCore.SIGNAL("triggered()"), lambda: self.ToggleOp(vobj))
+        menu.addAction(action_Toggle)
         return True
     
+    def ToggleOp(self,vobj):
+        vobj.Object.Active = not vobj.Object.Active
+
     def setDeleteOnReject(self, val):
         self.deleteOnReject = val
         return self.deleteOnReject

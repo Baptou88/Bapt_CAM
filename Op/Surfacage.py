@@ -20,10 +20,14 @@ class Surfacage(baseOp):
         obj.Proxy = self
     
     def initProperties(self, obj):
-        obj.addProperty("App::PropertyString", "Name", "Surfacage", "Nom de l'opérateur").Name = "Surfacage"
-        obj.addProperty("App::PropertyLink", "Stock", "Surfacage", "Stock")
-        obj.addProperty("App::PropertyLink", "Tool", "Surfacage", "Tool")
-        obj.addProperty("App::PropertyFloat", "Depth", "Surfacage", "Profondeur finale")
+        if not hasattr(obj,"Name"):
+            obj.addProperty("App::PropertyString", "Name", "Surfacage", "Nom de l'opérateur").Name = "Surfacage"
+        if not hasattr(obj,"Stock"):
+            obj.addProperty("App::PropertyLink", "Stock", "Surfacage", "Stock")
+        if not hasattr(obj,"Tool"):
+            obj.addProperty("App::PropertyLink", "Tool", "Surfacage", "Tool")
+        if not hasattr(obj,"Depth"):
+            obj.addProperty("App::PropertyFloat", "Depth", "Surfacage", "Profondeur finale")
         # # Outil sélectionné
         # if not hasattr(obj, "ToolId"):
         #     obj.addProperty("App::PropertyInteger", "ToolId", "Tool", "Selected tool ID")
@@ -35,7 +39,8 @@ class Surfacage(baseOp):
         #     obj.setEditorMode("ToolName", 1)  # en lecture seule
         
         # obj.addProperty("App::PropertyFloat", "ToolDiameter", "Tool", "Diamètre de la tool").ToolDiameter = 12.0
-        obj.addProperty("App::PropertyFloat", "Recouvrement", "Surfacage", "Recouvrement").Recouvrement = 10.0
+        if not hasattr(obj,"Recouvrement"):
+            obj.addProperty("App::PropertyFloat", "Recouvrement", "Surfacage", "Recouvrement").Recouvrement = 10.0
 
         #cherche l'objet Model dans le document actif
 
@@ -94,7 +99,9 @@ class Surfacage(baseOp):
                     obj.Gcode += f"G1 X{bb.XMax + (obj.Tool.Radius.Value)} Y{posY}\n"
         
 
-
+    def onDocumentRestored(self, obj):
+        """Appelé lors de la restauration du document"""
+        self.__init__(obj)
 
     def onChanged(self, obj, prop):
         if prop in ("Stock", "Depth", "Tool", "Recouvrement"):
@@ -113,13 +120,15 @@ class ViewProviderSurfacage(baseOpViewProviderProxy):
         super().__init__(vobj)
         vobj.Proxy = self
         self.Object = vobj.Object
-
+        self.icon = "Surfacage.svg"
 
     def attach(self, obj):
         self.Object = obj.Object
         return super().attach(obj)
     
     def getIcon(self):
+        if not self.Object.Active:
+            return BaptUtilities.getIconPath("operation_disabled.svg")
         return BaptUtilities.getIconPath("Surfacage.svg")
 
         #return ":/icons/surfacage.svg"
@@ -348,6 +357,7 @@ class SurfacageTaskPanel:
                 if tool is None:
                     tool = App.ActiveDocument.addObject("Part::Cylinder","ToolVisual_"+str(sel))
                     tool.addProperty("App::PropertyInteger","Id","Tool","Tool ID").Id = sel
+                    tool.addProperty("App::PropertyString","Name","Tool","Tool Name").Name = dialog.selected_tool.name
                     groopTools.addObject(tool)
                     self.obj.Tool = tool
                 tool.Id = sel
@@ -411,7 +421,7 @@ class SurfacageTaskPanel:
         self.obj.Recouvrement = self.recouvrement.value()
 
     def accept(self):
-        self.obj.Name = self.nameEdit.text()
+        #self.obj.Name = self.nameEdit.text()
         self.updateValue()
 
         if self.obj.Tool:

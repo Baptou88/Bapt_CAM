@@ -416,11 +416,70 @@ class PostProcessDialog(QtGui.QDialog):
         self.listWidget.clear()
         ops = list_machining_operations(self.cam_project)
         for op in ops:
-            item = QtGui.QListWidgetItem(op.Label)
+            displayText = f"{op.Label} {self._tool_label(op)}"
+            item = QtGui.QListWidgetItem(displayText)
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
-            item.setCheckState(QtCore.Qt.Checked)
+            item.setCheckState(QtCore.Qt.Checked if op.Active else QtCore.Qt.Unchecked)
             item.setData(QtCore.Qt.UserRole, op)
             self.listWidget.addItem(item)
+            # set icon for the operation
+            try:
+                icon = self._icon_for_op(op)
+                if not icon.isNull():
+                    item.setIcon(icon)
+            except Exception:
+                pass
+
+    def _tool_label(self, op):
+        """Retourne une petite chaîne descriptive de l'outil associé à l'opération."""
+        try:
+            tool_name = op.Tool.Label
+            tool_id = getattr(op.Tool, "Id", None)
+            if tool_name and tool_id is not None:
+                return f"{tool_name} (T{tool_id})"
+            if tool_name:
+                return tool_name
+            if tool_id is not None:
+                return f"T{tool_id}"
+        except Exception:
+            pass
+        return "—"
+
+    def _icon_for_op(self, op):
+        """
+        Retourne un QtGui.QIcon pour l'opération `op`.
+        Essaie plusieurs sources (ViewObject.getIcon, ViewObject.Icon), puis un mapping par type.
+        """
+        try:
+            # attempt: ViewObject.getIcon() returns a path or QIcon-compatible value
+            vo = getattr(op, "ViewObject", None)
+            if vo:
+                try:
+                    iconpath = vo.getIcon()
+                    if iconpath:
+                        return QtGui.QIcon(iconpath)
+                except Exception:
+                    pass
+                # some viewproviders expose an 'Icon' attribute
+                ico = getattr(vo, "Icon", None)
+                if ico:
+                    return QtGui.QIcon(ico)
+        except Exception:
+            pass
+        # fallback mapping by Proxy.Type
+        try:
+            typ = getattr(op, "Proxy", None) and getattr(op.Proxy, "Type", "")
+        except Exception:
+            typ = ""
+        mapping = {
+            "Surfacage": ":/icons/Surface.svg",
+            "ContournageCycle": ":/icons/Sketcher_Constraint.svg",
+            "DrillOperation": ":/icons/drill.png",
+        }
+        if typ in mapping:
+            return QtGui.QIcon(mapping[typ])
+        # final fallback: empty icon
+        return QtGui.QIcon()
 
     def move_item_up(self):
         row = self.listWidget.currentRow()
