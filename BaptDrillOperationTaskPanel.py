@@ -222,32 +222,6 @@ class DrillOperationTaskPanel:
         # Ajouter l'onglet profondeur
         self.tabs.addTab(depthTab, "Profondeur")
         
-        # Onglet Affichage
-        displayTab = QtGui.QWidget()
-        displayLayout = QtGui.QVBoxLayout(displayTab)
-        
-        # Groupe pour les paramètres d'affichage du fil
-        pathLineGroup = QtGui.QGroupBox("Fil de parcours")
-        pathLineLayout = QtGui.QFormLayout()
-        
-        # Option pour afficher/masquer le fil
-        self.showPathLine = QtGui.QCheckBox()
-        pathLineLayout.addRow("Afficher le fil:", self.showPathLine)
-        
-        # Couleur du fil
-        self.pathLineColorButton = QtGui.QPushButton()
-        self.pathLineColorButton.setFixedSize(25, 25)
-        self.pathLineColorButton.clicked.connect(self.selectPathLineColor)
-        pathLineLayout.addRow("Couleur du fil:", self.pathLineColorButton)
-        
-        pathLineGroup.setLayout(pathLineLayout)
-        displayLayout.addWidget(pathLineGroup)
-        
-        # Ajouter un espace extensible
-        displayLayout.addStretch()
-        
-        # Ajouter l'onglet affichage
-        self.tabs.addTab(displayTab, "Affichage")
         
         # Initialiser les valeurs depuis l'objet
         self.initValues()
@@ -411,29 +385,18 @@ class DrillOperationTaskPanel:
             App.Console.PrintMessage(f'safe height: {self.obj.SafeHeight}\n')
             self.safeHeight.setValue(self.obj.SafeHeight.Value)
         
-        # Onglet Affichage
-        if hasattr(self.obj, "ShowPathLine"):
-            self.showPathLine.setChecked(self.obj.ShowPathLine)
-        
-        if hasattr(self.obj, "PathLineColor"):
-            color = QtGui.QColor()
-            color.setRgbF(*self.obj.PathLineColor)
-            self.pathLineColorButton.setStyleSheet(f"background-color: {color.name()}")
-            self.selectedPathLineColor = self.obj.PathLineColor
-        else:
-            self.selectedPathLineColor = (0.0, 0.5, 1.0)  # Bleu clair par défaut
-        
+                
         # Mettre à jour l'affichage du mode de profondeur
         self.depthModeChanged(self.absoluteRadio.isChecked())
 
-    def selectPathLineColor(self):
-        """Ouvre un sélecteur de couleur pour le fil"""
-        color = QtGui.QColorDialog.getColor(QtGui.QColor(*[int(c*255) for c in self.obj.PathLineColor]))
-        if color.isValid():
-            # Mettre à jour la couleur du bouton
-            self.pathLineColorButton.setStyleSheet(f"background-color: {color.name()}")
-            # Stocker la couleur pour l'appliquer lors de l'acceptation
-            self.selectedPathLineColor = (color.redF(), color.greenF(), color.blueF())
+    # def selectPathLineColor(self):
+    #     """Ouvre un sélecteur de couleur pour le fil"""
+    #     color = QtGui.QColorDialog.getColor(QtGui.QColor(*[int(c*255) for c in self.obj.PathLineColor]))
+    #     if color.isValid():
+    #         # Mettre à jour la couleur du bouton
+    #         self.pathLineColorButton.setStyleSheet(f"background-color: {color.name()}")
+    #         # Stocker la couleur pour l'appliquer lors de l'acceptation
+    #         self.selectedPathLineColor = (color.redF(), color.greenF(), color.blueF())
 
     def accept(self):
         """Appelé quand l'utilisateur clique sur OK"""
@@ -465,8 +428,8 @@ class DrillOperationTaskPanel:
         self.obj.SafeHeight = self.safeHeight.value()
         
         # Mettre à jour les paramètres d'affichage
-        self.obj.ShowPathLine = self.showPathLine.isChecked()
-        self.obj.PathLineColor = self.selectedPathLineColor
+        # self.obj.ShowPathLine = self.showPathLine.isChecked()
+        # self.obj.PathLineColor = self.selectedPathLineColor
         
         # Recompute
         self.obj.Document.recompute()

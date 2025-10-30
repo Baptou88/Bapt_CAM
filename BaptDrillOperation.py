@@ -1,4 +1,4 @@
-from BaptPath import baseOp
+from BaptPath import baseOp,baseOpViewProviderProxy
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
@@ -51,14 +51,6 @@ class DrillOperation(baseOp):
             obj.CoolantMode = ["Off", "Flood", "Mist"]
             obj.CoolantMode = "Flood"  # Valeur par défaut
             
-        # Paramètres de visualisation du fil
-        if not hasattr(obj, "ShowPathLine"):
-            obj.addProperty("App::PropertyBool", "ShowPathLine", "Display", "Show path line between holes")
-            obj.ShowPathLine = True  # Activé par défaut
-            
-        if not hasattr(obj, "PathLineColor"):
-            obj.addProperty("App::PropertyColor", "PathLineColor", "Display", "Color of path line")
-            obj.PathLineColor = (0.0, 0.5, 1.0)  # Bleu clair par défaut
         
         # Paramètres spécifiques au cycle de perçage profond (Peck)
         if not hasattr(obj, "PeckDepth"):
@@ -98,6 +90,9 @@ class DrillOperation(baseOp):
         if not hasattr(obj, "ZReference"):
             obj.addProperty("App::PropertyLength", "ZReference", "Depth", "Z reference for relative depth mode")
             obj.ZReference = 0.0  # 0mm par défaut
+
+        if not hasattr(obj,"Tool"):
+            obj.addProperty("App::PropertyLink", "Tool", "Surfacage", "Tool")
 
     def onChanged(self, obj, prop):
         """Appelé quand une propriété est modifiée"""
@@ -181,7 +176,7 @@ class DrillOperation(baseOp):
             # Aucun outil sélectionné, utiliser une représentation par défaut
             for pos in positions:
                 # Créer un cylindre simple comme représentation par défaut
-                cylinder = Part.makeCylinder(2.0, 10.0, pos, App.Vector(0, 0, -1))
+                cylinder = Part.makeCylinder(2.0, pos.z - obj.FinalDepth.Value, pos, App.Vector(0, 0, -1))
                 tool_shapes.append(cylinder)
         else:
             # Créer une représentation réaliste de l'outil pour chaque position
@@ -189,21 +184,37 @@ class DrillOperation(baseOp):
                 tool_shape = self.createToolShape(pos, tool_info, obj)
                 tool_shapes.append(tool_shape)
         
-        # Créer un fil qui relie tous les trous
-        wires = []
-        if obj.ShowPathLine and len(positions) > 1:
-            points = []
-            for pos in positions:
-                # Ajouter un point au-dessus de chaque trou avec la hauteur supplémentaire
-                elevated_pos = App.Vector(pos.x, pos.y, pos.z + obj.SafeHeight.Value)
-                points.append(elevated_pos)
+        obj.Gcode = ""
+        if len(positions)>0:
+
+            obj.Gcode += f"G0 X{positions[0].x} Y{positions[0].y} Z{positions[0].z + obj.SafeHeight.Value} \n"
+            if obj.CycleType == "Simple":
+                obj.Gcode += f"G81 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z}\n"  #FIXME
             
-            # Créer une polyligne avec tous les points
-            polyline = Part.makePolygon(points)
-            wires.append(polyline)
+            elif obj.CycleType == "Peck":
+                obj.Gcode += f"G83 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z} Q{obj.PeckDepth.Value}\n"  #FIXME
+            else:
+                raise Exception("Unsupported Cycle Type")
+            
+            for i in range(1,len(positions)):
+                obj.Gcode += f"G0 X{positions[i].x} Y{positions[i].y} Z{positions[i].z + obj.SafeHeight.Value} \n"
+            obj.Gcode += "G80\n"
+
+        # # Créer un fil qui relie tous les trous
+        # wires = []
+        # if obj.ShowPathLine and len(positions) > 1:
+        #     points = []
+        #     for pos in positions:
+        #         # Ajouter un point au-dessus de chaque trou avec la hauteur supplémentaire
+        #         elevated_pos = App.Vector(pos.x, pos.y, pos.z + obj.SafeHeight.Value)
+        #         points.append(elevated_pos)
+            
+        #     # Créer une polyligne avec tous les points
+        #     polyline = Part.makePolygon(points)
+        #     wires.append(polyline)
         
         # Fusionner les formes d'outils et le fil
-        shapes = tool_shapes + wires
+        shapes = tool_shapes #+ wires
         if shapes:
             compound = Part.makeCompound(shapes)
             obj.Shape = compound
@@ -352,38 +363,43 @@ class DrillOperation(baseOp):
         return None
 
 
-class ViewProviderDrillOperation:
+class ViewProviderDrillOperation(baseOpViewProviderProxy):
     def __init__(self, vobj):
         """Initialise le ViewProvider"""
+        super().__init__(vobj)
         vobj.Proxy = self
         self.Object = vobj.Object
-        
-    def getIcon(self):
-        """Retourne l'icône"""
-        return BaptUtilities.getIconPath("Tree_Drilling.svg")
         
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""
         self.Object = vobj.Object
+        return super().attach(vobj)
 
-    def setupContextMenu(self, vobj, menu):
-        """Configuration du menu contextuel"""
-        action = menu.addAction("Edit")
-        action.triggered.connect(lambda: self.setEdit(vobj))
-        return True
+    def getIcon(self):
+        """Retourne l'icône"""
+        if not self.Object.Active:
+            return BaptUtilities.getIconPath("operation_disabled.svg")
+        return BaptUtilities.getIconPath("Tree_Drilling.svg")
+        
+    # def setupContextMenu(self, vobj, menu):
+    #     """Configuration du menu contextuel"""
+    #     super().setupContextMenu()
+    #     action = menu.addAction("Edit")
+    #     action.triggered.connect(lambda: self.setEdit(vobj))
+    #     return True
 
-    def updateData(self, obj, prop):
-        """Appelé quand une propriété de l'objet est modifiée"""
-        pass
+    # def updateData(self, obj, prop):
+    #     """Appelé quand une propriété de l'objet est modifiée"""
+    #     pass
 
-    def onChanged(self, vobj, prop):
-        """Appelé quand une propriété du ViewProvider est modifiée"""
-        pass
+    # def onChanged(self, vobj, prop):
+    #     """Appelé quand une propriété du ViewProvider est modifiée"""
+    #     pass
 
-    def doubleClicked(self, vobj):
-        """Gérer le double-clic"""
-        self.setEdit(vobj)
-        return True
+    # def doubleClicked(self, vobj):
+    #     """Gérer le double-clic"""
+    #     self.setEdit(vobj)
+    #     return True
 
     def setEdit(self, vobj, mode=0):
         """Ouvrir l'éditeur"""

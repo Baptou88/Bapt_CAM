@@ -769,17 +769,17 @@ class path(baseOp):
         self.__init__(obj)
 
 class pathViewProviderProxy(baseOpViewProviderProxy):
-    def __init__(self, obj):
+    def __init__(self, vobj):
         App.Console.PrintMessage("Initializing path view provider proxy for: {}\n".format(__class__.__name__))
-        super().__init__(obj)
+        super().__init__(vobj)
 
-        self.Object = obj.Object
-        obj.Proxy = self
+        self.Object = vobj.Object
+        vobj.Proxy = self
     
-    def attach(self, obj):
+    def attach(self, vobj):
         App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
-        self.Object = obj.Object
-        return super().attach(obj)
+        self.Object = vobj.Object
+        return super().attach(vobj)
     
     # def setupContextMenu(self, vobj, menu):
     #     return super().setupContextMenu(vobj, menu)
@@ -790,8 +790,8 @@ class pathViewProviderProxy(baseOpViewProviderProxy):
     def setDisplayMode(self, mode):
         return super().setDisplayMode(mode)
     
-    def getDisplayModes(self, obj):
-        return super().getDisplayModes(obj)
+    def getDisplayModes(self, vobj):
+        return super().getDisplayModes(vobj)
 
     def getIcon(self):
         if not self.Object.Active:
@@ -1006,8 +1006,10 @@ class GcodeAnimator:
         # set translation to point (x,y,z)
         try:
             self.marker_trans.translation.setValue(point[0], point[1], point[2])
-            self.tool.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0,0,0,1))
-            self.toolMesh.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0,0,0,1))
+            if self.tool is not None:
+                self.tool.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0,0,0,1))
+            if self.toolMesh is not None:
+                self.toolMesh.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0,0,0,1))
             self.tool.recompute()
             self.indice_frequence_cut += 1
             if self.frequence_cut != 0 and self.indice_frequence_cut % self.frequence_cut == 0:
