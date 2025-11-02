@@ -43,9 +43,6 @@ class DrillGeometryTaskPanel:
         drillGroup = QtGui.QGroupBox("Drill Positions")
         drillLayout = QtGui.QVBoxLayout()
         
-        # Disposition horizontale pour la table et les boutons de réorganisation
-        tableLayout = QtGui.QHBoxLayout()
-        
         # Table des positions
         self.drillTable = QtGui.QTableWidget()
         self.drillTable.setColumnCount(4)
@@ -60,10 +57,10 @@ class DrillGeometryTaskPanel:
         # Remplir la table avec les positions existantes
         self.updateDrillTable()
         
-        tableLayout.addWidget(self.drillTable, 1)  # La table prend la majorité de l'espace
+        drillLayout.addWidget(self.drillTable)
         
         # Boutons de réorganisation (Up/Down)
-        orderButtonLayout = QtGui.QVBoxLayout()
+        orderButtonLayout = QtGui.QHBoxLayout()
         
         # Bouton Up
         self.upButton = QtGui.QPushButton("▲")
@@ -80,8 +77,8 @@ class DrillGeometryTaskPanel:
         # Ajouter un espace extensible en bas
         orderButtonLayout.addStretch()
         
-        tableLayout.addLayout(orderButtonLayout)
-        drillLayout.addLayout(tableLayout)
+
+        drillLayout.addLayout(orderButtonLayout)
         
         # Boutons pour ajouter/supprimer des positions
         buttonLayout = QtGui.QHBoxLayout()

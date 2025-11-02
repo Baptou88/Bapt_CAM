@@ -483,7 +483,8 @@ class CreateHotReloadCommand:
             reload(BaptPostProcess)
             from Probe import probeFace
             reload(probeFace)
-
+            import BaptDrillOperationTaskPanel
+            reload(BaptDrillOperationTaskPanel)
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 

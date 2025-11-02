@@ -1,20 +1,26 @@
+import BaptDrillOperation
+from BaptUtilities import getIconPath
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
 
 from BaptTools import ToolDatabase, Tool
 from Tool import ToolSelectorDialog
+from Tool.ToolTaskPannel import ToolTaskPanel
 
 
 class DrillOperationTaskPanel:
     def __init__(self, obj):
         # Garder une référence à l'objet
         self.obj = obj
-        
+        ui1 = QtGui.QWidget()
+        ui1.setWindowTitle("Opération de perçage")
+        ui2 = ToolTaskPanel(obj, self)
         # Créer l'interface utilisateur
-        self.form = QtGui.QWidget()
-        self.form.setWindowTitle("Opération de perçage")
-        layout = QtGui.QVBoxLayout(self.form)
+        # self.form = QtGui.QWidget()
+        # self.form.setWindowTitle("Opération de perçage")
+        self.form = [ui1,ui2.getForm()]
+        layout = QtGui.QVBoxLayout(self.form[0])
         
         # Créer un widget avec onglets
         self.tabs = QtGui.QTabWidget()
@@ -36,31 +42,7 @@ class DrillOperationTaskPanel:
         geometryGroup.setLayout(geometryLayout)
         generalLayout.addWidget(geometryGroup)
         
-        # Groupe pour l'outil
-        toolGroup = QtGui.QGroupBox("Outil")
-        toolLayout = QtGui.QVBoxLayout()
         
-        # Informations sur l'outil sélectionné
-        self.toolInfoLayout = QtGui.QFormLayout()
-        self.toolIdLabel = QtGui.QLabel("Aucun outil sélectionné")
-        self.toolNameLabel = QtGui.QLabel("")
-        self.toolTypeLabel = QtGui.QLabel("")
-        self.toolDiameterLabel = QtGui.QLabel("")
-        
-        self.toolInfoLayout.addRow("ID:", self.toolIdLabel)
-        self.toolInfoLayout.addRow("Nom:", self.toolNameLabel)
-        self.toolInfoLayout.addRow("Type:", self.toolTypeLabel)
-        self.toolInfoLayout.addRow("Diamètre:", self.toolDiameterLabel)
-        
-        toolLayout.addLayout(self.toolInfoLayout)
-        
-        # Bouton pour sélectionner un outil
-        self.selectToolButton = QtGui.QPushButton("Sélectionner un outil")
-        self.selectToolButton.clicked.connect(self.selectTool)
-        toolLayout.addWidget(self.selectToolButton)
-        
-        toolGroup.setLayout(toolLayout)
-        generalLayout.addWidget(toolGroup)
         
         # Ajouter l'onglet général
         self.tabs.addTab(generalTab, "Général")
@@ -75,7 +57,7 @@ class DrillOperationTaskPanel:
         
         # Sélection du type de cycle
         self.cycleTypeCombo = QtGui.QComboBox()
-        self.cycleTypeCombo.addItems(["Simple", "Peck", "Tapping", "Boring", "Reaming"])
+        self.cycleTypeCombo.addItems(BaptDrillOperation.cycleType)
         self.cycleTypeCombo.currentIndexChanged.connect(self.cycleTypeChanged)
         cycleTypeLayout.addWidget(self.cycleTypeCombo)
         
@@ -209,13 +191,32 @@ class DrillOperationTaskPanel:
         self.zRefLabel = QtGui.QLabel("Référence Z:")
         depthParamsLayout.addRow(self.zRefLabel, self.zReference)
         
-        # Hauteur de sécurité
+        # # Hauteur de sécurité
+        # self.safeHeight = QtGui.QDoubleSpinBox()
+        # self.safeHeight.setRange(0.0, 1000.0)
+        # self.safeHeight.setSingleStep(1.0)
+        # self.safeHeight.setSuffix(" mm")
+        # depthParamsLayout.addRow("Hauteur de sécurité:", self.safeHeight)
+
+        # Container pour SafeHeight avec spinbox + bouton expression
+        safeHeightContainer = QtGui.QWidget()
+        safeHeightLayout = QtGui.QHBoxLayout(safeHeightContainer)
+        safeHeightLayout.setContentsMargins(0, 0, 0, 0)
+        
         self.safeHeight = QtGui.QDoubleSpinBox()
         self.safeHeight.setRange(0.0, 1000.0)
         self.safeHeight.setSingleStep(1.0)
-        self.safeHeight.setSuffix(" mm")
-        depthParamsLayout.addRow("Hauteur de sécurité:", self.safeHeight)
+        self.safeHeight.setSuffix(" mmm")
+        safeHeightLayout.addWidget(self.safeHeight)
         
+        # Bouton pour l'éditeur d'expression
+        self.safeHeightExprButton = QtGui.QPushButton()
+        self.safeHeightExprButton.setIcon(QtGui.QIcon(":/icons/expressions.svg"))
+        self.safeHeightExprButton.setToolTip("Éditer l'expression")
+        self.safeHeightExprButton.clicked.connect(lambda: self.openExpressionEditor(self.safeHeight))
+        safeHeightLayout.addWidget(self.safeHeightExprButton)
+        depthParamsLayout.addRow("Hauteur de sécurité:", safeHeightContainer)
+
         depthParamsGroup.setLayout(depthParamsLayout)
         depthLayout.addWidget(depthParamsGroup)
         
@@ -231,6 +232,18 @@ class DrillOperationTaskPanel:
 
         self.safeHeight.valueChanged.connect(lambda: self.updateVisual())
         self.finalDepth.valueChanged.connect(lambda: self.updateVisual())
+
+        #u2.testButton.clicked.connect(lambda: u2.onTestButtonClicked()) 
+        ui2.initVListeners() 
+
+    def openExpressionEditor(self, prop):
+        """Ouvre l'éditeur d'expression pour la propriété donnée"""
+        try:
+            Gui.ExpressionBinding(self.obj.Document.Name, self.obj.Name, prop).showPopup()
+            Gui.ExpressionBinding(prop).bind(self.obj,"SafeHeight")
+            prop.show()
+        except Exception as e:
+            App.Console.PrintError(f"Erreur lors de l'ouverture de l'éditeur d'expression: {str(e)}\n")
 
     def updateVisual(self):
         """Mise à jour visuelle des paramètres"""
@@ -297,7 +310,7 @@ class DrillOperationTaskPanel:
 
     def selectTool(self):
         """Ouvre le dialogue de sélection d'outil"""
-        dialog = ToolSelectorDialog.ToolSelectorDialog(self.obj.ToolId, self.form)
+        dialog = ToolSelectorDialog.ToolSelectorDialog(self.obj.ToolId, self.form[0])
         result = dialog.exec_()
         
         if result == QtGui.QDialog.Accepted and dialog.selected_tool_id >= 0:

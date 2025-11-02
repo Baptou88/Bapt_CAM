@@ -316,8 +316,8 @@ class ViewProviderDrillGeometry:
 
     def claimChildren(self):
         """Retourne les enfants de cet objet"""
-        #debug
-        App.Console.PrintMessage(f"claimChildren de {self.Object.Name}\n")
+
+
         children = []
         # Récupérer tous les objets de contournage qui référencent cette géométrie par son nom
         if self.Object:

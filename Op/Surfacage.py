@@ -3,6 +3,7 @@ from BaptTools import ToolDatabase
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtGui
+from Tool.ToolTaskPannel import ToolTaskPanel
 from pivy import coin
 import Part 
 import BaptUtilities
@@ -28,17 +29,7 @@ class Surfacage(baseOp):
             obj.addProperty("App::PropertyLink", "Tool", "Surfacage", "Tool")
         if not hasattr(obj,"Depth"):
             obj.addProperty("App::PropertyFloat", "Depth", "Surfacage", "Profondeur finale")
-        # # Outil sélectionné
-        # if not hasattr(obj, "ToolId"):
-        #     obj.addProperty("App::PropertyInteger", "ToolId", "Tool", "Selected tool ID")
-        #     obj.ToolId = -1  # Valeur par défaut (aucun outil sélectionné)
-        
-        # # Nom de l'outil (affiché en lecture seule)
-        # if not hasattr(obj, "ToolName"):
-        #     obj.addProperty("App::PropertyString", "ToolName", "Tool", "Selected tool name")
-        #     obj.setEditorMode("ToolName", 1)  # en lecture seule
-        
-        # obj.addProperty("App::PropertyFloat", "ToolDiameter", "Tool", "Diamètre de la tool").ToolDiameter = 12.0
+
         if not hasattr(obj,"Recouvrement"):
             obj.addProperty("App::PropertyFloat", "Recouvrement", "Surfacage", "Recouvrement").Recouvrement = 10.0
 
@@ -259,19 +250,20 @@ class SurfacageTaskPanel:
     def __init__(self, obj,deleteOnReject):
         self.obj = obj
         self.deleteOnReject = deleteOnReject
-        self.form = QtGui.QWidget()
 
-        self.form.setWindowTitle("Édition de l'opérateur")
-        layout = QtGui.QFormLayout(self.form)
+        self.ui1 = QtGui.QWidget()
+        ui2 = ToolTaskPanel(obj)
+        self.form = [self.ui1,ui2.getForm()]
+
+        self.ui1.setWindowTitle("Édition de l'opérateur")
+        self.ui1.setWindowIcon(QtGui.QIcon(BaptUtilities.getIconPath("surfacage.svg")))
+
+        layout = QtGui.QFormLayout(self.ui1)
         # Nom
         self.nameEdit = QtGui.QLineEdit(obj.Name)
         layout.addRow("Nom", self.nameEdit)
 
-        # Tool
-        self.toolDiameterEdit = QtGui.QDoubleSpinBox(); 
-        self.toolDiameterEdit.setRange(0,1000); 
         
-        layout.addRow("Diamètre de l'outil", self.toolDiameterEdit)
 
         # Recouvrement
         self.recouvrement = QtGui.QDoubleSpinBox(); 
@@ -288,120 +280,20 @@ class SurfacageTaskPanel:
         self.depthBtn.clicked.connect(self.setDepth)
         layout.addRow(self.depthBtn)
         
-        # Groupe pour l'outil
-        toolGroup = QtGui.QGroupBox("Outil")
-        toolLayout = QtGui.QVBoxLayout()
         
-        # Informations sur l'outil sélectionné
-        self.toolInfoLayout = QtGui.QFormLayout()
-        if not obj.Tool:
-            self.toolIdLabel = QtGui.QLabel("Aucun outil sélectionné")
-            self.toolNameLabel = QtGui.QLabel("")
-            self.toolTypeLabel = QtGui.QLabel("")
-            self.toolDiameterLabel = QtGui.QLabel("")
-            self.toolDiameterEdit.setValue(0.0)
-        else:
-            self.toolIdLabel = QtGui.QLabel(obj.Tool.Id)
-            self.toolNameLabel = QtGui.QLabel(f"{obj.Tool.Name}")
-            self.toolTypeLabel = QtGui.QLabel("")
-            self.toolDiameterLabel = QtGui.QLabel(f"{obj.Tool.Radius.Value * 2:.3f} mm")
-            self.toolDiameterEdit.setValue(obj.Tool.Radius * 2)
-        
-        self.toolInfoLayout.addRow("ID:", self.toolIdLabel)
-        self.toolInfoLayout.addRow("Nom:", self.toolNameLabel)
-        self.toolInfoLayout.addRow("Type:", self.toolTypeLabel)
-        self.toolInfoLayout.addRow("Diamètre:", self.toolDiameterLabel)
-        
-        toolLayout.addLayout(self.toolInfoLayout)
-        
-        # Bouton pour sélectionner un outil
-        self.selectToolButton = QtGui.QPushButton("Sélectionner un outil")
-        self.selectToolButton.clicked.connect(self.selectTool)
-        toolLayout.addWidget(self.selectToolButton)
-        
-        toolGroup.setLayout(toolLayout)
-        layout.addWidget(toolGroup)
-    
-        self.toolDiameterEdit.valueChanged.connect(self.updateValue)
         self.depthEdit.valueChanged.connect(self.updateValue)
         self.recouvrement.valueChanged.connect(self.updateValue)
 
+        ui2.initVListeners()
                 
         if self.obj.Tool:
             self.obj.Tool.Visibility = True
 
     def updateValue(self):
         self.obj.Depth = self.depthEdit.value()
-        self.obj.Tool.Radius = self.toolDiameterEdit.value() / 2
         self.obj.Recouvrement = self.recouvrement.value()
 
-    def selectTool(self):
-        """Ouvre le dialogue de sélection d'outil"""
-        if not hasattr(self.obj, "Tool") or self.obj.Tool is None:
-            current_tool_id = -1
-        else:
-            current_tool_id = self.obj.Tool.Id
-        dialog = ToolSelectorDialog(current_tool_id, self.form)
-        result = dialog.exec_()
-        
-        sel = dialog.selected_tool_id
-        if result == QtGui.QDialog.Accepted and sel >= 0:
-            # Mettre à jour l'outil sélectionné
-            
-
-            # ajoute un object Part::Cylinder pour visualiser l'outil
-            p = Gui.activeView().getActiveObject("camproject")
-            if p:
-                groopTools = p.Proxy.getToolsGroup()
-                tool = App.ActiveDocument.getObject("ToolVisual_"+str(sel))
-                if tool is None:
-                    tool = App.ActiveDocument.addObject("Part::Cylinder","ToolVisual_"+str(sel))
-                    tool.addProperty("App::PropertyInteger","Id","Tool","Tool ID").Id = sel
-                    tool.addProperty("App::PropertyString","Name","Tool","Tool Name").Name = dialog.selected_tool.name
-                    groopTools.addObject(tool)
-                    self.obj.Tool = tool
-                tool.Id = sel
-                tool.Label = "ToolVisual_"+str(sel)
-                tool.Radius = dialog.selected_tool.diameter / 2
-                tool.Height = 50
-                
-
-
-            self.updateToolInfo()
-
-    def updateToolInfo(self):
-        """Met à jour les informations de l'outil sélectionné"""
-        if not hasattr(self.obj, "Tool") or self.obj.Tool is None:
-            return
-        if self.obj.Tool.Id < 0:
-            self.toolIdLabel.setText("Aucun outil sélectionné")
-            self.toolNameLabel.setText("")
-            self.toolTypeLabel.setText("")
-            self.toolDiameterLabel.setText("")
-            return
-        
-        try:
-            # Récupérer l'outil depuis la base de données
-            db = ToolDatabase()
-            tools = db.get_all_tools()
-            
-            for tool in tools:
-                if tool.id == self.obj.Tool.Id:
-                    self.toolIdLabel.setText(str(tool.id))
-                    self.toolNameLabel.setText(tool.name)
-                    self.toolTypeLabel.setText(tool.type)
-                    self.toolDiameterLabel.setText(f"{tool.diameter:.2f} mm")
-                    self.obj.Tool.Radius = tool.diameter / 2
-                    self.toolDiameterEdit.setValue(tool.diameter)
-                    # self.obj.ToolName = f"{tool.name} (Ø{tool.diameter}mm)"
-                    
-                    # Si c'est un taraud, mettre à jour le pas de filetage
-                    if tool.type.lower() == "taraud" and self.obj.CycleType == "Tapping":
-                        self.threadPitch.setValue(tool.thread_pitch)
-                    break
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de la récupération de l'outil: {e}\n")
-
+    
     def setDepth(self):
         self.depthBtn.setEnabled(False)
         self.observer = PointSelectionObserver.PointSelectionObserver(self.pointSelected)
@@ -410,6 +302,7 @@ class SurfacageTaskPanel:
         # if not sel:
         #     return
         # self.obj.Depth = sel[0].Proxy.getDepth(sel[0])
+    
     def pointSelected(self, point):
         self.depthEdit.setValue(point.z)
         self.depthBtn.setEnabled(True)
@@ -417,7 +310,6 @@ class SurfacageTaskPanel:
 
     def updateVisual(self):
         self.obj.Depth = self.depthEdit.value()
-        self.obj.ToolDiameter = self.toolDiameterEdit.value()
         self.obj.Recouvrement = self.recouvrement.value()
 
     def accept(self):
@@ -429,6 +321,7 @@ class SurfacageTaskPanel:
 
         App.ActiveDocument.recompute()
         Gui.Control.closeDialog()
+
     def reject(self):
                 
         if self.obj.Tool:

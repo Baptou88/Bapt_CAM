@@ -432,7 +432,7 @@ class baseOpViewProviderProxy:
                 elif up.startswith("G2") or up.startswith("G3"):
                     # Circular interpolation. Prefer I/J (center offsets). If only R given, compute center(s).
                     is_ccw = up.startswith("G3")
-                    end = parse_xyz(ln, self.cur)
+                    end = parse_xyz(ln, self.cur,self.absinc_mode)
                     I, J, R = parse_ijr(ln)
 
                     # if no XY endpoint given, skip (cannot handle)
@@ -463,7 +463,7 @@ class baseOpViewProviderProxy:
                         c1, c2 = cs
                         # compute sweeps for both centers
                         def compute_sweep(c):
-                            sx = math.atan2(cur[1]-c[1], cur[0]-c[0])
+                            sx = math.atan2(self.cur[1]-c[1], self.cur[0]-c[0])
                             ex = math.atan2(end[1]-c[1], end[0]-c[0])
                             sweep = ex - sx
                             return sweep, sx, ex
@@ -602,13 +602,25 @@ class baseOpViewProviderProxy:
                     n_times = 1
                     label_end = None
 
-                    if len(parts) == 2:
+                    if len(parts) == 2: #REPEAT Start
                         label_begin = parts[1] if len(parts) > 1 else None
                         n_times = 1
-                    elif len(parts) == 3:
+                    elif len(parts) == 3: #REPEAT Start P=
                         label_begin = parts[1] if len(parts) > 1 else None
 
                         n_times = parts[2].removeprefix("P=")
+                        if n_times.isdigit():
+                            n_times = int(n_times)
+                        elif n_times.startswith("R"):
+                            var_name = "R{}".format(n_times[1:])
+                            if var_name in self.mem.variables:
+                                n_times = int(self.mem.variables[var_name])
+                            else:
+                                raise Exception("Variable {} not defined for REPEAT".format(var_name))
+                    elif len(parts) == 4: #REPEAT Start End P=
+                        label_begin = parts[1] 
+                        label_end = parts[2] 
+                        n_times = parts[3].removeprefix("P=")
                         if n_times.isdigit():
                             n_times = int(n_times)
                         elif n_times.startswith("R"):
@@ -627,13 +639,22 @@ class baseOpViewProviderProxy:
                         for _ in range(n_times):
                             # reset line to start_line and process until we reach the label_end or original line
                             
-                            saved_line = self.line
-                            self.line = start_line
+                            if label_end is not None and label_end in self.mem.labels:
 
-                            self.mem.queue.append(saved_line-1)
+                                saved_line = self.mem.labels[label_end] - 1
+                                restore = self.line 
+                                self.line = start_line 
+
+                            else:
+                                saved_line = self.line-1
+                                self.line = start_line
+                                restore = saved_line
+
+                            self.mem.queue.append(saved_line)
                            
                             processGcode()
-                            self.line = saved_line  # restore original line after repeat
+                            self.line = restore  # restore original line after repeat
+                            #App.Console.PrintMessage(f'sortie de boucle ligne {self.lines[self.line]}\n')
                         pass
                     else:
                         App.Console.PrintMessage("REPEAT label {} not found\n".format(label_begin))

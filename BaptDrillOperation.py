@@ -4,9 +4,11 @@ import FreeCADGui as Gui
 import Part
 import os
 import math
-from FreeCAD import Base
 from PySide import QtCore, QtGui
 import BaptUtilities
+
+
+cycleType = ["Simple", "Peck", "Tapping", "Boring", "Reaming", "Contournage"]
 
 class DrillOperation(baseOp):
     """Classe représentant une opération d'usinage de perçage"""
@@ -34,7 +36,7 @@ class DrillOperation(baseOp):
         # Type de cycle
         if not hasattr(obj, "CycleType"):
             obj.addProperty("App::PropertyEnumeration", "CycleType", "Cycle", "Type of drilling cycle")
-            obj.CycleType = ["Simple", "Peck", "Tapping", "Boring", "Reaming"]
+            obj.CycleType = cycleType
             obj.CycleType = "Simple"  # Valeur par défaut
         
         # Paramètres communs à tous les cycles
@@ -74,7 +76,7 @@ class DrillOperation(baseOp):
         # Paramètres de sécurité
         if not hasattr(obj, "SafeHeight"):
             obj.addProperty("App::PropertyLength", "SafeHeight", "Safety", "Safe height for rapid moves")
-            obj.SafeHeight = 10.0  # 10mm par défaut
+            obj.SafeHeight = 2  # 10mm par défaut
         
         # Paramètres de profondeur
         if not hasattr(obj, "FinalDepth"):
@@ -91,8 +93,15 @@ class DrillOperation(baseOp):
             obj.addProperty("App::PropertyLength", "ZReference", "Depth", "Z reference for relative depth mode")
             obj.ZReference = 0.0  # 0mm par défaut
 
+        if not hasattr(obj,"Diam"):
+            obj.addProperty("App::PropertyFloat", "Diam","Contournage","Diametre")
+            obj.Diam = 20
+        if not hasattr(obj,"Ap"):
+            obj.addProperty("App::PropertyFloat", "Ap","Contournage","Prise de Passe Max")
+            obj.Ap = 0.5
+
         if not hasattr(obj,"Tool"):
-            obj.addProperty("App::PropertyLink", "Tool", "Surfacage", "Tool")
+            obj.addProperty("App::PropertyLink", "Tool", "Op", "Tool")
 
     def onChanged(self, obj, prop):
         """Appelé quand une propriété est modifiée"""
@@ -102,6 +111,8 @@ class DrillOperation(baseOp):
             self.updateVisibleProperties(obj)
         elif prop == "DrillGeometryName" and obj.DrillGeometryName:
             self.updateFromGeometry(obj)
+        elif prop == "Diam":
+            self.execute()
 
     def updateToolInfo(self, obj):
         """Met à jour les informations de l'outil sélectionné"""
@@ -126,6 +137,7 @@ class DrillOperation(baseOp):
         obj.setEditorMode("Retract", 2)  # caché
         obj.setEditorMode("ThreadPitch", 2)  # caché
         obj.setEditorMode("DwellTime", 2)  # caché
+        obj.setEditorMode("Diam",2)
         
         # Afficher les propriétés spécifiques au cycle sélectionné
         if obj.CycleType == "Peck":
@@ -135,6 +147,8 @@ class DrillOperation(baseOp):
             obj.setEditorMode("ThreadPitch", 0)  # visible
         elif obj.CycleType == "Boring":
             obj.setEditorMode("DwellTime", 0)  # visible
+        elif obj.CycleType == "Contournage":
+            obj.setEditorMode("Diam",0)
 
     def updateFromGeometry(self, obj):
         """Met à jour les paramètres en fonction de la géométrie sélectionnée"""
@@ -193,11 +207,52 @@ class DrillOperation(baseOp):
             
             elif obj.CycleType == "Peck":
                 obj.Gcode += f"G83 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z} Q{obj.PeckDepth.Value}\n"  #FIXME
+            
+            elif obj.CycleType == "Contournage":
+                d = obj.Diam - tool_info.diameter
+                r = d /2
+                profTotale = 0
+                if obj.DepthMode == "Absolute":
+                    profTotale = -(obj.FinalDepth.Value - (positions[0].z + obj.SafeHeight.Value)) 
+                else:
+                    profTotale = (positions[0].z + obj.SafeHeight.Value) + obj.FinalDepth.Value
+
+                
+                nbTour = math.ceil(profTotale / obj.Ap)
+                
+                prisePasse = (profTotale / nbTour) / 2
+                
+
+                obj.Gcode += f"LABEL1:\n"
+                obj.Gcode += f"G91\n"
+                obj.Gcode += f"G1 X{r}\n"
+                for _ in range(nbTour):
+                    obj.Gcode += f"G3 X{-d} Z-{prisePasse} I{-r} J{0}\n"
+                    obj.Gcode += f"G3 X{d} Z-{prisePasse} I{r} J{0}\n"
+
+                obj.Gcode += f"G3 X{-d} I{-r} J{0}\n"
+                obj.Gcode += f"G3 X{d} I{r} J{0}\n"
+                obj.Gcode += f"G1 X{-r}\n"
+                obj.Gcode += f"G1 Z{profTotale}\n"
+                obj.Gcode += f"G90\n"
+                obj.Gcode += f"LABEL2:\n"
             else:
-                raise Exception("Unsupported Cycle Type")
+                raise Exception(f"Unsupported Cycle Type : {obj.CycleType}")
             
             for i in range(1,len(positions)):
+                    
                 obj.Gcode += f"G0 X{positions[i].x} Y{positions[i].y} Z{positions[i].z + obj.SafeHeight.Value} \n"
+                if obj.CycleType == "Contournage":
+                    obj.Gcode += "REPEAT LABEL1 LABEL2 P=1\n"
+                    # obj.Gcode += f"G91\n"
+                    # obj.Gcode += f"G1 X{r}\n"
+                    # obj.Gcode += f"G3 X{-d} Z-0.5 I{-r} J{0}\n"
+                    # obj.Gcode += f"G3 X{d} Z-0.5 I{r} J{0}\n"
+                    # obj.Gcode += f"G3 X{-d} Z-0.5 I{-r} J{0}\n"
+                    # obj.Gcode += f"G3 X{d} Z-0.5 I{r} J{0}\n"
+                    # obj.Gcode += f"G1 X{-r}\n"
+                    # obj.Gcode += f"G1 Z{2}\n"
+                    # obj.Gcode += f"G90\n"
             obj.Gcode += "G80\n"
 
         # # Créer un fil qui relie tous les trous
