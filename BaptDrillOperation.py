@@ -1,4 +1,5 @@
 from BaptPath import baseOp,baseOpViewProviderProxy
+from BaptTools import ToolDatabase
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
@@ -107,6 +108,8 @@ class DrillOperation(baseOp):
         """Appelé quand une propriété est modifiée"""
         if prop == "ToolId" and obj.ToolId >= 0:
             self.updateToolInfo(obj)
+        if prop == "Tool" and obj.Tool:
+            self.updateToolInfo(obj)
         elif prop == "CycleType":
             self.updateVisibleProperties(obj)
         elif prop == "DrillGeometryName" and obj.DrillGeometryName:
@@ -114,21 +117,7 @@ class DrillOperation(baseOp):
         elif prop == "Diam":
             self.execute()
 
-    def updateToolInfo(self, obj):
-        """Met à jour les informations de l'outil sélectionné"""
-        from BaptTools import ToolDatabase
-        
-        try:
-            # Récupérer l'outil depuis la base de données
-            db = ToolDatabase()
-            tools = db.get_all_tools()
-            
-            for tool in tools:
-                if tool.id == obj.ToolId:
-                    obj.ToolName = f"{tool.name} (Ø{tool.diameter}mm)"
-                    break
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de la mise à jour des informations de l'outil: {str(e)}\n")
+    
 
     def updateVisibleProperties(self, obj):
         """Met à jour la visibilité des propriétés en fonction du type de cycle"""
@@ -186,7 +175,7 @@ class DrillOperation(baseOp):
         
         # Récupérer les informations sur l'outil sélectionné
         tool_info = self.getToolInfo(obj)
-        if not tool_info:
+        if tool_info is None:
             # Aucun outil sélectionné, utiliser une représentation par défaut
             for pos in positions:
                 # Créer un cylindre simple comme représentation par défaut
@@ -276,23 +265,19 @@ class DrillOperation(baseOp):
     
     def getToolInfo(self, obj):
         """Récupère les informations sur l'outil sélectionné"""
-        if obj.ToolId < 0:
+        if obj.Tool is None:
+            return None
+        if obj.Tool.Id < 0:
             return None
             
-        try:
-            from BaptTools import ToolDatabase
+        
+
             
-            # Récupérer l'outil depuis la base de données
-            db = ToolDatabase()
-            tools = db.get_all_tools()
-            
-            for tool in tools:
-                if tool.id == obj.ToolId:
-                    return tool
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de la récupération des informations de l'outil: {str(e)}\n")
-            
-        return None
+        # Récupérer l'outil depuis la base de données
+        db = ToolDatabase()
+        tool = db.get_tool_by_id(obj.Tool.Id)
+        return tool
+
     
     def createToolShape(self, position, tool, obj):
         """Crée une représentation visuelle de l'outil en fonction de son type"""

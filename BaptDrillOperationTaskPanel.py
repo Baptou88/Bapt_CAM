@@ -289,7 +289,7 @@ class DrillOperationTaskPanel:
                 # Sélectionner l'outil si trouvé
                 if bestTool:
                     self.obj.ToolId = bestTool.id
-                    self.updateToolInfo()
+                    
             except Exception as e:
                 App.Console.PrintError(f"Erreur lors de la recherche d'un outil adapté: {str(e)}\n")
     
@@ -308,44 +308,9 @@ class DrillOperationTaskPanel:
             if index >= 0:
                 self.geometryCombo.setCurrentIndex(index)
 
-    def selectTool(self):
-        """Ouvre le dialogue de sélection d'outil"""
-        dialog = ToolSelectorDialog.ToolSelectorDialog(self.obj.ToolId, self.form[0])
-        result = dialog.exec_()
-        
-        if result == QtGui.QDialog.Accepted and dialog.selected_tool_id >= 0:
-            # Mettre à jour l'outil sélectionné
-            self.obj.ToolId = dialog.selected_tool_id
-            self.updateToolInfo()
     
-    def updateToolInfo(self):
-        """Met à jour les informations de l'outil sélectionné"""
-        if self.obj.ToolId < 0:
-            self.toolIdLabel.setText("Aucun outil sélectionné")
-            self.toolNameLabel.setText("")
-            self.toolTypeLabel.setText("")
-            self.toolDiameterLabel.setText("")
-            return
-        
-        try:
-            # Récupérer l'outil depuis la base de données
-            db = ToolDatabase()
-            tools = db.get_all_tools()
-            
-            for tool in tools:
-                if tool.id == self.obj.ToolId:
-                    self.toolIdLabel.setText(str(tool.id))
-                    self.toolNameLabel.setText(tool.name)
-                    self.toolTypeLabel.setText(tool.type)
-                    self.toolDiameterLabel.setText(f"{tool.diameter:.2f} mm")
-                    self.obj.ToolName = f"{tool.name} (Ø{tool.diameter}mm)"
-                    
-                    # Si c'est un taraud, mettre à jour le pas de filetage
-                    if tool.type.lower() == "taraud" and self.obj.CycleType == "Tapping":
-                        self.threadPitch.setValue(tool.thread_pitch)
-                    break
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de la mise à jour des informations de l'outil: {str(e)}\n")
+    
+    
     
     def initValues(self):
         """Initialise les valeurs des widgets depuis l'objet"""
@@ -355,8 +320,7 @@ class DrillOperationTaskPanel:
             if index >= 0:
                 self.cycleTypeCombo.setCurrentIndex(index)
         
-        # Mettre à jour les informations de l'outil
-        self.updateToolInfo()
+        
         
         if hasattr(self.obj, "SpindleSpeed"):
             self.spindleSpeed.setValue(self.obj.SpindleSpeed.Value)

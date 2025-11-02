@@ -7,8 +7,9 @@ Contient les commandes principales du workbench
 
 import os
 import BaptCamProject
+import BaptDrillGeometry
 import BaptDrillOperation
-import BaptGeometry
+import BaptContourGeometry
 import BaptMachiningCycle
 import BaptOrigin
 import BaptPocketOperation
@@ -171,12 +172,12 @@ class CreateDrillGeometryCommand:
         obj.addExtension("App::GroupExtensionPython")
         
         # Ajouter la fonctionnalité
-        drill = BaptGeometry.DrillGeometry(obj)
+        drill = BaptDrillGeometry.DrillGeometry(obj)
         
         # Ajouter le ViewProvider
         if obj.ViewObject:
-            BaptGeometry.ViewProviderDrillGeometry(obj.ViewObject)
-        
+            BaptDrillGeometry.ViewProviderDrillGeometry(obj.ViewObject)
+
         # Ajouter au groupe Geometry
         geometry_group = project.Proxy.getGeometryGroup(project)
         geometry_group.addObject(obj)
@@ -365,11 +366,11 @@ class CreateContourGeometryCommand:
         obj.addExtension("App::GroupExtensionPython")
 
         # Ajouter la fonctionnalité
-        contour = BaptGeometry.ContourGeometry(obj)
+        contour = BaptContourGeometry.ContourGeometry(obj)
         
         # Ajouter le ViewProvider
         if obj.ViewObject:
-            BaptGeometry.ViewProviderContourGeometry(obj.ViewObject)
+            BaptContourGeometry.ViewProviderContourGeometry(obj.ViewObject)
             obj.ViewObject.LineColor = (1.0, 0.0, 0.0)  # Rouge
             obj.ViewObject.PointColor = (1.0, 0.0, 0.0)  # Rouge
             obj.ViewObject.LineWidth = 4.0  # Largeur de ligne plus grande
@@ -467,7 +468,7 @@ class CreateHotReloadCommand:
         try:    
             from importlib import reload
             reload(BaptCamProject)
-            reload(BaptGeometry)
+            reload(BaptContourGeometry)
             reload(BaptDrillOperation) 
             reload(BaptTools)  # Ajouter le module BaptTools
             reload(BaptMachiningCycle)
