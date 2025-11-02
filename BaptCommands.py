@@ -10,6 +10,7 @@ import BaptCamProject
 import BaptDrillGeometry
 import BaptDrillOperation
 import BaptContourGeometry
+from BaptHighlight import CreateHighlightCommand
 import BaptMachiningCycle
 import BaptOrigin
 import BaptPocketOperation
@@ -685,3 +686,4 @@ Gui.addCommand('Bapt_PostProcessGCode', PostProcessGCodeCommand())
 Gui.addCommand('Bapt_CreateSurfacage', CreateSurfacageCommand())
 Gui.addCommand('Bapt_CreateProbeFace', ProbeFaceCommand())
 Gui.addCommand('Bapt_TestPath', TestPathCommand())
+Gui.addCommand('Bapt_HighlightCollisions', CreateHighlightCommand())

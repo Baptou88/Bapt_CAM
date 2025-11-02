@@ -32,6 +32,12 @@
       <classname>BaptWorkbench</classname>
       <subdirectory>./</subdirectory>
     </workbench>
+    <macro>
+      <name>HighlightCollisions</name>
+      <description></description>
+      <subdirectory>./</subdirectory>
+      <file>macros/HighlightCollisions.FCMacro</file>
+    </macro>
   </content>
 
 </package>
