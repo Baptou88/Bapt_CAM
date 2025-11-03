@@ -3,17 +3,19 @@
 BaptPostProcess.py
 Génère un programme G-code à partir des opérations du projet CAM
 """
+import importlib
+import os
 from BaptPreferences import BaptPreferences
+from BaptTaskPanel import PostProcessorTaskPanel
 import FreeCAD as App # type: ignore
 from PySide import QtGui, QtCore # type: ignore
-
+import BaptUtilities as BaptUtils
 def list_machining_operations(obj):
     """
     Parcourt récursivement toute l'arborescence de obj (Group, enfants, etc.)
     et retourne la liste de tous les objets d'usinage (ContournageCycle, DrillOperation, etc.).
     """
-    if hasattr(obj, 'Label'):
-        App.Console.PrintMessage(f"Objet: {obj.Label}\n")
+
     ops = []
     if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type in [
         'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path']:
@@ -29,6 +31,7 @@ def generate_gcode(cam_project):
     Parcourt les opérations du projet CAM et génère du G-code (contournage, cycles de perçage, changements d'outil).
     Retourne le G-code sous forme de string.
     """
+    raise NotImplementedError("Cette fonction est obsolète. Utilisez generate_gcode_for_ops à la place.")
     gcode_lines = ["(Programme généré par BaptPostProcess)", "G21 (unit: mm)", "G90 (abs mode)"]
     current_tool = None
     current_spindle = None
@@ -199,22 +202,29 @@ def generate_gcode_for_ops(ops):
     for obj in ops:
         if not (hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type')):
             continue
+        tool = getattr(obj, 'Tool', None)   
+        if tool is None:
+            App.Console.PrintWarning(f"L'opération {obj.Label} n'a pas d'outil associé !\n")
+            gcode_lines.append(f"(Attention: L'opération {obj.Label} n'a pas d'outil associé !)")
+            continue
+        if current_tool != tool:
+            tool_id = getattr(tool, 'Id', None)
+            tool_name = getattr(tool, 'Label', None)
+            spindle = getattr(tool, 'SpindleSpeed', None)
+            feed = getattr(tool, 'FeedRate', None)
+            
+            gcode_lines.append(f"(Changement d'outil: {tool_name if tool_name else ''})")
+            gcode_lines.append(f"M6 T{tool_id}")
+            if spindle:
+                gcode_lines.append(f"S{spindle} M3")
+                current_spindle = spindle
+            if feed:
+                gcode_lines.append(f"F{feed}")
+                current_feed = feed
+            current_tool = tool
         # --- Surfacage ---
         if obj.Proxy.Type == 'Surfacage' and hasattr(obj, 'Shape'):
-            tool_id = getattr(obj, 'ToolId', None)
-            tool_name = getattr(obj, 'ToolName', None)
-            spindle = getattr(obj, 'SpindleSpeed', None)
-            feed = getattr(obj, 'FeedRate', None)
-            if tool_id is not None and tool_id != current_tool:
-                gcode_lines.append(f"(Changement d'outil: {tool_name if tool_name else ''})")
-                gcode_lines.append(f"M6 T{tool_id}")
-                if spindle:
-                    gcode_lines.append(f"S{spindle} M3")
-                    current_spindle = spindle
-                if feed:
-                    gcode_lines.append(f"F{feed}")
-                    current_feed = feed
-                current_tool = tool_id
+            
             gcode_lines.append(f"(Surfacage: {obj.Label})")
             # last_pt = None
             # for edge in obj.Shape.Edges:
@@ -236,20 +246,7 @@ def generate_gcode_for_ops(ops):
 
         # --- Contournage ---
         if obj.Proxy.Type == 'ContournageCycle' and hasattr(obj, 'Shape'):
-            tool_id = getattr(obj, 'ToolId', None)
-            tool_name = getattr(obj, 'ToolName', None)
-            spindle = getattr(obj, 'SpindleSpeed', None)
-            feed = getattr(obj, 'FeedRate', None)
-            if tool_id is not None and tool_id != current_tool:
-                gcode_lines.append(f"(Changement d'outil: {tool_name if tool_name else ''})")
-                gcode_lines.append(f"M6 T{tool_id}")
-                if spindle:
-                    gcode_lines.append(f"S{spindle} M3")
-                    current_spindle = spindle
-                if feed:
-                    gcode_lines.append(f"F{feed}")
-                    current_feed = feed
-                current_tool = tool_id
+           
             gcode_lines.append(f"(Contournage: {obj.Label})")
             last_pt = None
             for edge in obj.Shape.Edges:
@@ -280,16 +277,7 @@ def generate_gcode_for_ops(ops):
             dwell = getattr(obj, 'DwellTime', 0.5)
             peck = getattr(obj, 'PeckDepth', 2.0)
             retract = getattr(obj, 'Retract', 1.0)
-            if tool_id is not None and tool_id != current_tool:
-                gcode_lines.append(f"(Changement d'outil: {tool_name if tool_name else ''})")
-                gcode_lines.append(f"M6 T{tool_id}")
-                if spindle:
-                    gcode_lines.append(f"S{spindle} M3")
-                    current_spindle = spindle
-                if feed:
-                    gcode_lines.append(f"F{feed.value}")
-                    current_feed = feed.value
-                current_tool = tool_id
+
             gcode_lines.append(f"(Perçage: {obj.Label})")
             points = []
             if hasattr(obj, 'DrillGeometryName'):
@@ -326,6 +314,10 @@ def generate_gcode_for_ops(ops):
                     gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
                     gcode_lines.append(f"G85 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
                     gcode_lines.append(f"G80")
+            elif cycle == "Contournage":
+                gcode_lines.append(f"(Cycle: Contournage personnalisé)")
+                gcode_lines.append(obj.Gcode)
+                
     gcode_lines.append("M30 (fin programme)")
     return '\n'.join(gcode_lines)
 
@@ -376,25 +368,33 @@ class PostProcessDialog(QtGui.QDialog):
         self.resize(600, 400)
         self.cam_project = cam_project
 
-        layout = QtGui.QVBoxLayout(self)
+        # Disposition principale avec un splitter gauche/droite
+        main_layout = QtGui.QHBoxLayout(self)
+        splitter = QtGui.QSplitter(QtCore.Qt.Horizontal, self)
+        main_layout.addWidget(splitter)
 
-        # List widget avec items checkables
+        # Panneau gauche: liste d'opérations + contrôles
+        leftPane = QtGui.QWidget()
+        leftLayout = QtGui.QVBoxLayout(leftPane)
+
+        # Liste des opérations avec items checkables
         self.listWidget = QtGui.QListWidget(self)
         self.listWidget.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
-        layout.addWidget(self.listWidget)
+        leftLayout.addWidget(self.listWidget)
 
-        # Boutons de réorganisation
+        # Boutons Up/Down sous la liste
         btn_layout = QtGui.QHBoxLayout()
         self.upBtn = QtGui.QPushButton("Up", self)
         self.downBtn = QtGui.QPushButton("Down", self)
         btn_layout.addWidget(self.upBtn)
         btn_layout.addWidget(self.downBtn)
-        layout.addLayout(btn_layout)
+        btn_layout.addStretch(1)
+        leftLayout.addLayout(btn_layout)
 
         # Checkbox: ouvrir le pgm dans un éditeur après création
         self.openInEditorCheck = QtGui.QCheckBox("Ouvrir le programme dans un éditeur de texte après génération", self)
         self.openInEditorCheck.setChecked(True)
-        layout.addWidget(self.openInEditorCheck)
+        leftLayout.addWidget(self.openInEditorCheck)
 
         # Boutons en bas
         bottom_layout = QtGui.QHBoxLayout()
@@ -402,7 +402,17 @@ class PostProcessDialog(QtGui.QDialog):
         self.cancelBtn = QtGui.QPushButton("Annuler", self)
         bottom_layout.addWidget(self.generateBtn)
         bottom_layout.addWidget(self.cancelBtn)
-        layout.addLayout(bottom_layout)
+        leftLayout.addLayout(bottom_layout)
+
+        splitter.addWidget(leftPane)
+
+        # Panneau droit: paramètres PostProcessor (réutilise PostProcessorTaskPanel)
+        self.postProcPanel = PostProcessorTaskPanel(self.cam_project)
+        splitter.addWidget(self.postProcPanel.getForm())
+
+        # Répartition des tailles
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
 
         # Connects
         self.upBtn.clicked.connect(self.move_item_up)
@@ -507,6 +517,20 @@ class PostProcessDialog(QtGui.QDialog):
         ops = self.get_selected_ordered_ops()
         if not ops:
             QtGui.QMessageBox.warning(self, "Aucune opération", "Veuillez sélectionner au moins une opération.")
+            return
+        #load post processing module
+        chemin_du_module = f"{BaptUtils.getPostProPath(self.cam_project.PostProcessor[0] + '.py')}"
+        nom_du_module = os.path.splitext(os.path.basename(chemin_du_module))[0]
+        App.Console.PrintMessage(f'{chemin_du_module}\n')
+        App.Console.PrintMessage(f'{nom_du_module}\n')
+        try:
+            spec = importlib.util.spec_from_file_location(nom_du_module, chemin_du_module)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            App.Console.PrintMessage(f'{module.Name}\n')
+        except Exception as e:
+            App.Console.PrintError(f"Erreur lors du chargement du module de post-traitement : {e}\n")
+            QtGui.QMessageBox.critical(self, "Erreur", f"Impossible de charger le module de post-traitement:\n{e}")
             return
         gcode = generate_gcode_for_ops(ops)
         prefs = BaptPreferences()

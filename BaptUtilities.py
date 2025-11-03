@@ -21,3 +21,10 @@ def getIconPath(icon: str):
     @param icon - icon file name
     '''
     return os.path.join(getResourcesPath(), "icons", icon)
+
+def getPostProPath(postPro: str):
+    '''
+    Returns the post-processing path.
+    @param postPro - post-processing file name
+    '''
+    return os.path.join(get_module_path(), "PostPro", postPro)

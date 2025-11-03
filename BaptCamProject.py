@@ -345,6 +345,9 @@ class CamProject:
         if not hasattr(obj, "Model"):
             obj.addProperty("App::PropertyLink", "Model", "Base", "The base objects for all operations")
 
+        if not hasattr(obj, "PostProcessor"):
+            obj.addProperty("App::PropertyStringList", "PostProcessor", "Project", "Post Processor to use for G-Code generation")
+            obj.PostProcessor=["Siemens828"]  # Valeur par défaut
         # Créer le groupe Operations
         self.getOperationsGroup(obj)
         

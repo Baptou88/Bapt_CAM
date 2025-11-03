@@ -12,10 +12,14 @@ class CamProjectTaskPanel:
         # Obtenir l'objet Stock
         self.stock = self.getStockObject(obj)
         
+        ui1 = QtGui.QWidget()
+        ui1.setWindowTitle("Edit CAM Project")
         # Créer l'interface utilisateur
-        self.form = QtGui.QWidget()
-        self.form.setWindowTitle("Edit CAM Project")
-        layout = QtGui.QVBoxLayout(self.form)
+        ui2 = PostProcessorTaskPanel(obj)
+
+        self.form = [ui1, ui2.getForm()]
+
+        layout = QtGui.QVBoxLayout(self.form[0])
         
         # Groupe Project Setup
         setupGroup = QtGui.QGroupBox("Project Setup")
@@ -279,3 +283,84 @@ class CamProjectTaskPanel:
         """Définir les boutons standard"""
         return int(QtGui.QDialogButtonBox.Ok |
                   QtGui.QDialogButtonBox.Cancel)
+
+
+class PostProcessorTaskPanel:
+    def __init__(self, obj):
+        self.obj = obj
+        self.form = QtGui.QWidget()
+        self.form.setWindowTitle("Edit Post Processor Settings")
+        layout = QtGui.QVBoxLayout(self.form)
+        
+        label = QtGui.QLabel("Post Processor specific settings can be configured here.")
+        layout.addWidget(label)
+                # Liste des PostProcessors disponibles
+        self.postProcessors = ["Siemens828", "ITnc530", "Fanuc"] #TODO : récupérer dynamiquement la liste des postprocessors disponibles
+
+        
+        # Groupe PostProcessors
+        postProcGroup = QtGui.QGroupBox("PostProcessors")
+        postProcLayout = QtGui.QVBoxLayout()
+        
+        # Table des postprocessors
+        self.postProcTable = QtGui.QTableWidget()
+        self.postProcTable.setColumnCount(2)
+        self.postProcTable.setHorizontalHeaderLabels(["Sélectionné", "PostProcessor"])
+        self.postProcTable.horizontalHeader().setStretchLastSection(True)
+        self.postProcTable.setSelectionMode(QtGui.QAbstractItemView.NoSelection)
+        self.postProcTable.setEditTriggers(QtGui.QAbstractItemView.NoEditTriggers)
+        
+        # Remplir le tableau avec les postprocessors
+        self.postProcTable.setRowCount(len(self.postProcessors))
+        for i, postProc in enumerate(self.postProcessors):
+            # Checkbox dans la première colonne
+            checkBox = QtGui.QCheckBox()
+            # Stocker le nom du postprocessor comme propriété
+            checkBox.setProperty("postProcessorName", postProc)
+            checkBox.setChecked(postProc in self.obj.PostProcessor)
+            checkBox.stateChanged.connect(lambda state, name=postProc: self.postProcessorSelectionChanged(state, name))
+            
+            # Widget container pour centrer la checkbox
+            checkWidget = QtGui.QWidget()
+            checkLayout = QtGui.QHBoxLayout(checkWidget)
+            checkLayout.addWidget(checkBox)
+            checkLayout.setAlignment(QtCore.Qt.AlignCenter)
+            checkLayout.setContentsMargins(0, 0, 0, 0)
+            
+            self.postProcTable.setCellWidget(i, 0, checkWidget)
+            
+            # Nom du postprocessor dans la deuxième colonne
+            nameItem = QtGui.QTableWidgetItem(postProc)
+            nameItem.setFlags(nameItem.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.postProcTable.setItem(i, 1, nameItem)
+        
+        # Ajuster la largeur des colonnes
+        self.postProcTable.setColumnWidth(0, 80)
+        
+        postProcLayout.addWidget(self.postProcTable)
+        postProcGroup.setLayout(postProcLayout)
+        layout.addWidget(postProcGroup)
+        
+        # Ajouter un espace extensible en bas
+        layout.addStretch()
+
+        layout.addStretch()
+    
+    def getForm(self):
+        return self.form
+    
+    def postProcessorSelectionChanged(self, state, PostProcessorName):
+        """Appelé quand une checkbox de postprocessor est modifiée"""
+        isChecked = (state == QtCore.Qt.Checked)
+
+        App.Console.PrintMessage(f"PostProcessor '{PostProcessorName}' {'sélectionné' if isChecked else 'désélectionné'}\n")
+
+        # Mettre à jour la propriété du projet CAM si elle existe
+        if hasattr(self.obj, "PostProcessor"):
+            selected = list(self.obj.PostProcessor)
+            if isChecked and PostProcessorName not in selected:
+                selected.append(PostProcessorName)
+            elif not isChecked and PostProcessorName in selected:
+                selected.remove(PostProcessorName)
+            self.obj.PostProcessor = list(selected)
+        
