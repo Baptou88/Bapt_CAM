@@ -1,4 +1,4 @@
-from BaptUtilities import getIconPath
+from BaptUtilities import find_cam_project, getIconPath
 import FreeCAD as App
 import FreeCADGui as Gui
 
@@ -52,31 +52,39 @@ class ToolTaskPanel:
 
         """Ouvre le dialogue de sélection d'outil"""
         if not hasattr(self.obj, "Tool") or self.obj.Tool is None:
-            current_tool_id = -1
+            current_tool = None
         else:
-            current_tool_id = self.obj.Tool.Id
-        dialog = ToolSelectorDialog.ToolSelectorDialog(current_tool_id, self.form)
+            current_tool = self.obj.Tool
+
+
+        dialog = ToolSelectorDialog.ToolSelectorDialog(current_tool.Id if current_tool else -1, self.form)
         result = dialog.exec_()
         sel = dialog.selected_tool
         if result == QtGui.QDialog.Accepted and sel is not None:
-            p = Gui.activeView().getActiveObject("camproject") #FIXME
+            # Récupérer le projet CAM actif
+            p = find_cam_project(self.obj)
+            # p = Gui.activeView().getActiveObject("camproject")  # FIXME
             if p:
                 groupTools = p.Proxy.getToolsGroup()
-                tool = App.ActiveDocument.getObject(f"T{sel.id} ({sel.name})")
-                if tool is None:
-                    tool = App.ActiveDocument.addObject("Part::Cylinder",f"T{sel.id} ({sel.name})")
-                    tool.addProperty("App::PropertyInteger","Id","Tool","Tool ID").Id = sel.id
-                    tool.addProperty("App::PropertyString","Name","Tool","Tool Name").Name = sel.name
-                    groupTools.addObject(tool)
-                    self.obj.Tool = tool
-                tool.Id = sel.id
+                #tool = App.ActiveDocument.getObject(f"T{sel.id} ({sel.name})")
+                if current_tool is None or current_tool.Id != sel.id:
+                    new_tool = App.ActiveDocument.addObject("Part::Cylinder",f"T{sel.id} ({sel.name})")
+                    new_tool.addProperty("App::PropertyInteger","Id","Tool","Tool ID").Id = sel.id
+                    new_tool.addProperty("App::PropertyString","Name","Tool","Tool Name").Name = sel.name
+                    groupTools.addObject(new_tool)
+                    self.obj.Tool = new_tool
+                    new_tool.Radius = sel.diameter / 2.0
+                    if current_tool is not None:
+                        # Supprimer l'ancien outil
+                        groupTools.removeObject(current_tool)
+                        App.ActiveDocument.removeObject(current_tool.Label)
+
+                    #TODO Verifier si l'outil n'est pas déja utilisé par un autre objet avant de le supprimer
+                new_tool.Height = sel.length
                 self.idTool.setValue(sel.id)
-                tool.Label = f"T{sel.id} ({sel.name})"
                 self.nameTool.setText(sel.name)
-                tool.Radius = sel.diameter / 2.0
                 self.diameter.setValue(sel.diameter)
-                tool.Height = sel.length
-    
+
     def initValues(self):
         if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
             tool = self.obj.Tool

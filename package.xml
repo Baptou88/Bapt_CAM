@@ -7,37 +7,32 @@
 
   <version>0.0.1</version>
 
-  <date>2025-05-29</date>
-
+  <date>2025-11-09</date>
 
   <maintainer email="Baptou_88@gmail.com"> Baptou88</maintainer>
 
   <license file="LICENSE">LGPL-2.1-or-later</license>
 
-  <url branch="main" type="repository">https://github.com/Baptou88/Bapt_Cam</url>
+  <url type="website">https://github.com/Baptou88/Bapt_Cam/blob/main/CHANGELOG.md</url>
 
+  <url branch="main" type="repository">https://github.com/Baptou88/Bapt_Cam</url>
 
   <url type="readme">https://github.com/Baptou88/Bapt_Cam/blob/main/README.md</url>
 
-
-  <url type="changelog">https://github.com/Baptou88/Bapt_Cam/blob/main/CHANGELOG.md</url>
-
   <author>Baptou_88 (https://github.com/Baptou88)</author>
-
 
   <icon>Resources/icons/BaptWorkbench.svg</icon>
 
   <content>
+    <macro>
+      <name>HighlightCollisions</name>
+      <subdirectory>./</subdirectory>
+      <file>macros/HighlightCollisions.FCMacro</file>
+    </macro>
     <workbench>
       <classname>BaptWorkbench</classname>
       <subdirectory>./</subdirectory>
     </workbench>
-    <macro>
-      <name>HighlightCollisions</name>
-      <description></description>
-      <subdirectory>./</subdirectory>
-      <file>macros/HighlightCollisions.FCMacro</file>
-    </macro>
   </content>
 
 </package>

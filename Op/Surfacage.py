@@ -1,16 +1,14 @@
 from BaptPath import baseOp, baseOpViewProviderProxy
-from BaptTools import ToolDatabase
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtGui
 from Tool.ToolTaskPannel import ToolTaskPanel
-from pivy import coin
 import Part 
 import BaptUtilities
-from Tool.ToolSelectorDialog import ToolSelectorDialog
+
 from utils import PointSelectionObserver
+from utils import BQuantitySpinBox 
 import math
-import os
 
 class Surfacage(baseOp):
     def __init__(self, obj):
@@ -266,23 +264,30 @@ class SurfacageTaskPanel:
         
 
         # Recouvrement
-        self.recouvrement = QtGui.QDoubleSpinBox(); 
-        self.recouvrement.setRange(0,1000); 
-        self.recouvrement.setValue(obj.Recouvrement)
-        layout.addRow("Recouvrement", self.recouvrement)
+        #self.recouvrement = QtGui.QDoubleSpinBox(); 
+        self.recouvrement = BQuantitySpinBox.BQuantitySpinBox(obj, "Recouvrement")
+        #self.recouvrement.setRange(0,1000); 
+        #self.recouvrement.setValue(obj.Recouvrement)
+
+
+        layout.addRow("Recouvrement", self.recouvrement.getWidget())
+
 
         # Profondeur finale
-        self.depthEdit = QtGui.QDoubleSpinBox(); 
-        self.depthEdit.setRange(-10000,10000); 
-        self.depthEdit.setValue(obj.Depth)
-        layout.addRow("Profondeur finale", self.depthEdit)
+        self.depthEdit = BQuantitySpinBox.BQuantitySpinBox(obj, "Depth")
+        #self.depthEdit.setRange(-10000,10000); 
+        #self.depthEdit.setProperty("unit", "mm")
+        #self.depthEdit.setProperty("rawValue", getattr(obj, "Depth"))
+        #self.depthEdit.setProperty("binding","%s.%s" % (obj.Name, "Depth"))
+        #Gui.ExpressionBinding(self.depthEdit).bind(obj, "Depth")
+        layout.addRow("Profondeur finale", self.depthEdit.getWidget())
         self.depthBtn = QtGui.QPushButton("Click on Part")
         self.depthBtn.clicked.connect(self.setDepth)
         layout.addRow(self.depthBtn)
         
         
-        self.depthEdit.valueChanged.connect(self.updateValue)
-        self.recouvrement.valueChanged.connect(self.updateValue)
+        #self.depthEdit.valueChanged.connect(self.updateValue)
+        #self.recouvrement.valueChanged.connect(self.updateValue)
 
         ui2.initVListeners()
                 
@@ -290,10 +295,18 @@ class SurfacageTaskPanel:
             self.obj.Tool.Visibility = True
 
     def updateValue(self):
-        self.obj.Depth = self.depthEdit.value()
-        self.obj.Recouvrement = self.recouvrement.value()
+        #self.obj.Depth = self.depthEdit.value()
+        #self.obj.Depth = self.depthEdit.property('rawValue')
+        #self.obj.Recouvrement = self.recouvrement.value()
+        return
 
-    
+    def getFields(self):
+        self.recouvrement.updateProperty()
+
+    def setFields(self):
+        self.depthEdit.setValue(self.obj.Depth)
+        self.recouvrement.updateWidget()
+        
     def setDepth(self):
         self.depthBtn.setEnabled(False)
         self.observer = PointSelectionObserver.PointSelectionObserver(self.pointSelected)

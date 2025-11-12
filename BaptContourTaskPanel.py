@@ -1,4 +1,5 @@
 from BaptCamProject import CamProject
+from BaptUtilities import find_cam_project
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
@@ -241,13 +242,7 @@ class ContourTaskPanel:
 
 
         # recupere l'objet CamProject Parent
-        parent = self.obj.getParent()
-        print(f"parent: {parent.Name}")
-        while parent and not isinstance(parent, CamProject):
-        #while parent and not parent.Type == "CamProject":
-            parent = parent.getParent()
-            #print(f"parent: {parent.Name}")
-        parent = self.obj.getParent().getParent() #TODO fixme
+        parent = find_cam_project(self.obj)
         if parent:
             self.viewModeToRestore = parent.Model.ViewObject.DisplayMode
             # print(f"viewModeToRestore: {self.viewModeToRestore}")
@@ -483,9 +478,12 @@ class ContourTaskPanel:
     
     def getStandardButtons(self):
         """Définir les boutons standard"""
-        return int(QtGui.QDialogButtonBox.Ok | 
-                   QtGui.QDialogButtonBox.Apply|
-                   QtGui.QDialogButtonBox.Cancel)
+        # return int(QtGui.QDialogButtonBox.Ok | 
+        #            QtGui.QDialogButtonBox.Apply|
+        #            QtGui.QDialogButtonBox.Cancel)
+        return (
+            QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Apply | QtGui.QDialogButtonBox.Cancel
+        )
 
     def clicked(self, button):
         """clicked(button) ... callback invoked when the user presses any of the task panel buttons."""

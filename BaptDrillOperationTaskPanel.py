@@ -422,7 +422,7 @@ class DrillOperationTaskPanel:
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
-        return int(QtGui.QDialogButtonBox.Ok |
+        return (QtGui.QDialogButtonBox.Ok |
                   QtGui.QDialogButtonBox.Cancel)
 
     def cycleTypeChanged(self, index):

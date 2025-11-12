@@ -161,7 +161,7 @@ class DrillOperation(baseOp):
         if not obj.DrillGeometryName or not hasattr(App.ActiveDocument.getObject(obj.DrillGeometryName), "DrillPositions"):
             obj.Shape = Part.Shape()  # Shape vide
             return
-        
+        # App.Console.PrintMessage(f'{BaptUtilities.find_cam_project(obj).Label}\n')
         # Obtenir les positions de perçage
         drill_geometry = App.ActiveDocument.getObject(obj.DrillGeometryName)
         positions = drill_geometry.DrillPositions
@@ -265,8 +265,9 @@ class DrillOperation(baseOp):
     
     def getToolInfo(self, obj):
         """Récupère les informations sur l'outil sélectionné"""
-        if obj.Tool is None:
+        if not hasattr(obj, "Tool") or obj.Tool is None:
             return None
+
         if obj.Tool.Id < 0:
             return None
             

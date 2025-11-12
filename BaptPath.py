@@ -67,7 +67,7 @@ class baseOp:
     def __setstate__(self, state):
         """Désérialisation"""
         return None
-    
+        
 class baseOpViewProviderProxy:
     def __init__(self, obj):
         "Set this object as the proxy object of the actual view provider"
@@ -84,11 +84,7 @@ class baseOpViewProviderProxy:
             obj.addProperty("App::PropertyColor", "Feed", "Gcode", "Color for feed moves")
             obj.Feed = (0.0, 1.0, 0.0)
 
-        self.colors = {"red": (1.0, 0.0, 0.0),
-                       "green": (0.0, 1.0, 0.0),
-                       "blue": (0.0, 0.0, 1.0)}
-        
-        
+
         # self.Object = obj.Object
         # obj.Proxy = self
 
@@ -117,7 +113,7 @@ class baseOpViewProviderProxy:
     def attach(self, obj):
         App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
         self.pick_radius = 5
-        self.my_displaymode = coin.SoGroup()
+        self.Path = coin.SoGroup()
 
         self.rapid_group = coin.SoSeparator()
         self.rapid_color = coin.SoBaseColor()
@@ -160,20 +156,23 @@ class baseOpViewProviderProxy:
         #self.mouse_cb.setCallback(self.mouse_event_cb)
         self.mouse_cb.addEventCallback(coin.SoLocation2Event.getClassTypeId(), self.mouse_event_cb)
 
-        self.my_displaymode.addChild(self.rapid_group)
-        self.my_displaymode.addChild(self.feed_group)
+        self.Path.addChild(self.rapid_group)
+        self.Path.addChild(self.feed_group)
 
-        self.my_displaymode.addChild(self.direction_switch)
-        self.my_displaymode.addChild(self.mouse_cb)
+        self.Path.addChild(self.direction_switch)
+        self.Path.addChild(self.mouse_cb)
 
         # self.color = coin.SoBaseColor()
         # self.points = coin.SoCoordinate3()
         # self.lines = coin.SoIndexedLineSet()
-        # self.my_displaymode.addChild(self.points)
-        # self.my_displaymode.addChild(self.color)
-        # self.my_displaymode.addChild(self.lines)
+        # self.Path.addChild(self.points)
+        # self.Path.addChild(self.color)
+        # self.Path.addChild(self.lines)
 
-        obj.addDisplayMode(self.my_displaymode, "My_Display_Mode")
+        # view = FreeCADGui.ActiveDocument.ActiveView
+        # sg = view.getSceneGraph()
+        # sg.addChild(self.Path)
+        obj.addDisplayMode(self.Path, "Path")
 
     def mouse_event_cb(self, user_data, event_callback):
         event = event_callback.getEvent()
@@ -188,7 +187,7 @@ class baseOpViewProviderProxy:
             picking.setRadius(self.pick_radius)
 
             # appliquer le pick sur le groupe complet
-            picking.apply(self.my_displaymode)
+            picking.apply(self.Path)
 
             pp = picking.getPickedPoint()
             if pp is not None:
@@ -762,12 +761,12 @@ class baseOpViewProviderProxy:
      
     def getDisplayModes(self, obj):
         "Return a list of display modes."
-        modes = ["My_Display_Mode"]
+        modes = ["Path"]
         return modes
 
     def getDefaultDisplayMode(self):
         "Return the name of the default display mode. It must be defined in getDisplayModes."
-        return "My_Display_Mode"
+        return "Path"
 
     def setDisplayMode(self, mode):
         return mode
@@ -862,7 +861,7 @@ class GcodeEditorTaskPanel:
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
-        return int(QtGui.QDialogButtonBox.Ok |
+        return (QtGui.QDialogButtonBox.Ok |
                    QtGui.QDialogButtonBox.Apply |
                   QtGui.QDialogButtonBox.Cancel)
     

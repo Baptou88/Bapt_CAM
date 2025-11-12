@@ -225,26 +225,45 @@ class ContourGeometry:
                 #     App.Console.PrintMessage(f"Edge {i} est inversée, inversion de l'arête pour correspondre au sens.\n")
                 #     edge = edge.reversed()
                 current_edge = edge
+                bon_sens = None
                 if i < len(sorted_edges)-1:
-                    second_edge = sorted_edges[i+1]
+                    next_edge = sorted_edges[i+1]
+                    if current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[0].Point) <  1e-6 :
+                        bon_sens = True
+                        App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
+                    elif current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[-1].Point) <  1e-6 :
+                        bon_sens = True
+                        App.Console.PrintMessage(f"Edge {i} Ok ,Edge {i+1} est inversée, inversion de l'arête pour correspondre au sens.\n")
+                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[-1].Point) <  1e-6 :
+                        bon_sens = False
+                        App.Console.PrintMessage(f"Edge {i} et Edge {i+1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
+                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[0].Point) <  1e-6 :
+                        bon_sens = False
+                        App.Console.PrintMessage(f"Edge {i} est inversée, inversion de l'arête pour correspondre au sens.\n")
+                    else:
+                        App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")  
                 else:
-                    second_edge = sorted_edges[i-1]
-
-                if current_edge.Vertexes[-1].Point.distanceToPoint(second_edge.Vertexes[0].Point) <  1e-6 :
-                    App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
-                elif current_edge.Vertexes[-1].Point.distanceToPoint(second_edge.Vertexes[-1].Point) <  1e-6 :
-                    App.Console.PrintMessage(f"Edge {i+1} est inversée, inversion de l'arête pour correspondre au sens.\n")
-                elif current_edge.Vertexes[0].Point.distanceToPoint(second_edge.Vertexes[-1].Point) <  1e-6 :
-                    App.Console.PrintMessage(f"Edge {i} et Edge {i+1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
-                elif current_edge.Vertexes[0].Point.distanceToPoint(second_edge.Vertexes[0].Point) <  1e-6 :
-                    App.Console.PrintMessage(f"Edge {i} est inversée, inversion de l'arête pour correspondre au sens.\n")
-                else:
-                    App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")                    
+                    prev_edge = sorted_edges[i-1]
+                    
+                    if prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[0].Point) <  1e-6 :
+                        bon_sens = True
+                        App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
+                    elif prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[-1].Point) <  1e-6 :
+                        bon_sens = False
+                        App.Console.PrintMessage(f"Edge {i} NOk ,Edge {i-1} est inversée, inversion de l'arête pour correspondre au sens.\n")
+                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[-1].Point) <  1e-6 :
+                        bon_sens = False
+                        App.Console.PrintMessage(f"Edge {i} et Edge {i-1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
+                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[0].Point) <  1e-6 :
+                        bon_sens = True
+                        App.Console.PrintMessage(f"Edge {i} Ok, inversion de l'arête pour correspondre au sens.\n")
+                    else:
+                        App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")                    
 
                 self.debugEdge(edge,i,"")
 
                 # Créer une flèche pour indiquer la direction de l'arête
-                arrow = self._create_direction_arrow(obj, edge, size=2.0)
+                arrow = self._create_direction_arrow(obj, edge, size=2.0,invert_direction=not bon_sens)
                 if arrow:
                     direction_arrows.append(arrow)
 
@@ -533,7 +552,7 @@ class ContourGeometry:
             new_edge.reverse()
             return new_edge
 
-    def _create_direction_arrow(self, obj, edge, size=2.0):
+    def _create_direction_arrow(self, obj, edge, size=2.0,invert_direction=False):
         """Crée une petite flèche au milieu de l'arête pour indiquer la direction
 
         Args:
@@ -544,7 +563,7 @@ class ContourGeometry:
         Returns:
             Shape représentant la flèche
         """
-
+        #TODO implemente param: invert_direction pour inverser la direction de la flèche
         try:
             # Point milieu paramétrique
             mid_param = (edge.FirstParameter + edge.LastParameter) / 2.0
@@ -565,7 +584,10 @@ class ContourGeometry:
             #         pass
             # except Exception:
             #     pass
-            if hasattr(obj, "Direction") and obj.Direction == "Anti-horaire":
+            # if hasattr(obj, "Direction") and obj.Direction == "Anti-horaire":
+            #     tangent = tangent.multiply(-1)
+
+            if invert_direction:
                 tangent = tangent.multiply(-1)
 
             # Projet de la tangente sur XY et normalisation
@@ -589,6 +611,10 @@ class ContourGeometry:
 
             # Décalage le long de la normale : proportionnel à la taille, ajustable
             offset_distance = size * 0.6
+            
+            if hasattr(obj, "Direction") and obj.Direction == "Anti-horaire":
+                offset_distance = -offset_distance
+                
             # # Si l'arête est un cercle/arc, essayer d'orienter la normale vers l'extérieur du cercle
             # try:
             #     if isinstance(edge.Curve, Part.Circle):

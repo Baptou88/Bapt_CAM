@@ -28,3 +28,24 @@ def getPostProPath(postPro: str):
     @param postPro - post-processing file name
     '''
     return os.path.join(get_module_path(), "PostPro", postPro)
+
+
+def find_cam_project(o):
+    """Remonte les parents (InList) jusqu'à trouver le CamProject."""
+
+    visited = set()
+    queue = list(o.InList)
+
+    while queue:
+        parent = queue.pop(0)
+        if parent in visited:
+            continue
+        visited.add(parent)
+
+        proxy = getattr(parent, "Proxy", None)
+
+        if proxy is not None and hasattr(proxy, "Type") and proxy.Type == "CamProject":
+            return parent
+        if hasattr(parent, "InList"):   
+            queue.extend(parent.InList)
+    return None

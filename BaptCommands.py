@@ -24,6 +24,7 @@ import FreeCADGui as Gui
 from PySide import QtCore, QtGui
 import BaptUtilities
 from Probe import probeFace
+from utils import BQuantitySpinBox
 
 class CreateOriginCommand:    
     """Commande pour créer une origine d'usinage (G54, G55, ...)."""
@@ -487,6 +488,8 @@ class CreateHotReloadCommand:
             reload(probeFace)
             import BaptDrillOperationTaskPanel
             reload(BaptDrillOperationTaskPanel)
+            import utils.BQuantitySpinBox as BQuantitySpinBox
+            reload(BQuantitySpinBox)
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 
@@ -562,6 +565,16 @@ class CreateDrillOperationCommand:
         # Maintenant que DrillGeometry est un DocumentObjectGroupPython, on peut utiliser addObject
         drill_geometry.addObject(obj)
         drill_geometry.Group.append(obj)
+
+        link = doc.addObject('App::Link', f'Link_{obj.Label}')
+        link.setLink(obj)
+        camProject = BaptUtilities.find_cam_project(drill_geometry)
+        if camProject:
+            App.Console.PrintMessage(f'camproj {camProject.Label}\n')
+            operations_group = camProject.Proxy.getOperationsGroup(camProject)
+            App.Console.PrintMessage(f'camproj op g {operations_group.Label}\n')
+            operations_group.addObject(link)
+            operations_group.Group.append(link)
         
         # Recomputer
         doc.recompute()

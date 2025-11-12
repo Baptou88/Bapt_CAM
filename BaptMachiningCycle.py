@@ -116,8 +116,8 @@ class ContournageCycle:
         else:
             depth = geom.depth + obj.SurepAxiale
         
-        if Zref <= depth:
-            App.Console.PrintError("La hauteur de référence est inférieure ou égale à la profondeur de coupe.\n")
+        if Zref < depth: #TODO 
+            App.Console.PrintError("La hauteur de référence est inférieure à la profondeur de coupe.\n")
             return []
         
         passeEquilibre = True
@@ -220,6 +220,10 @@ class ContournageCycle:
             # 1. Create wire at current pass_z by transforming zref_wire_from_contour
             edges_for_current_pass_z = []
             for edge in zref_wire_from_contour.Edges:
+                if True: #HACK
+                    edges_for_current_pass_z.append(edge)
+                    continue
+
                 if isinstance(edge.Curve, Part.Line):
                     p1, p2 = edge.Vertexes[0].Point, edge.Vertexes[1].Point
                     edges_for_current_pass_z.append(Part.makeLine(App.Vector(p1.x, p1.y, pass_z), App.Vector(p2.x, p2.y, pass_z)))
@@ -298,14 +302,14 @@ class ContournageCycle:
 
             # 3. Generate Approach and Retract for offset_toolpath_wire
 
-            indexOfFirstPoint = Contour.getFirstPoint([offset_toolpath_wire])
-            App.Console.PrintMessage(f"Index of first point for pass Z={pass_z}: {indexOfFirstPoint}\n")
+            indexOfFirstPoint = Contour.getFirstPoint(offset_toolpath_wire.Edges)
+            indexOfLastPoint =  Contour.getLastPoint(offset_toolpath_wire.Edges)
             
             first_toolpath_edge = offset_toolpath_wire.Edges[0]
             last_toolpath_edge = offset_toolpath_wire.Edges[-1]
 
-            core_toolpath_start_pt = first_toolpath_edge.Vertexes[0].Point
-            core_toolpath_end_pt = last_toolpath_edge.Edges[-1].Vertexes[-1].Point
+            core_toolpath_start_pt = first_toolpath_edge.Vertexes[indexOfFirstPoint].Point
+            core_toolpath_end_pt = last_toolpath_edge.Vertexes[indexOfLastPoint].Point
             start_pt = core_toolpath_start_pt # Used for tangent calculation legacy
             end_pt = core_toolpath_end_pt # Used for tangent calculation legacy
 
