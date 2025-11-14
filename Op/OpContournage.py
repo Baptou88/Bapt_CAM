@@ -1,62 +1,49 @@
-import os
-import sys
+from BaptPath import baseOp, baseOpViewProviderProxy
+import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
-from FreeCAD import Base
-import BaptUtilities
 from utils import Contour
-import math
 
-class ContournageCycle:
+
+import math
+import sys
+
+
+class ContournageCycle(baseOp):
     """Représente un cycle d'usinage de contournage"""
 
-    def reorder_wire(self, shape):
-        """
-        Trie et oriente les edges d'un wire ou shape, retourne un wire ordonné.
-        """
-        if hasattr(shape, "Edges"):
-            sorted_edges = Part.__sortEdges__(list(shape.Edges))
-            wire = Part.Wire(sorted_edges)
-            # Afficher la séquence ordonnée des points
-            ordered_points = []
-            for edge in wire.Edges:
-                for v in edge.Vertexes:
-                    pt = (round(v.Point.x, 5), round(v.Point.y, 5), round(v.Point.z, 5))
-                    if not ordered_points or pt != ordered_points[-1]:
-                        ordered_points.append(pt)
-            
-            return wire
-        return shape
+
 
     def __init__(self, obj):
         """Initialise l'objet de cycle de contournage"""
         # Ajouter les propriétés
-        
+
         self.Type = "ContournageCycle"
-        
+        super().__init__(obj)
+
         # Propriétés pour les paramètres d'usinage
         if not hasattr(obj, "ToolDiameter"):
             obj.addProperty("App::PropertyFloat", "ToolDiameter", "Tool", "Diamètre de l'outil")
             obj.ToolDiameter = 6.0
-        
+
         if not hasattr(obj, "CutDepth"):
             obj.addProperty("App::PropertyLength", "CutDepth", "Cut", "Profondeur de coupe")
             obj.CutDepth = 5.0
-        
+
         if not hasattr(obj, "StepDown"):
             obj.addProperty("App::PropertyLength", "StepDown", "Cut", "Profondeur par passe")
             obj.StepDown = 2.0
-        
+
         if not hasattr(obj, "Direction"):
             obj.addProperty("App::PropertyEnumeration", "Direction", "Contour", "Direction d'usinage")
             obj.Direction = ["Climb", "Conventional"]
             obj.Direction = "Climb"
-        
+
         # Utiliser PropertyString au lieu de PropertyLink pour éviter la dépendance circulaire
         if not hasattr(obj, "ContourGeometryName"):
             obj.addProperty("App::PropertyString", "ContourGeometryName", "Contour", "Nom de la géométrie du contour")
-        
+
         # Ajout des types d'approche et de sortie
         if not hasattr(obj, "ApproachType"):
             obj.addProperty("App::PropertyEnumeration", "ApproachType", "Approche", "Type d'approche du contour")
@@ -79,14 +66,12 @@ class ContournageCycle:
         if not hasattr(obj, "SurepAxiale"):
             obj.addProperty("App::PropertyFloat", "SurepAxiale", "Toolpath", "Surépaisseur axiale")
             obj.SurepAxiale = 0.0
-        
+
         if not hasattr(obj, "SurepRadiale"):
             obj.addProperty("App::PropertyFloat", "SurepRadiale", "Toolpath", "Surépaisseur radiale")
             obj.SurepAxiale = 0.0
 
-        if not hasattr(obj, "desactivated"):
-            obj.addProperty("App::PropertyBool", "desactivated", "General", "Désactiver le cycle")
-            obj.desactivated = False
+
 
         obj.Proxy = self
 
@@ -99,59 +84,7 @@ class ContournageCycle:
         """Gérer les changements de propriétés"""
         if prop in ["ToolDiameter", "CutDepth", "StepDown", "Direction", "ContourGeometryName", "ApproachType", "RetractType", "ApproachRetractLength", "ApproachRetractLength", "desactivated", "Compensation", "SurepAxiale", "SurepRadiale"]:
             self.execute(obj)
-    
-    def calculatePasse(self,obj):
-        geom = self.getContourGeometry(obj)
-        if not geom:
-            return []
-        
-        Zref = geom.Zref
-        depth = geom.depth 
-        prise = obj.StepDown
 
-        passes = []
-        
-        if geom.DepthMode == "Relatif":
-            depth = geom.Zref + geom.depth + obj.SurepAxiale
-        else:
-            depth = geom.depth + obj.SurepAxiale
-        
-        if Zref < depth: #TODO 
-            App.Console.PrintError("La hauteur de référence est inférieure à la profondeur de coupe.\n")
-            return []
-        
-        passeEquilibre = True
-
-        if passeEquilibre:
-            nbPasses = math.ceil(math.fabs(depth - Zref) / prise)
-            prise = math.fabs(depth - Zref) / nbPasses
-            for i in range(nbPasses):
-                passes.append(Zref - (i +1) * prise)
-        else:
-            while True:
-                if Zref - prise >= depth + prise:
-                    passes.append(depth)
-                    depth -= prise   
-                    break
-                else:
-                    passes.append(depth)
-                    
-        return passes
-        
-    def getContourGeometry(self, obj):
-        """Récupérer la géométrie du contour associée"""
-        if not hasattr(obj, "ContourGeometryName") or not obj.ContourGeometryName:
-            #App.Console.PrintError("Aucune géométrie de contour associée.\n")
-            return None
-        
-        doc = obj.Document
-        for o in doc.Objects:
-            if o.Name == obj.ContourGeometryName:
-                return o
-        
-        App.Console.PrintError(f"Impossible de trouver la géométrie du contour '{obj.ContourGeometryName}'.\n")
-        return None
-    
     def execute(self, obj):
         """Mettre à jour la représentation visuelle"""
         if App.ActiveDocument.Restoring:
@@ -162,9 +95,6 @@ class ContournageCycle:
 
         passes_z_values = self.calculatePasse(obj)
         App.Console.PrintMessage(f'Passes Z values: {passes_z_values}\n')
-        
-        if obj.desactivated:
-            return
 
         contour_geom = self.getContourGeometry(obj)
         if not contour_geom:
@@ -182,7 +112,7 @@ class ContournageCycle:
             if wire_in_geom.Edges and abs(wire_in_geom.Edges[0].Vertexes[0].Point.z - contour_zref) < 1e-3:
                 zref_wire_from_contour = wire_in_geom
                 break
-        
+
         if not zref_wire_from_contour:
             App.Console.PrintError("Zref wire not found in ContourGeometry.Shape.\n")
             # Fallback: try to use the first wire if any
@@ -196,11 +126,11 @@ class ContournageCycle:
         tool_offset_radius = obj.ToolDiameter / 2.0
         direction_contour = contour_geom.Direction if hasattr(contour_geom, "Direction") else "Horaire"
         direction_usinage = obj.Direction
-        
+
         is_offset_inward = (direction_contour == "Horaire" and direction_usinage == "Climb") or \
                            (direction_contour == "Anti-horaire" and direction_usinage == "Conventional")
         actual_offset_value = -tool_offset_radius if is_offset_inward else tool_offset_radius
-        
+
         is_contour_closed = contour_geom.IsClosed if hasattr(contour_geom, "IsClosed") else False
         approach_length = obj.ApproachRetractLength
         approach_type = obj.ApproachType
@@ -256,8 +186,8 @@ class ContournageCycle:
                                 bspline_at_z.interpolate(bs_points)
                                 edges_for_current_pass_z.append(bspline_at_z.toShape())
                         except Exception as e_bspline:
-                            App.Console.PrintError(f"Failed to transform BSpline for pass Z={pass_z}: {e_bspline}\n")                       
-            
+                            App.Console.PrintError(f"Failed to transform BSpline for pass Z={pass_z}: {e_bspline}\n")
+
             if not edges_for_current_pass_z:
                 App.Console.PrintWarning(f"No edges created for wire at Z={pass_z}. Skipping pass.\n")
                 continue
@@ -290,7 +220,7 @@ class ContournageCycle:
                         offset_toolpath_wire = offset_shape_result.Wires[0]
                     elif offset_shape_result.Edges:
                         offset_toolpath_wire = Part.Wire(offset_shape_result.Edges)
-                
+
 
             except Exception as e:
 
@@ -304,7 +234,7 @@ class ContournageCycle:
 
             indexOfFirstPoint = Contour.getFirstPoint(offset_toolpath_wire.Edges)
             indexOfLastPoint =  Contour.getLastPoint(offset_toolpath_wire.Edges)
-            
+
             first_toolpath_edge = offset_toolpath_wire.Edges[0]
             last_toolpath_edge = offset_toolpath_wire.Edges[-1]
 
@@ -346,12 +276,12 @@ class ContournageCycle:
                 # TODO: Add Helicoidal retract
             except Exception as e_retract_tangent:
                 App.Console.PrintWarning(f"Could not calculate end tangent for retract at Z={pass_z}: {e_retract_tangent}\n")
-            
+
             # Determine the actual start point of this pass's full trajectory (including approach)
             current_pass_trajectory_start_point = core_toolpath_start_pt # Default to core path start
             if pass_approach_edges:
                 current_pass_trajectory_start_point = pass_approach_edges[0].Vertexes[0].Point
-            
+
             # LINKING LOGIC: Add rapid move from previous pass end to current pass start
             if previous_pass_actual_end_point: # If there was a previous pass
                 link_p1 = previous_pass_actual_end_point
@@ -367,15 +297,15 @@ class ContournageCycle:
             all_pass_shapes_collected.extend(pass_approach_edges)
             all_pass_shapes_collected.extend(offset_toolpath_wire.Edges)
             all_pass_shapes_collected.extend(pass_retract_edges)
-            
+
             # Determine the actual end point of this pass's full trajectory (including retract) for the next iteration's link
             current_pass_trajectory_end_point = core_toolpath_end_pt # Default to core path end
             if pass_retract_edges:
                 current_pass_trajectory_end_point = pass_retract_edges[-1].Vertexes[-1].Point
             previous_pass_actual_end_point = current_pass_trajectory_end_point
-        
-        
-            
+
+
+
         if all_pass_shapes_collected:
             try:
                 obj.Shape = Part.makeCompound(all_pass_shapes_collected)
@@ -386,6 +316,77 @@ class ContournageCycle:
         else:
             App.Console.PrintWarning("No toolpath segments generated for any pass.\n")
             obj.Shape = Part.Shape()
+
+    def reorder_wire(self, shape):
+        """
+        Trie et oriente les edges d'un wire ou shape, retourne un wire ordonné.
+        """
+        if hasattr(shape, "Edges"):
+            sorted_edges = Part.__sortEdges__(list(shape.Edges))
+            wire = Part.Wire(sorted_edges)
+            # Afficher la séquence ordonnée des points
+            ordered_points = []
+            for edge in wire.Edges:
+                for v in edge.Vertexes:
+                    pt = (round(v.Point.x, 5), round(v.Point.y, 5), round(v.Point.z, 5))
+                    if not ordered_points or pt != ordered_points[-1]:
+                        ordered_points.append(pt)
+
+            return wire
+        return shape
+    
+    def calculatePasse(self,obj):
+        geom = self.getContourGeometry(obj)
+        if not geom:
+            return []
+
+        Zref = geom.Zref
+        depth = geom.depth
+        prise = obj.StepDown
+
+        passes = []
+
+        if geom.DepthMode == "Relatif":
+            depth = geom.Zref + geom.depth + obj.SurepAxiale
+        else:
+            depth = geom.depth + obj.SurepAxiale
+
+        if Zref < depth: #TODO 
+            App.Console.PrintError("La hauteur de référence est inférieure à la profondeur de coupe.\n")
+            return []
+
+        passeEquilibre = True
+
+        if passeEquilibre:
+            nbPasses = math.ceil(math.fabs(depth - Zref) / prise)
+            prise = math.fabs(depth - Zref) / nbPasses
+            for i in range(nbPasses):
+                passes.append(Zref - (i +1) * prise)
+        else:
+            while True:
+                if Zref - prise >= depth + prise:
+                    passes.append(depth)
+                    depth -= prise
+                    break
+                else:
+                    passes.append(depth)
+
+        return passes
+
+    def getContourGeometry(self, obj):
+        """Récupérer la géométrie du contour associée"""
+        if not hasattr(obj, "ContourGeometryName") or not obj.ContourGeometryName:
+            #App.Console.PrintError("Aucune géométrie de contour associée.\n")
+            return None
+
+        doc = obj.Document
+        for o in doc.Objects:
+            if o.Name == obj.ContourGeometryName:
+                return o
+
+        App.Console.PrintError(f"Impossible de trouver la géométrie du contour '{obj.ContourGeometryName}'.\n")
+        return None
+
     
     def __getstate__(self):
         """Appelé lors de la sauvegarde"""
@@ -394,77 +395,69 @@ class ContournageCycle:
         #     "Type": self.Type,
         #     "ContourGeometryName": getattr(self.Object, "ContourGeometryName", "")
         # }
-    
+
     def __setstate__(self, state):
         """Appelé lors du chargement"""
         return None
+
+
         # if state:
         #     self.Type = state.get("Type", "ContournageCycle")
         # return None
 
 
-class ViewProviderContournageCycle:
+class ViewProviderContournageCycle(baseOpViewProviderProxy):
     """Classe pour gérer l'affichage du cycle de contournage"""
-    
+
     def __init__(self, vobj):
         """Initialise le ViewProvider"""
+        super().__init__(vobj)
+
         vobj.Proxy = self
         self.Object = vobj.Object
-        
+
         # Ajouter des propriétés pour l'affichage
         if not hasattr(vobj, "ShowToolPath"):
             vobj.addProperty("App::PropertyBool", "ShowToolPath", "Display", "Afficher la trajectoire d'outil")
             vobj.ShowToolPath = True
-        
+
         if not hasattr(vobj, "PathColor"):
             vobj.addProperty("App::PropertyColor", "PathColor", "Display", "Couleur de la trajectoire")
             vobj.PathColor = (0.0, 0.0, 1.0)  # Bleu par défaut
-        
+
         if not hasattr(vobj, "PathWidth"):
             vobj.addProperty("App::PropertyFloat", "PathWidth", "Display", "Épaisseur de la trajectoire")
             vobj.PathWidth = 2.0
-    
+
     def getIcon(self):
         """Retourne l'icône"""
 
-        if self.Object.desactivated:
+        if not self.Object.Active:
             return BaptUtilities.getIconPath("operation_disabled.svg")
         return BaptUtilities.getIconPath("Contournage.svg")
-    
+
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""
         self.Object = vobj.Object
-        
+
         # Configuration de l'affichage
         vobj.LineColor = (0.0, 0.0, 1.0)  # Bleu
         vobj.PointColor = (0.0, 0.0, 1.0)  # Bleu
         vobj.LineWidth = 2.0
         vobj.PointSize = 4.0
-    
-    def setupContextMenu(self, vobj, menu):
-        """Configuration du menu contextuel"""
-        action = menu.addAction("Edit")
-        action.triggered.connect(lambda: self.setEdit(vobj))
 
-        action2 = menu.addAction("Activate" if vobj.Object.desactivated else "Desactivate")
-        action2.triggered.connect(lambda: self.setDesactivate(vobj))
-        return True
-    
-    def setDesactivate(self, vobj):
-        """Désactive l'objet"""
-        vobj.Object.desactivated = not vobj.Object.desactivated
-        if vobj.Object.desactivated:
-            vobj.Object.ViewObject.Visibility = False
-        else:
-            vobj.Object.ViewObject.Visibility = True
-    
-    def updateData(self, obj, prop):
-        """Appelé lorsqu'une propriété de l'objet est modifiée"""
-        # Mettre à jour l'affichage si une propriété liée à la trajectoire change
-        if prop in ["ToolDiameter", "Direction", "ContourGeometryName"]:
-            # Recalculer la trajectoire
-            obj.Proxy.execute(obj)
-    
+        return super().attach(vobj)
+
+    # def setupContextMenu(self, vobj, menu):
+    #     """Configuration du menu contextuel"""
+    #     action = menu.addAction("Edit")
+    #     action.triggered.connect(lambda: self.setEdit(vobj))
+
+    #     action2 = menu.addAction("Activate" if vobj.Object.desactivated else "Desactivate")
+    #     action2.triggered.connect(lambda: self.setDesactivate(vobj))
+    #     return True
+
+
     def onChanged(self, vobj, prop):
         """Appelé lorsqu'une propriété du ViewProvider est modifiée"""
         # Mettre à jour l'affichage si une propriété d'affichage change
@@ -472,37 +465,31 @@ class ViewProviderContournageCycle:
             # Appliquer les nouvelles propriétés d'affichage
             if hasattr(vobj, "LineColor") and hasattr(vobj, "PathColor"):
                 vobj.LineColor = vobj.PathColor
-            
+
             if hasattr(vobj, "LineWidth") and hasattr(vobj, "PathWidth"):
                 vobj.LineWidth = vobj.PathWidth
-    
+
     def claimChildren(self):
         """Retourne les enfants de cet objet"""
         # Ne pas réclamer la géométrie du contour comme enfant
         # car c'est le contour qui doit être l'enfant de la géométrie
         return []
-    
+
     def setEdit(self, vobj, mode=0):
         """Ouvre le panneau de tâche pour l'édition"""
         import BaptContournageTaskPanel
         taskd = BaptContournageTaskPanel.ContournageTaskPanel(self.Object)
         Gui.Control.showDialog(taskd)
         return True
-    
+
     def unsetEdit(self, vobj, mode=0):
         """Ferme le panneau de tâche"""
         Gui.Control.closeDialog()
-        return True
-    
-    def doubleClicked(self, vobj):
-        """Appelé lorsque l'objet est double-cliqué"""
-        # Ouvrir le panneau de tâche pour l'édition
-        self.setEdit(vobj)
-        return True
-    
+        return True 
+
     def getDisplayModes(self, vobj):
         """Retourne les modes d'affichage disponibles"""
-        return ["Flat Lines", "Shaded", "Wireframe"]
+        return ["Flat Lines", "Shaded", "Wireframe", "Path"]
     
     def getDefaultDisplayMode(self):
         """Retourne le mode d'affichage par défaut"""
@@ -516,7 +503,7 @@ class ViewProviderContournageCycle:
         """Appelé lors de la sauvegarde"""
         return None
         return {"ObjectName": self.Object.Name if self.Object else None}
-    
+
     def __setstate__(self, state):
         """Appelé lors du chargement"""
         return None

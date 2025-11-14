@@ -1,4 +1,4 @@
-import BaptDrillOperation
+import Op.DrillOp as DrillOp
 from BaptUtilities import getIconPath
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -57,7 +57,7 @@ class DrillOperationTaskPanel:
         
         # Sélection du type de cycle
         self.cycleTypeCombo = QtGui.QComboBox()
-        self.cycleTypeCombo.addItems(BaptDrillOperation.cycleType)
+        self.cycleTypeCombo.addItems(DrillOp.cycleType)
         self.cycleTypeCombo.currentIndexChanged.connect(self.cycleTypeChanged)
         cycleTypeLayout.addWidget(self.cycleTypeCombo)
         

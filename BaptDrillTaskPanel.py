@@ -328,9 +328,6 @@ class DrillGeometryTaskPanel:
                 elif hasattr(child.Proxy, "execute"):
                     child.Proxy.execute(child)
         
-        # Message de confirmation
-        App.Console.PrintMessage("Opérations de perçage mises à jour avec le nouvel ordre.\n")
-
     def selectionChanged(self):
         """Appelé quand la sélection dans le tableau change"""
         selected = self.drillTable.selectedIndexes()

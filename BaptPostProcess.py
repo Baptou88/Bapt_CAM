@@ -189,7 +189,7 @@ def generate_gcode(cam_project):
     gcode_lines.append("M30 (fin programme)")
     return '\n'.join(gcode_lines)
 
-def generate_gcode_for_ops(ops):
+def generate_gcode_for_ops(ops, cam_project=None, module=None):
     """
     Génère le G-code à partir d'une liste ordonnée d'opérations (ops).
     Semblable à generate_gcode mais prend une liste explicite d'objets.
@@ -198,6 +198,12 @@ def generate_gcode_for_ops(ops):
     current_tool = None
     current_spindle = None
     current_feed = None
+
+    if module is not None and cam_project is not None:
+        if hasattr(module, 'blockForm'):
+            blockForm = module.blockForm(cam_project.Proxy.getStock(cam_project))
+            gcode_lines.append(blockForm)
+
     App.Console.PrintMessage(f"Nombre d'opérations d'usinage sélectionnées: {len(ops)}\n")
     for obj in ops:
         if not (hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type')):
@@ -270,12 +276,12 @@ def generate_gcode_for_ops(ops):
             tool_id = getattr(obj, 'ToolId', None)
             tool_name = getattr(obj, 'ToolName', None)
             spindle = getattr(obj, 'SpindleSpeed', None)
-            feed = getattr(obj, 'FeedRate', None)
-            safe_z = getattr(obj, 'SafeHeight', 10.0)
-            final_z = getattr(obj, 'FinalDepth', -5.0)
+            feed = getattr(obj, 'FeedRate', None).Value
+            safe_z = getattr(obj, 'SafeHeight').Value
+            final_z = getattr(obj, 'FinalDepth', -5.0).Value
             cycle = getattr(obj, 'CycleType', "Simple")
             dwell = getattr(obj, 'DwellTime', 0.5)
-            peck = getattr(obj, 'PeckDepth', 2.0)
+            peck = getattr(obj, 'PeckDepth', 2.0).Value
             retract = getattr(obj, 'Retract', 1.0)
 
             gcode_lines.append(f"(Perçage: {obj.Label})")
@@ -532,7 +538,7 @@ class PostProcessDialog(QtGui.QDialog):
             App.Console.PrintError(f"Erreur lors du chargement du module de post-traitement : {e}\n")
             QtGui.QMessageBox.critical(self, "Erreur", f"Impossible de charger le module de post-traitement:\n{e}")
             return
-        gcode = generate_gcode_for_ops(ops)
+        gcode = generate_gcode_for_ops(ops,self.cam_project, module)
         prefs = BaptPreferences()
         filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Enregistrer le G-code", prefs.getGCodeFolderPath(), "Fichiers G-code (*.nc *.gcode *.tap);;Tous les fichiers (*)")
         if not filename:

@@ -740,8 +740,8 @@ class baseOpViewProviderProxy:
     
     def setEdit(self, vobj):
         """Open the editor for the Gcode property"""
-        App.Gui.activateWorkbench("DraftWorkbench")
-        App.Gui.showEdit(vobj.Object, "Gcode")
+        #must be overrided
+        raise  Exception("Must be Overided")
         self.deleteOnReject = False
 
     def startSimulation(self, vobj):

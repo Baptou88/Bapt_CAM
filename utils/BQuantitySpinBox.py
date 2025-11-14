@@ -75,3 +75,10 @@ class BQuantitySpinBox(QtCore.QObject):
             if prop == self.prop:
                 return exp
         return None
+    
+    def setValue(self, value):
+        try:
+            setattr(self.obj, self.prop, value)
+            self.updateWidget()
+        except Exception as e:
+            App.Console.PrintError("BQuantitySpinBox setValue error: {}\n".format(e))
