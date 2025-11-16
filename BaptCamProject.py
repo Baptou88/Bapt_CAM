@@ -5,6 +5,8 @@ from FreeCAD import Base
 import os
 import BaptUtilities
 from PySide import QtWidgets
+import PySide.QtCore as QtCore
+import PySide.QtGui as QtGui
 
 class Stock:
     """Classe pour gérer le brut d'usinage"""
@@ -78,6 +80,11 @@ class Stock:
             obj.addProperty("App::PropertyMaterial", "Material", "Stock", "Matériau du brut")
             obj.Material = App.Material()
         
+        if not hasattr(obj, "testShape"):
+            obj.addProperty("Part::PropertyPartShape", "testShape", "Subsection", "Description for tooltip")
+            obj.testShape = Part.Shape()
+
+        obj.Shape = obj.testShape
         # Créer une forme initiale
         #self.updateShape(obj)
 
@@ -88,7 +95,7 @@ class Stock:
         for o in obj.InList:
             if hasattr(o, "Group"):
                 for child in o.Group:
-                    App.Console.PrintMessage(f'Checking child: {child.Name}  {obj.Name}\n')
+                    #App.Console.PrintMessage(f'Checking child: {child.Name}  {obj.Name}\n')
                     if child.Name == obj.Name:
                         return o
         App.Console.PrintMessage("Parent CamProject not found for Stock object.\n")
@@ -100,6 +107,8 @@ class Stock:
     
     def execute(self, obj):
         """Mettre à jour la forme du brut"""
+        if App.ActiveDocument.Restoring:
+            return
         
         self.updateShape(obj)
     
@@ -111,9 +120,9 @@ class Stock:
         # if obj.Length <= 0 or obj.Width <= 0 or obj.Height <= 0:
         #     App.Console.PrintMessage(f'updateShape {obj.Placement.Base}\n')
         #     return
-        App.Console.PrintMessage(f'avant placement \n')
+        #App.Console.PrintMessage(f'avant placement \n')
         #placement = obj.Placement
-        App.Console.PrintMessage(f'APRES placement \n')
+        #App.Console.PrintMessage(f'APRES placement \n')
         obj.Shape = Part.Shape()
         modelBbox = None
         model = self.getParent(obj).Model
@@ -165,10 +174,13 @@ class Stock:
             box = Part.makeBox(length, width, height, App.Vector(xMin, yMin, zMin))
             obj.Shape = box
             #obj.Placement =  App.Placement(App.Vector(modelBbox.XMin, modelBbox.YMin, modelBbox.ZMin), App.Rotation(App.Vector(0,0,1),0))
-    
+        obj.testShape = obj.Shape
+
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        App.Console.PrintMessage(f'Stock property changed: {prop}\n')
+        if App.ActiveDocument.Restoring:
+            return
+        #App.Console.PrintMessage(f'Stock property changed: {prop}\n')
         if prop in ["Length", "Width", "Height", "WorkPlane","Placement"]:
             self.updateShape(obj)
         elif prop in ["XNeg", "YNeg", "ZNeg", "XPos", "YPos", "ZPos"]:
@@ -316,7 +328,7 @@ class CamProject:
     def __init__(self, obj):
         """Ajoute les propriétés"""
         self.Type = "CamProject"
-        
+        self.Object = obj
         # Transformer l'objet en groupe
         #obj.addExtension("App::GroupExtensionPython")
         
@@ -333,6 +345,9 @@ class CamProject:
         if not hasattr(obj, "Model"):
             obj.addProperty("App::PropertyLink", "Model", "Base", "The base objects for all operations")
 
+        if not hasattr(obj, "PostProcessor"):
+            obj.addProperty("App::PropertyStringList", "PostProcessor", "Project", "Post Processor to use for G-Code generation")
+            obj.PostProcessor=["Siemens828"]  # Valeur par défaut
         # Créer le groupe Operations
         self.getOperationsGroup(obj)
         
@@ -351,7 +366,7 @@ class CamProject:
         self.origin = self.getOrigin(obj)
         
         # Créer ou obtenir l'objet Tools
-        self.getToolsGroup(obj)
+        self.getToolsGroup()
         
         # Assigner le proxy à la fin pour éviter les problèmes de récursion
         obj.Proxy = self
@@ -517,12 +532,12 @@ class CamProject:
     #         stock.Placement = App.Placement(App.Vector(bbox.XMin, bbox.YMin, bbox.ZMin), App.Rotation(App.Vector(0,0,1),0))
             
 
-    def getToolsGroup(self, obj):
+    def getToolsGroup(self):
         """Obtenir ou créer le groupe Tools"""
         tools_group = None
         
         # Vérifier si le groupe existe déjà
-        for child in obj.Group:
+        for child in self.Object.Group:
             if child.Name.startswith("Tools"):
                 tools_group = child
                 break
@@ -531,7 +546,7 @@ class CamProject:
         if not tools_group:
             tools_group = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "Tools")
             tools_group.Label = "Tools"
-            obj.addObject(tools_group)
+            self.Object.addObject(tools_group)
         
         return tools_group
     
@@ -573,10 +588,22 @@ class ViewProviderCamProject:
     
     def setupContextMenu(self, vobj, menu):
         """Configuration du menu contextuel"""
-        action = menu.addAction("Edit")
-        action.triggered.connect(lambda: self.setEdit(vobj))
+        action_edit = QtGui.QAction(Gui.getIcon("Std_TransformManip.svg"), "Edit", menu)
+        QtCore.QObject.connect(action_edit, QtCore.SIGNAL("triggered()"), lambda: self.setEdit(vobj))
+        # action = menu.addAction("Edit")
+        menu.addAction(action_edit)
+
+        # action.triggered.connect(lambda: self.setEdit(vobj))
+
+        action2 = menu.addAction("Active Object")
+        action2.triggered.connect(lambda: self.activateObject(vobj))
         return True
 
+    def activateObject(self, vobj):
+        """Activer l'objet dans le document"""
+        #App.ActiveDocument.ActiveObject = vobj.Object
+        Gui.activeView().setActiveObject("camproject",vobj.Object)
+        return True
 
     def updateData(self, obj, prop):
         """Appelé quand une propriété de l'objet est modifiée"""

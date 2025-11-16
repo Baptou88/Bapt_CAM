@@ -1,11 +1,14 @@
 # https://forum.freecad.org/viewtopic.php?t=100312&sid=a77831c5cae7ee6feb8cf340f0e19dc6
 from collections import deque
 import math
+import sys
+import BaptUtilities
 import FreeCAD as App
 import FreeCADGui
 from pivy import coin
 from enum import Enum 
 from PySide import QtGui,QtCore
+import Mesh,MeshPart
 
 
 """
@@ -40,14 +43,17 @@ class absinc(Enum):
     G90 = 0
     G91 = 1
 
-class test:
+class baseOp:
     
     def __init__(self,obj):
+        App.Console.PrintMessage("Initializing baseOp object proxy for: {}\n".format(__class__.__name__))
         if not hasattr(obj, "Gcode"):
             obj.addProperty("App::PropertyString", "Gcode", "Gcode", "Gcode").Gcode = ""
             #obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
-            
-        obj.Proxy = self
+        if not hasattr(obj,"Active"):
+            obj.addProperty("App::PropertyBool","Active","Gcode","Active")
+            obj.Active = True
+        # obj.Proxy = self
         
     def onChanged(self, fp, prop):
         self.execute(fp)
@@ -61,12 +67,14 @@ class test:
     def __setstate__(self, state):
         """Désérialisation"""
         return None
-    
-class ViewProviderProxy:
+        
+class baseOpViewProviderProxy:
     def __init__(self, obj):
         "Set this object as the proxy object of the actual view provider"
-
+        App.Console.PrintMessage("Initializing baseOpViewProviderProxy for: {}\n".format(__class__.__name__))
+        self.deleteOnReject = True
         self.pick_radius = 5  # pixels
+        self.icon = "BaptWorkbench.svg"
 
         if not hasattr(obj, "Rapid"):
             obj.addProperty("App::PropertyColor", "Rapid", "Gcode", "Color for rapid moves")
@@ -76,15 +84,18 @@ class ViewProviderProxy:
             obj.addProperty("App::PropertyColor", "Feed", "Gcode", "Color for feed moves")
             obj.Feed = (0.0, 1.0, 0.0)
 
-        self.colors = {"red": (1.0, 0.0, 0.0),
-                       "green": (0.0, 1.0, 0.0),
-                       "blue": (0.0, 0.0, 1.0)}
-        self.Object = obj.Object
-        obj.Proxy = self
 
+        # self.Object = obj.Object
+        # obj.Proxy = self
+
+
+    def onDocumentRestored(self, obj):
+        """Appelé lors de la restauration du document"""
+        raise Exception("Must be Overided")
+    
     def onChanged(self, vp, prop):
         ''' Print the name of the property that has changed '''
-        App.Console.PrintMessage("Change property: " + str(prop) + "\n")
+        #App.Console.PrintMessage("Change property: " + str(prop) + "\n")
 
     def __getstate__(self):
         ''' When saving the document this object gets stored using Python's cPickle module.
@@ -100,7 +111,9 @@ class ViewProviderProxy:
         return None
     
     def attach(self, obj):
-        self.my_displaymode = coin.SoGroup()
+        App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
+        self.pick_radius = 5
+        self.Path = coin.SoGroup()
 
         self.rapid_group = coin.SoSeparator()
         self.rapid_color = coin.SoBaseColor()
@@ -143,20 +156,23 @@ class ViewProviderProxy:
         #self.mouse_cb.setCallback(self.mouse_event_cb)
         self.mouse_cb.addEventCallback(coin.SoLocation2Event.getClassTypeId(), self.mouse_event_cb)
 
-        self.my_displaymode.addChild(self.rapid_group)
-        self.my_displaymode.addChild(self.feed_group)
+        self.Path.addChild(self.rapid_group)
+        self.Path.addChild(self.feed_group)
 
-        self.my_displaymode.addChild(self.direction_switch)
-        self.my_displaymode.addChild(self.mouse_cb)
+        self.Path.addChild(self.direction_switch)
+        self.Path.addChild(self.mouse_cb)
 
         # self.color = coin.SoBaseColor()
         # self.points = coin.SoCoordinate3()
         # self.lines = coin.SoIndexedLineSet()
-        # self.my_displaymode.addChild(self.points)
-        # self.my_displaymode.addChild(self.color)
-        # self.my_displaymode.addChild(self.lines)
+        # self.Path.addChild(self.points)
+        # self.Path.addChild(self.color)
+        # self.Path.addChild(self.lines)
 
-        obj.addDisplayMode(self.my_displaymode, "My_Display_Mode")
+        # view = FreeCADGui.ActiveDocument.ActiveView
+        # sg = view.getSceneGraph()
+        # sg.addChild(self.Path)
+        obj.addDisplayMode(self.Path, "Path")
 
     def mouse_event_cb(self, user_data, event_callback):
         event = event_callback.getEvent()
@@ -171,7 +187,7 @@ class ViewProviderProxy:
             picking.setRadius(self.pick_radius)
 
             # appliquer le pick sur le groupe complet
-            picking.apply(self.my_displaymode)
+            picking.apply(self.Path)
 
             pp = picking.getPickedPoint()
             if pp is not None:
@@ -343,6 +359,48 @@ class ViewProviderProxy:
             coords_list.append(b)
             idx_list.extend([i, i+1, -1])
             self.ordered_segments.append(("rapid" if coords_list is rapid_coords else "feed", a, b))
+
+        def executeCycle():
+            new = self.cur
+
+            if self.mem.current_cycle["type"] == 81:
+
+                a = list(new[0:2])
+                a.append(self.mem.current_cycle["Z"])
+                new = tuple(a)
+
+                append_segment(feed_coords,feed_idx,self.cur,new)
+                self.cur = new
+                a = list(new[0:2])
+                a.append(self.mem.current_cycle["R"])
+                new = tuple(a)
+                append_segment(rapid_coords,rapid_idx,self.cur,new)
+                self.cur = new
+
+            elif self.mem.current_cycle["type"] == 83:
+                start_z = self.cur[-1]
+                final_Z = self.mem.current_cycle["Z"]
+                done = start_z
+                prisePasse = self.mem.current_cycle["Q"]
+                while done > final_Z:
+                    done = done-prisePasse
+                    if done < final_Z:
+                        prisePasse = final_Z
+                    a = list(new[0:2])
+                    a.append(done)
+                    new = tuple(a)
+
+                    append_segment(feed_coords,feed_idx,self.cur,new)
+                    self.cur = new
+                    a = list(new[0:2])
+                    a.append(self.mem.current_cycle["R"])
+                    new = tuple(a)
+                    append_segment(rapid_coords,rapid_idx,self.cur,new)
+                    self.cur = new
+                    
+            else:
+                raise ValueError()
+
         def processGcode():
             while self.line < len(self.lines):
 
@@ -353,7 +411,7 @@ class ViewProviderProxy:
                         break
 
                 ln = self.lines[self.line]
-                App.Console.PrintMessage("Processing line {}: {}\n".format(self.line, ln))
+                #App.Console.PrintMessage("Processing line {}: {}\n".format(self.line, ln))
                 self.line += 1
                 up = ln.upper()
                 # consider only movement commands G0/G00 and G1/G01
@@ -361,14 +419,19 @@ class ViewProviderProxy:
                     new = parse_xyz(ln, self.cur, self.absinc_mode)
                     append_segment(rapid_coords, rapid_idx, self.cur, new)
                     self.cur = new
+                    if self.mem.current_cycle is not None:
+                        executeCycle()
+
                 elif up.startswith("G1") or up.startswith("G01"):
                     new = parse_xyz(ln, self.cur, self.absinc_mode)
                     append_segment(feed_coords, feed_idx, self.cur, new)
                     self.cur = new
+                    if self.mem.current_cycle is not None:
+                        executeCycle()
                 elif up.startswith("G2") or up.startswith("G3"):
                     # Circular interpolation. Prefer I/J (center offsets). If only R given, compute center(s).
                     is_ccw = up.startswith("G3")
-                    end = parse_xyz(ln, self.cur)
+                    end = parse_xyz(ln, self.cur,self.absinc_mode)
                     I, J, R = parse_ijr(ln)
 
                     # if no XY endpoint given, skip (cannot handle)
@@ -399,7 +462,7 @@ class ViewProviderProxy:
                         c1, c2 = cs
                         # compute sweeps for both centers
                         def compute_sweep(c):
-                            sx = math.atan2(cur[1]-c[1], cur[0]-c[0])
+                            sx = math.atan2(self.cur[1]-c[1], self.cur[0]-c[0])
                             ex = math.atan2(end[1]-c[1], end[0]-c[0])
                             sweep = ex - sx
                             return sweep, sx, ex
@@ -477,6 +540,43 @@ class ViewProviderProxy:
                 elif up.startswith("G42"):
                     self.comp_mode = comp.G42
 
+                elif up.startswith("G80"):
+                    self.mem.current_cycle = None
+                elif up.startswith("G81"):
+                    up.removeprefix("G81")
+                    tokens = up.split(" ")
+                    d = dict()
+                    for t in tokens:
+                        if t.upper().startswith("X"):
+                            d["X"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                        if t.upper().startswith("Y"):
+                            d["Y"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                        if t.upper().startswith("Z"):
+                            d["Z"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                        if t.upper().startswith("R"):
+                            d["R"] = float(t[1:]) 
+                    self.mem.current_cycle = {"type":81,"Z":d["Z"],"R":d["R"]}
+                    executeCycle()
+
+                elif up.startswith("G83"):
+                    up.removeprefix("G83")
+                    tokens = up.split(" ")
+                    d = dict()
+                    for t in tokens:
+                        if t.upper().startswith("X"):
+                            d["X"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                        if t.upper().startswith("Y"):
+                            d["Y"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                        if t.upper().startswith("Z"):
+                            d["Z"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                        if t.upper().startswith("R"):
+                            d["R"] = float(t[1:]) 
+                        if t.upper().startswith("Q"):
+                            d["Q"] = float(t[1:])
+                            if d["Q"] <= 0: raise ValueError() 
+                    self.mem.current_cycle = {"type":83,"Z":d["Z"],"R":d["R"],"Q":d["Q"]}
+                    executeCycle()
+
                 elif up.startswith("G90") :
                     self.absinc_mode = absinc.G90
                 elif up.startswith("G91") :
@@ -501,13 +601,25 @@ class ViewProviderProxy:
                     n_times = 1
                     label_end = None
 
-                    if len(parts) == 2:
+                    if len(parts) == 2: #REPEAT Start
                         label_begin = parts[1] if len(parts) > 1 else None
                         n_times = 1
-                    elif len(parts) == 3:
+                    elif len(parts) == 3: #REPEAT Start P=
                         label_begin = parts[1] if len(parts) > 1 else None
 
                         n_times = parts[2].removeprefix("P=")
+                        if n_times.isdigit():
+                            n_times = int(n_times)
+                        elif n_times.startswith("R"):
+                            var_name = "R{}".format(n_times[1:])
+                            if var_name in self.mem.variables:
+                                n_times = int(self.mem.variables[var_name])
+                            else:
+                                raise Exception("Variable {} not defined for REPEAT".format(var_name))
+                    elif len(parts) == 4: #REPEAT Start End P=
+                        label_begin = parts[1] 
+                        label_end = parts[2] 
+                        n_times = parts[3].removeprefix("P=")
                         if n_times.isdigit():
                             n_times = int(n_times)
                         elif n_times.startswith("R"):
@@ -526,13 +638,22 @@ class ViewProviderProxy:
                         for _ in range(n_times):
                             # reset line to start_line and process until we reach the label_end or original line
                             
-                            saved_line = self.line
-                            self.line = start_line
+                            if label_end is not None and label_end in self.mem.labels:
 
-                            self.mem.queue.append(saved_line-1)
+                                saved_line = self.mem.labels[label_end] - 1
+                                restore = self.line 
+                                self.line = start_line 
+
+                            else:
+                                saved_line = self.line-1
+                                self.line = start_line
+                                restore = saved_line
+
+                            self.mem.queue.append(saved_line)
                            
                             processGcode()
-                            self.line = saved_line  # restore original line after repeat
+                            self.line = restore  # restore original line after repeat
+                            #App.Console.PrintMessage(f'sortie de boucle ligne {self.lines[self.line]}\n')
                         pass
                     else:
                         App.Console.PrintMessage("REPEAT label {} not found\n".format(label_begin))
@@ -553,12 +674,19 @@ class ViewProviderProxy:
                         pass
 
                     pass  
+                
+                elif up.startswith("(") or up.startswith(";"):
+                    # comment line, ignore
+                    pass
                 else:
                     # other lines may still change position if they contain coords
                     App.Console.PrintMessage("Ignoring line: {}\n".format(ln))
                     if any(t.upper().startswith(("X","Y","Z")) for t in ln.split()):
-                        new = parse_xyz(ln, cur)
-                        cur = new
+                        new = parse_xyz(ln, self.cur)
+                        self.cur = new
+                        if self.mem.current_cycle is not None:
+                            executeCycle()
+                        
         
         
         
@@ -601,48 +729,148 @@ class ViewProviderProxy:
 
         action2 = menu.addAction("Simulate Toolpath")
         action2.triggered.connect(lambda: self.startSimulation(vobj))
+
+        action_Toggle = QtGui.QAction(FreeCADGui.getIcon("Std_TransformManip.svg"), "Active Op", menu)
+        QtCore.QObject.connect(action_Toggle, QtCore.SIGNAL("triggered()"), lambda: self.ToggleOp(vobj))
+        menu.addAction(action_Toggle)
         return True
+    
+    def ToggleOp(self,vobj):
+        vobj.Object.Active = not vobj.Object.Active
+
+    def setDeleteOnReject(self, val):
+        self.deleteOnReject = val
+        return self.deleteOnReject
     
     def setEdit(self, vobj):
         """Open the editor for the Gcode property"""
-        App.Gui.activateWorkbench("DraftWorkbench")
-        App.Gui.showEdit(vobj.Object, "Gcode")
+        #must be overrided
+        raise  Exception("Must be Overided")
+        self.deleteOnReject = False
 
     def startSimulation(self, vobj):
         """Start the G-code simulation animation"""
         vp = vobj.Proxy
         vp.animator = GcodeAnimator(vp)
         vp.animator.load_paths(include_rapid=True)
-        vp.animator.start(speed_mm_s=20.0)
+        # vp.animator.start(speed_mm_s=20.0)
 
         control = GcodeAnimationControl(vp.animator)
         #control.show()
         FreeCADGui.Control.showDialog(control)
 
-        
+    def doubleClicked(self, vobj):
+        self.setEdit(vobj)
+        return True
+     
     def getDisplayModes(self, obj):
         "Return a list of display modes."
-        modes = ["My_Display_Mode"]
+        modes = ["Path"]
         return modes
 
     def getDefaultDisplayMode(self):
         "Return the name of the default display mode. It must be defined in getDisplayModes."
-        return "My_Display_Mode"
+        return "Path"
 
     def setDisplayMode(self, mode):
         return mode
 
+class path(baseOp):
+    def __init__(self, obj):
+        App.Console.PrintMessage("Initializing path object proxy for: {}\n".format(__class__.__name__))
+        super().__init__(obj)
+        self.Type = "Path"
+        obj.Proxy = self
+    def execute(self, obj):
+        return super().execute(obj)
+        
+    def onChanged(self, fp, prop):
+        return super().onChanged(fp, prop)
+    
+    def onDocumentRestored(self, obj):
+        """Appelé lors de la restauration du document"""
+        App.Console.PrintMessage("Restoring document for object: {}\n".format(obj.Name))
+        self.__init__(obj)
+
+class pathViewProviderProxy(baseOpViewProviderProxy):
+    def __init__(self, vobj):
+        App.Console.PrintMessage("Initializing path view provider proxy for: {}\n".format(__class__.__name__))
+        super().__init__(vobj)
+
+        self.Object = vobj.Object
+        vobj.Proxy = self
+    
+    def attach(self, vobj):
+        App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
+        self.Object = vobj.Object
+        return super().attach(vobj)
+    
+    # def setupContextMenu(self, vobj, menu):
+    #     return super().setupContextMenu(vobj, menu)
+    
+    def getDefaultDisplayMode(self):
+        return super().getDefaultDisplayMode()
+    
+    def setDisplayMode(self, mode):
+        return super().setDisplayMode(mode)
+    
+    def getDisplayModes(self, vobj):
+        return super().getDisplayModes(vobj)
+
+    def getIcon(self):
+        if not self.Object.Active:
+            return BaptUtilities.getIconPath("operation_disabled.svg")
+    
+    def setEdit(self, vobj):
+        #return super().setEdit(vobj)
+        taskPanel = GcodeEditorTaskPanel(vobj.Object)
+        FreeCADGui.Control.showDialog(taskPanel)
+        
+        return True
+    
 class memory():
     def __init__(self):
         #labels tableau de string et int
         self.labels = {}
         self.queue = deque()
         self.variables = {}
+        self.current_cycle = None
+        self.absincMode = absinc.G90
 
     def addLabel(self, key, value):
         self.labels[key]= value
 
+class GcodeEditorTaskPanel:
+    def __init__(self, obj):
+        self.obj = obj
+        self.form = QtGui.QWidget()
+        self.form.setWindowTitle("Gcode Editor")
+        layout = QtGui.QVBoxLayout(self.form)
 
+        self.textEdit = QtGui.QPlainTextEdit()
+        self.textEdit.setPlainText(self.obj.Gcode)
+        layout.addWidget(self.textEdit)
+
+        self.buttonBox = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        layout.addWidget(self.buttonBox)
+
+    def accept(self):
+        self.obj.Gcode = self.textEdit.toPlainText()
+        FreeCADGui.Control.closeDialog()
+
+    def reject(self):
+        FreeCADGui.Control.closeDialog()
+
+    def getStandardButtons(self):
+        """Définir les boutons standard"""
+        return (QtGui.QDialogButtonBox.Ok |
+                   QtGui.QDialogButtonBox.Apply |
+                  QtGui.QDialogButtonBox.Cancel)
+    
+
+    
 class GcodeAnimator:
     """
     Simule le parcours d'usinage en déplaçant un marqueur (sphere) le long des segments
@@ -663,6 +891,27 @@ class GcodeAnimator:
         self.timer.timeout.connect(self._on_timer)
         self.speed = 20.0  # mm / sec
         self.include_rapid = False
+
+        self.tool = None
+        self.toolMesh = None
+        self.stock = None
+
+        self.stockMesh = None
+        project = FreeCADGui.activeView().getActiveObject("camproject")  #FIXME 
+        if project:
+            #App.Console.PrintMessage(f'project name : {project.Name}\n')
+            self.stock = project.Proxy.getStock(project)
+            self.stockMesh = App.activeDocument().addObject("Mesh::Feature", "stockMesh")
+            self.stockMesh.Mesh = MeshPart.meshFromShape(Shape=self.stock.Shape, MaxLength=5)
+            if hasattr(self.vp.Object, "Tool") and self.vp.Object.Tool is not None:
+                self.tool = self.vp.Object.Tool
+                self.toolMesh = App.activeDocument().addObject("Mesh::Feature", "toolMesh")
+                self.toolMesh.Mesh = MeshPart.meshFromShape(Shape=self.tool.Shape, MaxLength=5)
+
+        
+            
+        self.frequence_cut = 20
+        self.indice_frequence_cut = 0
 
         # animation state
         self.segments = []      # list of (p0,p1) tuples
@@ -781,8 +1030,40 @@ class GcodeAnimator:
         # set translation to point (x,y,z)
         try:
             self.marker_trans.translation.setValue(point[0], point[1], point[2])
-        except Exception:
+            if self.tool is not None:
+                self.tool.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0,0,0,1))
+            if self.toolMesh is not None:
+                self.toolMesh.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0,0,0,1))
+            self.tool.recompute()
+            self.indice_frequence_cut += 1
+            if self.frequence_cut != 0 and self.indice_frequence_cut % self.frequence_cut == 0:
+                self.stock.Shape = self.stock.Shape.cut(self.tool.Shape)
+            #☺self.updateMesh(App.Vector(point[0],point[1],point[2]))
+        except Exception as e:
+            App.Console.PrintError(f" {str(e)}\n")
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
             pass
+
+    def updateMesh(self, outil_pos):
+        tolerance = 0.01
+        m = self.stockMesh.Mesh
+        new_facets = []
+        # for f in m.Facets:
+        #     d = sum([(App.Vector(p) - outil_pos).Length for p in f.Points]) / 3
+        #     if d > self.tool.Radius:
+        #         new_facets.append(f)
+        for f in m.Facets:
+            inside_count = 0
+            for p in f.Points:
+                global_p = App.Vector(p)
+                if self.toolMesh.isInside(global_p,tolerance,True):
+                    inside_count += 1
+                    if inside_count < 2 :
+                        new_facets.append(f)
+
+        newMesh = Mesh.Mesh(new_facets)
+        self.stockMesh.Mesh = newMesh
 
     def _on_timer(self):
         # single step of animation based on timer interval and speed
@@ -836,11 +1117,17 @@ class GcodeAnimationControl():
     def __init__(self, animator, parent=None):
         #super(GcodeAnimationControl, self).__init__(parent)
         self.animator = animator
-        self.form = QtGui.QWidget()
-        self.form.setWindowTitle("Animation Control")
+
+        self.ui1 = QtGui.QWidget()
+        self.ui1.setWindowTitle("Animation Control")
+
+        self.ui2 = QtGui.QWidget()
+        self.ui2.setWindowTitle("Tool Position")
         
+        self.form = [self.ui1,self.ui2]
+
         # Layout principal vertical
-        layout = QtGui.QVBoxLayout(self.form)
+        layout = QtGui.QVBoxLayout(self.ui1)
         
         # Boutons de contrôle dans un layout horizontal
         btnLayout = QtGui.QHBoxLayout()
@@ -879,6 +1166,16 @@ class GcodeAnimationControl():
         self.speedSpinBox.valueChanged.connect(self.speedChanged)
         speedLayout.addWidget(self.speedSpinBox)
         
+        # Contrôle de frequence
+        frequenceLayout = QtGui.QHBoxLayout()
+        frequenceLayout.addWidget(QtGui.QLabel("Frequence:"))
+        self.frequenceSpinBox = QtGui.QDoubleSpinBox()
+        self.frequenceSpinBox.setRange(0., 1000.0)
+        self.frequenceSpinBox.setValue(self.animator.frequence_cut)
+        self.frequenceSpinBox.setSuffix(" mm/s")
+        self.frequenceSpinBox.valueChanged.connect(self.frequenceChanged)
+        frequenceLayout.addWidget(self.frequenceSpinBox)
+        
         # Include Rapid moves checkbox
         self.rapidCheckBox = QtGui.QCheckBox("Include Rapid Moves")
         self.rapidCheckBox.setChecked(self.animator.include_rapid)
@@ -892,7 +1189,17 @@ class GcodeAnimationControl():
         
         layout.addLayout(btnLayout)
         layout.addLayout(speedLayout)
+        layout.addLayout(frequenceLayout)
         layout.addWidget(self.rapidCheckBox)
+
+        layoutToolPos = QtGui.QVBoxLayout(self.ui2)
+        self.toolPosXLabel = QtGui.QLabel("X: 0.0")
+        self.toolPosYLabel = QtGui.QLabel("Y: 0.0")
+        self.toolPosZLabel = QtGui.QLabel("Z: 0.0")
+
+        layoutToolPos.addWidget(self.toolPosXLabel)
+        layoutToolPos.addWidget(self.toolPosYLabel)
+        layoutToolPos.addWidget(self.toolPosZLabel)
         
         # Timer pour mettre à jour l'état des boutons
         self.updateTimer = QtCore.QTimer()
@@ -900,6 +1207,9 @@ class GcodeAnimationControl():
         self.updateTimer.start(100)  # 10 Hz
         
         self.updateButtons()
+
+        if self.animator.tool is not None:
+            self.animator.tool.Visibility = True
     
     def play(self):
         """Démarre ou reprend l'animation"""
@@ -926,6 +1236,9 @@ class GcodeAnimationControl():
         """Appelé quand la vitesse change"""
         self.animator.set_speed(value)
     
+    def frequenceChanged(self,value):
+        self.animator.frequence_cut = value
+
     def rapidChanged(self, state):
         """Appelé quand la case Include Rapid change"""
         include_rapid = (state == QtCore.Qt.Checked)
@@ -939,6 +1252,11 @@ class GcodeAnimationControl():
         self.pauseBtn.setEnabled(running)
         self.stopBtn.setEnabled(running)
         self.stepBtn.setEnabled(not running)
+
+        if running:
+            self.toolPosXLabel.setText(f"X: {self.animator.marker_trans.translation.getValue()[0]:.3f}")
+            self.toolPosYLabel.setText(f"Y: {self.animator.marker_trans.translation.getValue()[1]:.3f}")
+            self.toolPosZLabel.setText(f"Z: {self.animator.marker_trans.translation.getValue()[2]:.3f}")
     
     def closeEvent(self, event):
         """Arrête l'animation quand on ferme la fenêtre"""
@@ -946,18 +1264,31 @@ class GcodeAnimationControl():
         self.updateTimer.stop()
         #super(GcodeAnimationControl, self).closeEvent(event)
 
-
+    def accept(self):
+        self.stop()
+        if self.animator.tool is not None:
+            self.animator.tool.Visibility = False
+        FreeCADGui.Control.closeDialog()
+        return True
+    
+    def reject(self):
+        self.stop()
+        if self.animator.tool is not None:
+            self.animator.tool.Visibility = False
+        FreeCADGui.Control.closeDialog()
+        return False
+    
 def create():
     doc = App.ActiveDocument
     if doc is None:
         doc = App.newDocument() 
     obj = doc.addObject("App::FeaturePython","Test")
 
-    test(obj)
+    baseOp(obj)
     #obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\nREPEAT LABEL1 P=2\n"
     
     obj.Gcode ="R1=10\nG0 X0 Y0 Z10\nG1 Z0 F500\nLABEL1:\nG91\nG1 Z-2\nG90\nG1 X10 Y0\nG1 X10 Y10\nG1 X0 Y10\nG1 X0 Y0\nREPEAT LABEL1 P=R1\nG0 Z10\n"
-    ViewProviderProxy(obj.ViewObject)
+    baseOpViewProviderProxy(obj.ViewObject)
 
     vp = obj.ViewObject.Proxy
     vp.animator = GcodeAnimator(vp)

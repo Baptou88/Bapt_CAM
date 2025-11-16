@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import BaptUtilities
-
+import FreeCADGui as Gui
 """
 Init.py for Bapt Workbench
 This is the initialization file for the workbench
@@ -24,7 +24,6 @@ class BaptWorkbench (Workbench):
         import BaptCamProject
         import BaptContourTaskPanel
         import BaptDrillTaskPanel
-        import BaptMachiningCycle
         import BaptMpfReader
         import BaptCommands # import here all the needed files
         # Ajouter le répertoire au chemin de recherche Python

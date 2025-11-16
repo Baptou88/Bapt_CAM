@@ -1,20 +1,27 @@
+import Op.DrillOp as DrillOp
+from BaptUtilities import getIconPath
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
 
 from BaptTools import ToolDatabase, Tool
 from Tool import ToolSelectorDialog
+from Tool.ToolTaskPannel import ToolTaskPanel
+from utils import BQuantitySpinBox
 
 
 class DrillOperationTaskPanel:
     def __init__(self, obj):
         # Garder une référence à l'objet
         self.obj = obj
-        
+        ui1 = QtGui.QWidget()
+        ui1.setWindowTitle("Opération de perçage")
+        ui2 = ToolTaskPanel(obj, self)
         # Créer l'interface utilisateur
-        self.form = QtGui.QWidget()
-        self.form.setWindowTitle("Opération de perçage")
-        layout = QtGui.QVBoxLayout(self.form)
+        # self.form = QtGui.QWidget()
+        # self.form.setWindowTitle("Opération de perçage")
+        self.form = [ui1,ui2.getForm()]
+        layout = QtGui.QVBoxLayout(self.form[0])
         
         # Créer un widget avec onglets
         self.tabs = QtGui.QTabWidget()
@@ -23,6 +30,16 @@ class DrillOperationTaskPanel:
         # Onglet Général
         generalTab = QtGui.QWidget()
         generalLayout = QtGui.QVBoxLayout(generalTab)
+        
+        # Groupe pour la Nom de l'opération
+        nameGroup = QtGui.QGroupBox("Nom de l'opération")
+        nameLayout = QtGui.QHBoxLayout()
+        self.nameEdit = QtGui.QLineEdit()
+        nameLayout.addWidget(self.nameEdit)
+        nameGroup.setLayout(nameLayout)
+        generalLayout.addWidget(nameGroup)
+        self.nameEdit.setText(self.obj.Label)
+        self.nameEdit.textChanged.connect(lambda text: setattr(self.obj, "Label", text))
         
         # Groupe pour la géométrie
         geometryGroup = QtGui.QGroupBox("Géométrie")
@@ -36,31 +53,7 @@ class DrillOperationTaskPanel:
         geometryGroup.setLayout(geometryLayout)
         generalLayout.addWidget(geometryGroup)
         
-        # Groupe pour l'outil
-        toolGroup = QtGui.QGroupBox("Outil")
-        toolLayout = QtGui.QVBoxLayout()
         
-        # Informations sur l'outil sélectionné
-        self.toolInfoLayout = QtGui.QFormLayout()
-        self.toolIdLabel = QtGui.QLabel("Aucun outil sélectionné")
-        self.toolNameLabel = QtGui.QLabel("")
-        self.toolTypeLabel = QtGui.QLabel("")
-        self.toolDiameterLabel = QtGui.QLabel("")
-        
-        self.toolInfoLayout.addRow("ID:", self.toolIdLabel)
-        self.toolInfoLayout.addRow("Nom:", self.toolNameLabel)
-        self.toolInfoLayout.addRow("Type:", self.toolTypeLabel)
-        self.toolInfoLayout.addRow("Diamètre:", self.toolDiameterLabel)
-        
-        toolLayout.addLayout(self.toolInfoLayout)
-        
-        # Bouton pour sélectionner un outil
-        self.selectToolButton = QtGui.QPushButton("Sélectionner un outil")
-        self.selectToolButton.clicked.connect(self.selectTool)
-        toolLayout.addWidget(self.selectToolButton)
-        
-        toolGroup.setLayout(toolLayout)
-        generalLayout.addWidget(toolGroup)
         
         # Ajouter l'onglet général
         self.tabs.addTab(generalTab, "Général")
@@ -75,7 +68,7 @@ class DrillOperationTaskPanel:
         
         # Sélection du type de cycle
         self.cycleTypeCombo = QtGui.QComboBox()
-        self.cycleTypeCombo.addItems(["Simple", "Peck", "Tapping", "Boring", "Reaming"])
+        self.cycleTypeCombo.addItems(DrillOp.cycleType)
         self.cycleTypeCombo.currentIndexChanged.connect(self.cycleTypeChanged)
         cycleTypeLayout.addWidget(self.cycleTypeCombo)
         
@@ -162,9 +155,21 @@ class DrillOperationTaskPanel:
         reamingWidget = QtGui.QWidget()
         self.specificLayout.addWidget(reamingWidget)
         
+        # Widget pour le contournage
+        contouringWidget = QtGui.QWidget()
+        contouringLayout = QtGui.QFormLayout(contouringWidget)
+
+        self.Ap = BQuantitySpinBox.BQuantitySpinBox(obj,"Ap")
+        contouringLayout.addRow("Profondeur de passe (ap):", self.Ap.getWidget())
+        self.Diam = BQuantitySpinBox.BQuantitySpinBox(obj,"Diam")
+        contouringLayout.addRow("Diam:", self.Diam.getWidget())
+
+        self.specificLayout.addWidget(contouringWidget)
+
         self.specificGroup.setLayout(self.specificLayout)
         cycleLayout.addWidget(self.specificGroup)
         
+
         # Ajouter l'onglet cycle
         self.tabs.addTab(cycleTab, "Cycle")
         
@@ -209,45 +214,38 @@ class DrillOperationTaskPanel:
         self.zRefLabel = QtGui.QLabel("Référence Z:")
         depthParamsLayout.addRow(self.zRefLabel, self.zReference)
         
-        # Hauteur de sécurité
+        # # Hauteur de sécurité
+        # self.safeHeight = QtGui.QDoubleSpinBox()
+        # self.safeHeight.setRange(0.0, 1000.0)
+        # self.safeHeight.setSingleStep(1.0)
+        # self.safeHeight.setSuffix(" mm")
+        # depthParamsLayout.addRow("Hauteur de sécurité:", self.safeHeight)
+
+        # Container pour SafeHeight avec spinbox + bouton expression
+        safeHeightContainer = QtGui.QWidget()
+        safeHeightLayout = QtGui.QHBoxLayout(safeHeightContainer)
+        safeHeightLayout.setContentsMargins(0, 0, 0, 0)
+        
         self.safeHeight = QtGui.QDoubleSpinBox()
         self.safeHeight.setRange(0.0, 1000.0)
         self.safeHeight.setSingleStep(1.0)
-        self.safeHeight.setSuffix(" mm")
-        depthParamsLayout.addRow("Hauteur de sécurité:", self.safeHeight)
+        self.safeHeight.setSuffix(" mmm")
+        safeHeightLayout.addWidget(self.safeHeight)
         
+        # Bouton pour l'éditeur d'expression
+        self.safeHeightExprButton = QtGui.QPushButton()
+        self.safeHeightExprButton.setIcon(QtGui.QIcon(":/icons/expressions.svg"))
+        self.safeHeightExprButton.setToolTip("Éditer l'expression")
+        self.safeHeightExprButton.clicked.connect(lambda: self.openExpressionEditor(self.safeHeight))
+        safeHeightLayout.addWidget(self.safeHeightExprButton)
+        depthParamsLayout.addRow("Hauteur de sécurité:", safeHeightContainer)
+
         depthParamsGroup.setLayout(depthParamsLayout)
         depthLayout.addWidget(depthParamsGroup)
         
         # Ajouter l'onglet profondeur
         self.tabs.addTab(depthTab, "Profondeur")
         
-        # Onglet Affichage
-        displayTab = QtGui.QWidget()
-        displayLayout = QtGui.QVBoxLayout(displayTab)
-        
-        # Groupe pour les paramètres d'affichage du fil
-        pathLineGroup = QtGui.QGroupBox("Fil de parcours")
-        pathLineLayout = QtGui.QFormLayout()
-        
-        # Option pour afficher/masquer le fil
-        self.showPathLine = QtGui.QCheckBox()
-        pathLineLayout.addRow("Afficher le fil:", self.showPathLine)
-        
-        # Couleur du fil
-        self.pathLineColorButton = QtGui.QPushButton()
-        self.pathLineColorButton.setFixedSize(25, 25)
-        self.pathLineColorButton.clicked.connect(self.selectPathLineColor)
-        pathLineLayout.addRow("Couleur du fil:", self.pathLineColorButton)
-        
-        pathLineGroup.setLayout(pathLineLayout)
-        displayLayout.addWidget(pathLineGroup)
-        
-        # Ajouter un espace extensible
-        displayLayout.addStretch()
-        
-        # Ajouter l'onglet affichage
-        self.tabs.addTab(displayTab, "Affichage")
         
         # Initialiser les valeurs depuis l'objet
         self.initValues()
@@ -257,6 +255,18 @@ class DrillOperationTaskPanel:
 
         self.safeHeight.valueChanged.connect(lambda: self.updateVisual())
         self.finalDepth.valueChanged.connect(lambda: self.updateVisual())
+
+        #u2.testButton.clicked.connect(lambda: u2.onTestButtonClicked()) 
+        ui2.initVListeners() 
+
+    def openExpressionEditor(self, prop):
+        """Ouvre l'éditeur d'expression pour la propriété donnée"""
+        try:
+            Gui.ExpressionBinding(self.obj.Document.Name, self.obj.Name, prop).showPopup()
+            Gui.ExpressionBinding(prop).bind(self.obj,"SafeHeight")
+            prop.show()
+        except Exception as e:
+            App.Console.PrintError(f"Erreur lors de l'ouverture de l'éditeur d'expression: {str(e)}\n")
 
     def updateVisual(self):
         """Mise à jour visuelle des paramètres"""
@@ -302,7 +312,7 @@ class DrillOperationTaskPanel:
                 # Sélectionner l'outil si trouvé
                 if bestTool:
                     self.obj.ToolId = bestTool.id
-                    self.updateToolInfo()
+                    
             except Exception as e:
                 App.Console.PrintError(f"Erreur lors de la recherche d'un outil adapté: {str(e)}\n")
     
@@ -321,44 +331,9 @@ class DrillOperationTaskPanel:
             if index >= 0:
                 self.geometryCombo.setCurrentIndex(index)
 
-    def selectTool(self):
-        """Ouvre le dialogue de sélection d'outil"""
-        dialog = ToolSelectorDialog.ToolSelectorDialog(self.obj.ToolId, self.form)
-        result = dialog.exec_()
-        
-        if result == QtGui.QDialog.Accepted and dialog.selected_tool_id >= 0:
-            # Mettre à jour l'outil sélectionné
-            self.obj.ToolId = dialog.selected_tool_id
-            self.updateToolInfo()
     
-    def updateToolInfo(self):
-        """Met à jour les informations de l'outil sélectionné"""
-        if self.obj.ToolId < 0:
-            self.toolIdLabel.setText("Aucun outil sélectionné")
-            self.toolNameLabel.setText("")
-            self.toolTypeLabel.setText("")
-            self.toolDiameterLabel.setText("")
-            return
-        
-        try:
-            # Récupérer l'outil depuis la base de données
-            db = ToolDatabase()
-            tools = db.get_all_tools()
-            
-            for tool in tools:
-                if tool.id == self.obj.ToolId:
-                    self.toolIdLabel.setText(str(tool.id))
-                    self.toolNameLabel.setText(tool.name)
-                    self.toolTypeLabel.setText(tool.type)
-                    self.toolDiameterLabel.setText(f"{tool.diameter:.2f} mm")
-                    self.obj.ToolName = f"{tool.name} (Ø{tool.diameter}mm)"
-                    
-                    # Si c'est un taraud, mettre à jour le pas de filetage
-                    if tool.type.lower() == "taraud" and self.obj.CycleType == "Tapping":
-                        self.threadPitch.setValue(tool.thread_pitch)
-                    break
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de la mise à jour des informations de l'outil: {str(e)}\n")
+    
+    
     
     def initValues(self):
         """Initialise les valeurs des widgets depuis l'objet"""
@@ -368,8 +343,7 @@ class DrillOperationTaskPanel:
             if index >= 0:
                 self.cycleTypeCombo.setCurrentIndex(index)
         
-        # Mettre à jour les informations de l'outil
-        self.updateToolInfo()
+        
         
         if hasattr(self.obj, "SpindleSpeed"):
             self.spindleSpeed.setValue(self.obj.SpindleSpeed.Value)
@@ -411,29 +385,18 @@ class DrillOperationTaskPanel:
             App.Console.PrintMessage(f'safe height: {self.obj.SafeHeight}\n')
             self.safeHeight.setValue(self.obj.SafeHeight.Value)
         
-        # Onglet Affichage
-        if hasattr(self.obj, "ShowPathLine"):
-            self.showPathLine.setChecked(self.obj.ShowPathLine)
-        
-        if hasattr(self.obj, "PathLineColor"):
-            color = QtGui.QColor()
-            color.setRgbF(*self.obj.PathLineColor)
-            self.pathLineColorButton.setStyleSheet(f"background-color: {color.name()}")
-            self.selectedPathLineColor = self.obj.PathLineColor
-        else:
-            self.selectedPathLineColor = (0.0, 0.5, 1.0)  # Bleu clair par défaut
-        
+                
         # Mettre à jour l'affichage du mode de profondeur
         self.depthModeChanged(self.absoluteRadio.isChecked())
 
-    def selectPathLineColor(self):
-        """Ouvre un sélecteur de couleur pour le fil"""
-        color = QtGui.QColorDialog.getColor(QtGui.QColor(*[int(c*255) for c in self.obj.PathLineColor]))
-        if color.isValid():
-            # Mettre à jour la couleur du bouton
-            self.pathLineColorButton.setStyleSheet(f"background-color: {color.name()}")
-            # Stocker la couleur pour l'appliquer lors de l'acceptation
-            self.selectedPathLineColor = (color.redF(), color.greenF(), color.blueF())
+    # def selectPathLineColor(self):
+    #     """Ouvre un sélecteur de couleur pour le fil"""
+    #     color = QtGui.QColorDialog.getColor(QtGui.QColor(*[int(c*255) for c in self.obj.PathLineColor]))
+    #     if color.isValid():
+    #         # Mettre à jour la couleur du bouton
+    #         self.pathLineColorButton.setStyleSheet(f"background-color: {color.name()}")
+    #         # Stocker la couleur pour l'appliquer lors de l'acceptation
+    #         self.selectedPathLineColor = (color.redF(), color.greenF(), color.blueF())
 
     def accept(self):
         """Appelé quand l'utilisateur clique sur OK"""
@@ -465,8 +428,8 @@ class DrillOperationTaskPanel:
         self.obj.SafeHeight = self.safeHeight.value()
         
         # Mettre à jour les paramètres d'affichage
-        self.obj.ShowPathLine = self.showPathLine.isChecked()
-        self.obj.PathLineColor = self.selectedPathLineColor
+        # self.obj.ShowPathLine = self.showPathLine.isChecked()
+        # self.obj.PathLineColor = self.selectedPathLineColor
         
         # Recompute
         self.obj.Document.recompute()
@@ -482,7 +445,7 @@ class DrillOperationTaskPanel:
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
-        return int(QtGui.QDialogButtonBox.Ok |
+        return (QtGui.QDialogButtonBox.Ok |
                   QtGui.QDialogButtonBox.Cancel)
 
     def cycleTypeChanged(self, index):

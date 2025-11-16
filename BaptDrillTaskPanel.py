@@ -12,6 +12,16 @@ class DrillGeometryTaskPanel:
         self.form.setWindowTitle("Edit Drill Geometry")
         layout = QtGui.QVBoxLayout(self.form)
         
+        # Groupe pour la Nom de l'opération
+        nameGroup = QtGui.QGroupBox("Nom de la géométrie")
+        nameLayout = QtGui.QHBoxLayout()
+        self.nameEdit = QtGui.QLineEdit()
+        nameLayout.addWidget(self.nameEdit)
+        nameGroup.setLayout(nameLayout)
+        layout.addWidget(nameGroup)
+        self.nameEdit.setText(self.obj.Label)
+        self.nameEdit.textChanged.connect(lambda text: setattr(self.obj, "Label", text))
+
         # Groupe pour les paramètres automatiques
         autoGroup = QtGui.QGroupBox("Detected Parameters")
         autoLayout = QtGui.QFormLayout()
@@ -43,9 +53,6 @@ class DrillGeometryTaskPanel:
         drillGroup = QtGui.QGroupBox("Drill Positions")
         drillLayout = QtGui.QVBoxLayout()
         
-        # Disposition horizontale pour la table et les boutons de réorganisation
-        tableLayout = QtGui.QHBoxLayout()
-        
         # Table des positions
         self.drillTable = QtGui.QTableWidget()
         self.drillTable.setColumnCount(4)
@@ -60,10 +67,10 @@ class DrillGeometryTaskPanel:
         # Remplir la table avec les positions existantes
         self.updateDrillTable()
         
-        tableLayout.addWidget(self.drillTable, 1)  # La table prend la majorité de l'espace
+        drillLayout.addWidget(self.drillTable)
         
         # Boutons de réorganisation (Up/Down)
-        orderButtonLayout = QtGui.QVBoxLayout()
+        orderButtonLayout = QtGui.QHBoxLayout()
         
         # Bouton Up
         self.upButton = QtGui.QPushButton("▲")
@@ -80,8 +87,8 @@ class DrillGeometryTaskPanel:
         # Ajouter un espace extensible en bas
         orderButtonLayout.addStretch()
         
-        tableLayout.addLayout(orderButtonLayout)
-        drillLayout.addLayout(tableLayout)
+
+        drillLayout.addLayout(orderButtonLayout)
         
         # Boutons pour ajouter/supprimer des positions
         buttonLayout = QtGui.QHBoxLayout()
@@ -208,7 +215,7 @@ class DrillGeometryTaskPanel:
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
-        return int(QtGui.QDialogButtonBox.Ok |
+        return (QtGui.QDialogButtonBox.Ok |
                   QtGui.QDialogButtonBox.Cancel)
 
     def moveUp(self):
@@ -331,9 +338,6 @@ class DrillGeometryTaskPanel:
                 elif hasattr(child.Proxy, "execute"):
                     child.Proxy.execute(child)
         
-        # Message de confirmation
-        App.Console.PrintMessage("Opérations de perçage mises à jour avec le nouvel ordre.\n")
-
     def selectionChanged(self):
         """Appelé quand la sélection dans le tableau change"""
         selected = self.drillTable.selectedIndexes()

@@ -1,7 +1,10 @@
 import os
 import FreeCAD as App
 import FreeCADGui as Gui
+from Op import OpContournage
 from PySide import QtCore, QtGui
+from Tool.ToolTaskPannel import ToolTaskPanel
+from utils import BQuantitySpinBox
 
 class ContournageTaskPanel:
     """Panneau de tâche pour éditer les paramètres de contournage"""
@@ -11,21 +14,24 @@ class ContournageTaskPanel:
         self.obj = obj
         
         # Créer l'interface utilisateur
-        self.form = QtGui.QWidget()
-        self.form.setWindowTitle("Paramètres de contournage")
-        layout = QtGui.QVBoxLayout(self.form)
+        self.ui1 = QtGui.QWidget()
+        self.ui1.setWindowTitle("Paramètres de contournage")
+
+        ui2 = ToolTaskPanel(obj)
+        self.form = [self.ui1, ui2.getForm()]
         
+        layout = QtGui.QFormLayout(self.ui1)
         # Groupe Outil
         toolGroup = QtGui.QGroupBox("Paramètres d'outil")
         toolLayout = QtGui.QFormLayout()
         
         # Diamètre de l'outil
-        self.toolDiameter = QtGui.QDoubleSpinBox()
-        self.toolDiameter.setRange(0.1, 100)
-        self.toolDiameter.setDecimals(2)
-        self.toolDiameter.setSuffix(" mm")
+        self.toolDiameter = BQuantitySpinBox.BQuantitySpinBox(obj, "ToolDiameter")
+        # self.toolDiameter.setRange(0.1, 100)
+        # self.toolDiameter.setDecimals(2)
+        # self.toolDiameter.setSuffix(" mm")
         self.toolDiameter.setValue(obj.ToolDiameter)
-        toolLayout.addRow("Diamètre de l'outil:", self.toolDiameter)
+        toolLayout.addRow("Diamètre de l'outil:", self.toolDiameter.getWidget())
 
         # Longueur d'approche/sortie personnalisée
         self.approachRetractLength = QtGui.QDoubleSpinBox()
@@ -38,7 +44,7 @@ class ContournageTaskPanel:
 
         # Type d'approche
         self.approachType = QtGui.QComboBox()
-        self.approachType.addItems(["Tangentielle", "Perpendiculaire", "Hélicoïdale"])
+        self.approachType.addItems(OpContournage.approach_types)
         if hasattr(obj, "ApproachType"):
             idx = self.approachType.findText(obj.ApproachType)
             if idx >= 0:
@@ -48,7 +54,7 @@ class ContournageTaskPanel:
 
         # Type de sortie
         self.retractType = QtGui.QComboBox()
-        self.retractType.addItems(["Tangentielle", "Perpendiculaire", "Hélicoïdale"])
+        self.retractType.addItems(OpContournage.retract_types)
         if hasattr(obj, "RetractType"):
             idx = self.retractType.findText(obj.RetractType)
             if idx >= 0:
@@ -56,6 +62,15 @@ class ContournageTaskPanel:
         toolLayout.addRow("Type de sortie:", self.retractType)
         self.retractType.currentTextChanged.connect(self.updateContournage)
 
+        # Compensation de l'outil
+        self.compensationTool = QtGui.QComboBox()
+        self.compensationTool.addItems(OpContournage.compensation)
+        if hasattr(obj, "Compensation"):
+            idx = self.compensationTool.findText(obj.Compensation)
+            if idx >= 0:
+                self.compensationTool.setCurrentIndex(idx)
+        toolLayout.addRow("Compensation de l'outil:", self.compensationTool)
+        self.compensationTool.currentTextChanged.connect(self.updateCompensation)
         
         toolGroup.setLayout(toolLayout)
         layout.addWidget(toolGroup)
@@ -149,12 +164,14 @@ class ContournageTaskPanel:
         layout.addWidget(infoGroup)
         
         # Connecter les signaux
-        self.toolDiameter.valueChanged.connect(self.updateContournage)
+        # self.toolDiameter.valueChanged.connect(self.updateContournage)
         self.cutDepth.valueChanged.connect(self.updateContournage)
         self.stepDown.valueChanged.connect(self.updateContournage)
         self.direction.currentTextChanged.connect(self.updateContournage)
         self.showToolPath.stateChanged.connect(self.updateDisplay)
         self.pathWidth.valueChanged.connect(self.updateDisplay)
+
+        ui2.initVListeners()
     
     def chooseColor(self):
         """Ouvre un sélecteur de couleur"""
@@ -166,9 +183,21 @@ class ContournageTaskPanel:
             self.obj.ViewObject.PathColor = (r, g, b)
             self.updateDisplay()
     
+    def updateCompensation(self):
+        """Met à jour la compensation de l'outil"""
+        self.obj.Compensation = self.compensationTool.currentText()
+        if self.obj.Compensation == "Machine" or self.obj.Compensation == "Ordinateur + G41/G42":
+            if self.obj.ApproachType != "Perpendiculaire":
+                self.approachType.setCurrentText("Perpendiculaire")
+                App.Console.PrintMessage(f'Approche Perpendiculaire exigée !\n')
+            if self.obj.RetractType != "Perpendiculaire":
+                self.retractType.setCurrentText("Perpendiculaire")
+                App.Console.PrintMessage(f'Sortie Perpendiculaire exigée !\n')
+        self.updateContournage()
+
     def updateContournage(self):
         """Met à jour les paramètres de contournage"""
-        self.obj.ToolDiameter = self.toolDiameter.value()
+        # self.obj.ToolDiameter = self.toolDiameter.value()
         self.obj.CutDepth = self.cutDepth.value()
         self.obj.StepDown = self.stepDown.value()
         self.obj.Direction = self.direction.currentText()

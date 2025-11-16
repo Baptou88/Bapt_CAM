@@ -1,17 +1,22 @@
+from BaptPath import baseOp,baseOpViewProviderProxy
+from BaptTools import ToolDatabase
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
 import os
 import math
-from FreeCAD import Base
 from PySide import QtCore, QtGui
 import BaptUtilities
 
-class DrillOperation:
+
+cycleType = ["Simple", "Peck", "Tapping", "Boring", "Reaming", "Contournage"]
+
+class DrillOperation(baseOp):
     """Classe représentant une opération d'usinage de perçage"""
     
     def __init__(self, obj):
         """Ajoute les propriétés"""
+        super().__init__(obj)
         obj.Proxy = self
         self.Type = "DrillOperation"
         
@@ -32,7 +37,7 @@ class DrillOperation:
         # Type de cycle
         if not hasattr(obj, "CycleType"):
             obj.addProperty("App::PropertyEnumeration", "CycleType", "Cycle", "Type of drilling cycle")
-            obj.CycleType = ["Simple", "Peck", "Tapping", "Boring", "Reaming"]
+            obj.CycleType = cycleType
             obj.CycleType = "Simple"  # Valeur par défaut
         
         # Paramètres communs à tous les cycles
@@ -49,14 +54,6 @@ class DrillOperation:
             obj.CoolantMode = ["Off", "Flood", "Mist"]
             obj.CoolantMode = "Flood"  # Valeur par défaut
             
-        # Paramètres de visualisation du fil
-        if not hasattr(obj, "ShowPathLine"):
-            obj.addProperty("App::PropertyBool", "ShowPathLine", "Display", "Show path line between holes")
-            obj.ShowPathLine = True  # Activé par défaut
-            
-        if not hasattr(obj, "PathLineColor"):
-            obj.addProperty("App::PropertyColor", "PathLineColor", "Display", "Color of path line")
-            obj.PathLineColor = (0.0, 0.5, 1.0)  # Bleu clair par défaut
         
         # Paramètres spécifiques au cycle de perçage profond (Peck)
         if not hasattr(obj, "PeckDepth"):
@@ -80,7 +77,7 @@ class DrillOperation:
         # Paramètres de sécurité
         if not hasattr(obj, "SafeHeight"):
             obj.addProperty("App::PropertyLength", "SafeHeight", "Safety", "Safe height for rapid moves")
-            obj.SafeHeight = 10.0  # 10mm par défaut
+            obj.SafeHeight = 2  # 10mm par défaut
         
         # Paramètres de profondeur
         if not hasattr(obj, "FinalDepth"):
@@ -97,30 +94,30 @@ class DrillOperation:
             obj.addProperty("App::PropertyLength", "ZReference", "Depth", "Z reference for relative depth mode")
             obj.ZReference = 0.0  # 0mm par défaut
 
+        if not hasattr(obj,"Diam"):
+            obj.addProperty("App::PropertyFloat", "Diam","Contournage","Diametre")
+            obj.Diam = 20
+        if not hasattr(obj,"Ap"):
+            obj.addProperty("App::PropertyFloat", "Ap","Contournage","Prise de Passe Max")
+            obj.Ap = 0.5
+
+        if not hasattr(obj,"Tool"):
+            obj.addProperty("App::PropertyLink", "Tool", "Op", "Tool")
+
     def onChanged(self, obj, prop):
         """Appelé quand une propriété est modifiée"""
         if prop == "ToolId" and obj.ToolId >= 0:
+            self.updateToolInfo(obj)
+        if prop == "Tool" and obj.Tool:
             self.updateToolInfo(obj)
         elif prop == "CycleType":
             self.updateVisibleProperties(obj)
         elif prop == "DrillGeometryName" and obj.DrillGeometryName:
             self.updateFromGeometry(obj)
+        elif prop == "Diam":
+            self.execute()
 
-    def updateToolInfo(self, obj):
-        """Met à jour les informations de l'outil sélectionné"""
-        from BaptTools import ToolDatabase
-        
-        try:
-            # Récupérer l'outil depuis la base de données
-            db = ToolDatabase()
-            tools = db.get_all_tools()
-            
-            for tool in tools:
-                if tool.id == obj.ToolId:
-                    obj.ToolName = f"{tool.name} (Ø{tool.diameter}mm)"
-                    break
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de la mise à jour des informations de l'outil: {str(e)}\n")
+    
 
     def updateVisibleProperties(self, obj):
         """Met à jour la visibilité des propriétés en fonction du type de cycle"""
@@ -129,6 +126,7 @@ class DrillOperation:
         obj.setEditorMode("Retract", 2)  # caché
         obj.setEditorMode("ThreadPitch", 2)  # caché
         obj.setEditorMode("DwellTime", 2)  # caché
+        obj.setEditorMode("Diam",2)
         
         # Afficher les propriétés spécifiques au cycle sélectionné
         if obj.CycleType == "Peck":
@@ -138,6 +136,8 @@ class DrillOperation:
             obj.setEditorMode("ThreadPitch", 0)  # visible
         elif obj.CycleType == "Boring":
             obj.setEditorMode("DwellTime", 0)  # visible
+        elif obj.CycleType == "Contournage":
+            obj.setEditorMode("Diam",0)
 
     def updateFromGeometry(self, obj):
         """Met à jour les paramètres en fonction de la géométrie sélectionnée"""
@@ -161,7 +161,7 @@ class DrillOperation:
         if not obj.DrillGeometryName or not hasattr(App.ActiveDocument.getObject(obj.DrillGeometryName), "DrillPositions"):
             obj.Shape = Part.Shape()  # Shape vide
             return
-        
+        # App.Console.PrintMessage(f'{BaptUtilities.find_cam_project(obj).Label}\n')
         # Obtenir les positions de perçage
         drill_geometry = App.ActiveDocument.getObject(obj.DrillGeometryName)
         positions = drill_geometry.DrillPositions
@@ -175,60 +175,116 @@ class DrillOperation:
         
         # Récupérer les informations sur l'outil sélectionné
         tool_info = self.getToolInfo(obj)
-        if not tool_info:
+        if tool_info is None:
             # Aucun outil sélectionné, utiliser une représentation par défaut
             for pos in positions:
                 # Créer un cylindre simple comme représentation par défaut
-                cylinder = Part.makeCylinder(2.0, 10.0, pos, App.Vector(0, 0, -1))
+                cylinder = Part.makeCylinder(2.0, pos.z - obj.FinalDepth.Value, pos, App.Vector(0, 0, -1))
                 tool_shapes.append(cylinder)
         else:
             # Créer une représentation réaliste de l'outil pour chaque position
             for pos in positions:
-                tool_shape = self.createToolShape(pos, tool_info, obj)
+                tool_shape = self.createToolShape(pos, obj)
                 tool_shapes.append(tool_shape)
         
-        # Créer un fil qui relie tous les trous
-        wires = []
-        if obj.ShowPathLine and len(positions) > 1:
-            points = []
-            for pos in positions:
-                # Ajouter un point au-dessus de chaque trou avec la hauteur supplémentaire
-                elevated_pos = App.Vector(pos.x, pos.y, pos.z + obj.SafeHeight.Value)
-                points.append(elevated_pos)
+        obj.Gcode = ""
+        if len(positions)>0:
+
+            obj.Gcode += f"G0 X{positions[0].x} Y{positions[0].y} Z{positions[0].z + obj.SafeHeight.Value} \n"
+            if obj.CycleType == "Simple":
+                obj.Gcode += f"G81 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z}\n"  #FIXME
             
-            # Créer une polyligne avec tous les points
-            polyline = Part.makePolygon(points)
-            wires.append(polyline)
+            elif obj.CycleType == "Peck":
+                obj.Gcode += f"G83 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z} Q{obj.PeckDepth.Value}\n"  #FIXME
+            
+            elif obj.CycleType == "Contournage":
+                d = obj.Diam - tool_info.diameter
+                r = d /2
+                profTotale = 0
+                if obj.DepthMode == "Absolute":
+                    profTotale = -(obj.FinalDepth.Value - (positions[0].z + obj.SafeHeight.Value)) 
+                else:
+                    profTotale = (positions[0].z + obj.SafeHeight.Value) + obj.FinalDepth.Value
+
+                
+                nbTour = math.ceil(profTotale / obj.Ap)
+                
+                prisePasse = (profTotale / nbTour) / 2
+                
+
+                obj.Gcode += f"LABEL1:\n"
+                obj.Gcode += f"G91\n"
+                obj.Gcode += f"G1 X{r}\n"
+                for _ in range(nbTour):
+                    obj.Gcode += f"G3 X{-d} Z-{prisePasse} I{-r} J{0}\n"
+                    obj.Gcode += f"G3 X{d} Z-{prisePasse} I{r} J{0}\n"
+
+                obj.Gcode += f"G3 X{-d} I{-r} J{0}\n"
+                obj.Gcode += f"G3 X{d} I{r} J{0}\n"
+                obj.Gcode += f"G1 X{-r}\n"
+                obj.Gcode += f"G1 Z{profTotale}\n"
+                obj.Gcode += f"G90\n"
+                obj.Gcode += f"LABEL2:\n"
+            else:
+                raise Exception(f"Unsupported Cycle Type : {obj.CycleType}")
+            
+            for i in range(1,len(positions)):
+                    
+                obj.Gcode += f"G0 X{positions[i].x} Y{positions[i].y} Z{positions[i].z + obj.SafeHeight.Value} \n"
+                if obj.CycleType == "Contournage":
+                    obj.Gcode += "REPEAT LABEL1 LABEL2 P=1\n"
+                    # obj.Gcode += f"G91\n"
+                    # obj.Gcode += f"G1 X{r}\n"
+                    # obj.Gcode += f"G3 X{-d} Z-0.5 I{-r} J{0}\n"
+                    # obj.Gcode += f"G3 X{d} Z-0.5 I{r} J{0}\n"
+                    # obj.Gcode += f"G3 X{-d} Z-0.5 I{-r} J{0}\n"
+                    # obj.Gcode += f"G3 X{d} Z-0.5 I{r} J{0}\n"
+                    # obj.Gcode += f"G1 X{-r}\n"
+                    # obj.Gcode += f"G1 Z{2}\n"
+                    # obj.Gcode += f"G90\n"
+            obj.Gcode += "G80\n"
+
+        # # Créer un fil qui relie tous les trous
+        # wires = []
+        # if obj.ShowPathLine and len(positions) > 1:
+        #     points = []
+        #     for pos in positions:
+        #         # Ajouter un point au-dessus de chaque trou avec la hauteur supplémentaire
+        #         elevated_pos = App.Vector(pos.x, pos.y, pos.z + obj.SafeHeight.Value)
+        #         points.append(elevated_pos)
+            
+        #     # Créer une polyligne avec tous les points
+        #     polyline = Part.makePolygon(points)
+        #     wires.append(polyline)
         
         # Fusionner les formes d'outils et le fil
-        shapes = tool_shapes + wires
+        shapes = tool_shapes #+ wires
         if shapes:
             compound = Part.makeCompound(shapes)
             obj.Shape = compound
     
     def getToolInfo(self, obj):
         """Récupère les informations sur l'outil sélectionné"""
-        if obj.ToolId < 0:
+        if not hasattr(obj, "Tool") or obj.Tool is None:
+            return None
+
+        if obj.Tool.Id < 0:
             return None
             
-        try:
-            from BaptTools import ToolDatabase
+        
+
             
-            # Récupérer l'outil depuis la base de données
-            db = ToolDatabase()
-            tools = db.get_all_tools()
-            
-            for tool in tools:
-                if tool.id == obj.ToolId:
-                    return tool
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de la récupération des informations de l'outil: {str(e)}\n")
-            
-        return None
+        # Récupérer l'outil depuis la base de données
+        db = ToolDatabase()
+        tool = db.get_tool_by_id(obj.Tool.Id)
+        return tool
+
     
-    def createToolShape(self, position, tool, obj):
+    def createToolShape(self, position, obj):
         """Crée une représentation visuelle de l'outil en fonction de son type"""
         # Calculer la profondeur finale en fonction du mode (absolu ou relatif)
+        tool = self.getToolInfo(obj)
+
         if obj.DepthMode == "Absolute":
             final_depth = obj.FinalDepth.Value
         else:  # Relatif
@@ -241,21 +297,26 @@ class DrillOperation:
         diameter = tool.diameter
         
         # Longueur de l'outil (utiliser une valeur par défaut si non définie)
-        tool_length = tool.length if tool.length > 0 else 50.0
+        # tool_length = tool.length if tool.length > 0 else 50.0
+        depth = position.z - bottom_pos.z
+
+        if obj.CycleType == "Contournage":
+            diameter = obj.Diam
+            return Part.makeCylinder(diameter / 2, depth, bottom_pos, App.Vector(0, 0, 1))
         
         # Créer une forme différente selon le type d'outil
         if tool.type.lower() == "foret":
             # Créer un foret avec une pointe conique
-            return self.createDrillBit(position, bottom_pos, diameter, tool_length, tool.point_angle)
+            return self.createDrillBit(position, bottom_pos, diameter, depth, tool.point_angle)
         elif tool.type.lower() == "taraud":
             # Créer un taraud
-            return self.createTapBit(position, bottom_pos, diameter, tool_length, tool.thread_pitch)
+            return self.createTapBit(position, bottom_pos, diameter, depth, tool.thread_pitch)
         elif tool.type.lower() == "fraise" or tool.type.lower() == "fraise torique":
             # Créer une fraise
-            return self.createEndMill(position, bottom_pos, diameter, tool_length, tool.torus_radius)
+            return self.createEndMill(position, bottom_pos, diameter, depth, tool.torus_radius)
         else:
             # Type d'outil inconnu, créer un cylindre simple
-            return self.createSimpleTool(position, bottom_pos, diameter, tool_length)
+            return self.createSimpleTool(position, bottom_pos, diameter, depth)
     
     def createDrillBit(self, top_pos, bottom_pos, diameter, length, point_angle):
         """Crée une représentation d'un foret avec une pointe conique"""
@@ -350,38 +411,43 @@ class DrillOperation:
         return None
 
 
-class ViewProviderDrillOperation:
+class ViewProviderDrillOperation(baseOpViewProviderProxy):
     def __init__(self, vobj):
         """Initialise le ViewProvider"""
+        super().__init__(vobj)
         vobj.Proxy = self
         self.Object = vobj.Object
-        
-    def getIcon(self):
-        """Retourne l'icône"""
-        return BaptUtilities.getIconPath("Tree_Drilling.svg")
         
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""
         self.Object = vobj.Object
+        return super().attach(vobj)
 
-    def setupContextMenu(self, vobj, menu):
-        """Configuration du menu contextuel"""
-        action = menu.addAction("Edit")
-        action.triggered.connect(lambda: self.setEdit(vobj))
-        return True
+    def getIcon(self):
+        """Retourne l'icône"""
+        if not self.Object.Active:
+            return BaptUtilities.getIconPath("operation_disabled.svg")
+        return BaptUtilities.getIconPath("Tree_Drilling.svg")
+        
+    # def setupContextMenu(self, vobj, menu):
+    #     """Configuration du menu contextuel"""
+    #     super().setupContextMenu()
+    #     action = menu.addAction("Edit")
+    #     action.triggered.connect(lambda: self.setEdit(vobj))
+    #     return True
 
-    def updateData(self, obj, prop):
-        """Appelé quand une propriété de l'objet est modifiée"""
-        pass
+    # def updateData(self, obj, prop):
+    #     """Appelé quand une propriété de l'objet est modifiée"""
+    #     pass
 
-    def onChanged(self, vobj, prop):
-        """Appelé quand une propriété du ViewProvider est modifiée"""
-        pass
+    # def onChanged(self, vobj, prop):
+    #     """Appelé quand une propriété du ViewProvider est modifiée"""
+    #     pass
 
-    def doubleClicked(self, vobj):
-        """Gérer le double-clic"""
-        self.setEdit(vobj)
-        return True
+    # def doubleClicked(self, vobj):
+    #     """Gérer le double-clic"""
+    #     self.setEdit(vobj)
+    #     return True
 
     def setEdit(self, vobj, mode=0):
         """Ouvrir l'éditeur"""

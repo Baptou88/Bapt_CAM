@@ -7,6 +7,7 @@ import BaptUtilities
 class BaptPreferences:
     def __init__(self):
         self.form = QtGui.QWidget()
+        self.form.setWindowTitle("Édition de l'opérateur")
         layout = QtGui.QVBoxLayout(self.form)
         
         # Groupe pour les paramètres de la base de données d'outils
@@ -185,11 +186,14 @@ class BaptPreferences:
 
 
 class BaptPreferencesPage(QtGui.QWidget):
+    name = "Bapt CAM Pref"
     def __init__(self, parent=None):
-        super(BaptPreferencesPage, self).__init__(parent)
-        
+        #super(BaptPreferencesPage, self).__init__(parent)
+        super().__init__(parent)
+        self.form = QtGui.QWidget()
+        self.form.setWindowTitle(self.name)
         # Create layout
-        layout = QtGui.QVBoxLayout(self)
+        layout = QtGui.QVBoxLayout(self.form)
         
         # Create BaptPreferences instance
         self.prefs = BaptPreferences()
