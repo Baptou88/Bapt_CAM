@@ -184,7 +184,7 @@ class DrillOperation(baseOp):
         else:
             # Créer une représentation réaliste de l'outil pour chaque position
             for pos in positions:
-                tool_shape = self.createToolShape(pos, tool_info, obj)
+                tool_shape = self.createToolShape(pos, obj)
                 tool_shapes.append(tool_shape)
         
         obj.Gcode = ""
@@ -280,9 +280,11 @@ class DrillOperation(baseOp):
         return tool
 
     
-    def createToolShape(self, position, tool, obj):
+    def createToolShape(self, position, obj):
         """Crée une représentation visuelle de l'outil en fonction de son type"""
         # Calculer la profondeur finale en fonction du mode (absolu ou relatif)
+        tool = self.getToolInfo(obj)
+
         if obj.DepthMode == "Absolute":
             final_depth = obj.FinalDepth.Value
         else:  # Relatif
@@ -295,21 +297,26 @@ class DrillOperation(baseOp):
         diameter = tool.diameter
         
         # Longueur de l'outil (utiliser une valeur par défaut si non définie)
-        tool_length = tool.length if tool.length > 0 else 50.0
+        # tool_length = tool.length if tool.length > 0 else 50.0
+        depth = position.z - bottom_pos.z
+
+        if obj.CycleType == "Contournage":
+            diameter = obj.Diam
+            return Part.makeCylinder(diameter / 2, depth, bottom_pos, App.Vector(0, 0, 1))
         
         # Créer une forme différente selon le type d'outil
         if tool.type.lower() == "foret":
             # Créer un foret avec une pointe conique
-            return self.createDrillBit(position, bottom_pos, diameter, tool_length, tool.point_angle)
+            return self.createDrillBit(position, bottom_pos, diameter, depth, tool.point_angle)
         elif tool.type.lower() == "taraud":
             # Créer un taraud
-            return self.createTapBit(position, bottom_pos, diameter, tool_length, tool.thread_pitch)
+            return self.createTapBit(position, bottom_pos, diameter, depth, tool.thread_pitch)
         elif tool.type.lower() == "fraise" or tool.type.lower() == "fraise torique":
             # Créer une fraise
-            return self.createEndMill(position, bottom_pos, diameter, tool_length, tool.torus_radius)
+            return self.createEndMill(position, bottom_pos, diameter, depth, tool.torus_radius)
         else:
             # Type d'outil inconnu, créer un cylindre simple
-            return self.createSimpleTool(position, bottom_pos, diameter, tool_length)
+            return self.createSimpleTool(position, bottom_pos, diameter, depth)
     
     def createDrillBit(self, top_pos, bottom_pos, diameter, length, point_angle):
         """Crée une représentation d'un foret avec une pointe conique"""

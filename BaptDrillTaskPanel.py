@@ -12,6 +12,16 @@ class DrillGeometryTaskPanel:
         self.form.setWindowTitle("Edit Drill Geometry")
         layout = QtGui.QVBoxLayout(self.form)
         
+        # Groupe pour la Nom de l'opération
+        nameGroup = QtGui.QGroupBox("Nom de la géométrie")
+        nameLayout = QtGui.QHBoxLayout()
+        self.nameEdit = QtGui.QLineEdit()
+        nameLayout.addWidget(self.nameEdit)
+        nameGroup.setLayout(nameLayout)
+        layout.addWidget(nameGroup)
+        self.nameEdit.setText(self.obj.Label)
+        self.nameEdit.textChanged.connect(lambda text: setattr(self.obj, "Label", text))
+
         # Groupe pour les paramètres automatiques
         autoGroup = QtGui.QGroupBox("Detected Parameters")
         autoLayout = QtGui.QFormLayout()

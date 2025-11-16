@@ -9,6 +9,9 @@ from utils import Contour
 import math
 import sys
 
+compensation = ["Ordinateur", "Machine", "Ordinateur + G41/G42", "Aucune"]
+approach_types = ["Tangentielle", "Perpendiculaire", "Hélicoïdale"]
+retract_types = ["Tangentielle", "Perpendiculaire", "Verticale"]
 
 class ContournageCycle(baseOp):
     """Représente un cycle d'usinage de contournage"""
@@ -47,12 +50,13 @@ class ContournageCycle(baseOp):
         # Ajout des types d'approche et de sortie
         if not hasattr(obj, "ApproachType"):
             obj.addProperty("App::PropertyEnumeration", "ApproachType", "Approche", "Type d'approche du contour")
-            obj.ApproachType = ["Tangentielle", "Perpendiculaire", "Hélicoïdale"]
-            obj.ApproachType = "Tangentielle"
+            obj.ApproachType = approach_types
+            obj.ApproachType = approach_types[0]
         if not hasattr(obj, "RetractType"):
             obj.addProperty("App::PropertyEnumeration", "RetractType", "Sortie", "Type de sortie du contour")
-            obj.RetractType = ["Tangentielle", "Perpendiculaire", "Verticale"]
-            obj.RetractType = "Tangentielle"
+            obj.RetractType = retract_types
+            obj.RetractType = retract_types[0]
+            
         # Longueur personnalisable pour l'approche/sortie
         if not hasattr(obj, "ApproachRetractLength"):
             obj.addProperty("App::PropertyLength", "ApproachRetractLength", "Approche", "Longueur de l'approche/sortie")
@@ -60,8 +64,8 @@ class ContournageCycle(baseOp):
 
         if not hasattr(obj, "Compensation"):
             obj.addProperty("App::PropertyEnumeration", "Compensation", "Toolpath", "Type de compensation d'outil")
-            obj.Compensation = ["Ordinateur", "Machine", "Ordinateur + G41/G42", "Aucune"]
-            obj.Compensation = "Ordinateur"
+            obj.Compensation = compensation
+            obj.Compensation = compensation[0]
 
         if not hasattr(obj, "SurepAxiale"):
             obj.addProperty("App::PropertyFloat", "SurepAxiale", "Toolpath", "Surépaisseur axiale")
@@ -71,7 +75,8 @@ class ContournageCycle(baseOp):
             obj.addProperty("App::PropertyFloat", "SurepRadiale", "Toolpath", "Surépaisseur radiale")
             obj.SurepAxiale = 0.0
 
-
+        if not hasattr(obj,"Tool"):
+            obj.addProperty("App::PropertyLink", "Tool", "Surfacage", "Tool")
 
         obj.Proxy = self
 
@@ -92,9 +97,10 @@ class ContournageCycle(baseOp):
 
         obj.Shape = Part.Shape() # Initialize shape
         all_pass_shapes_collected = [] # To collect all edges/wires from all passes
+        obj.Gcode = ""
 
         passes_z_values = self.calculatePasse(obj)
-        App.Console.PrintMessage(f'Passes Z values: {passes_z_values}\n')
+
 
         contour_geom = self.getContourGeometry(obj)
         if not contour_geom:
@@ -148,45 +154,8 @@ class ContournageCycle(baseOp):
             # current_pass_toolpath_segments list is removed as segments are added directly to all_pass_shapes_collected
 
             # 1. Create wire at current pass_z by transforming zref_wire_from_contour
-            edges_for_current_pass_z = []
-            for edge in zref_wire_from_contour.Edges:
-                if True: #HACK
-                    edges_for_current_pass_z.append(edge)
-                    continue
-
-                if isinstance(edge.Curve, Part.Line):
-                    p1, p2 = edge.Vertexes[0].Point, edge.Vertexes[1].Point
-                    edges_for_current_pass_z.append(Part.makeLine(App.Vector(p1.x, p1.y, pass_z), App.Vector(p2.x, p2.y, pass_z)))
-                elif isinstance(edge.Curve, Part.Circle):
-                    circ = edge.Curve
-                    center = App.Vector(circ.Center.x, circ.Center.y, pass_z)
-                    axis = App.Vector(0,0,1) # Assuming XY plane for contour
-                    new_circ_geom = Part.Circle(center, axis, circ.Radius)
-                    if hasattr(edge, "FirstParameter") and hasattr(edge, "LastParameter") and edge.FirstParameter != edge.LastParameter:
-                        edges_for_current_pass_z.append(Part.Edge(new_circ_geom, edge.FirstParameter, edge.LastParameter))
-                    else:
-                        edges_for_current_pass_z.append(Part.Edge(new_circ_geom))
-                else: # Fallback for other curve types (e.g., BSpline)
-                    points = [App.Vector(v.Point.x, v.Point.y, pass_z) for v in edge.Vertexes]
-                    if len(points) >= 2:
-                        # This is a simplification; for BSplines, control points at new Z would be better
-                        # For now, creating line segments between transformed vertices
-                        for i in range(len(points) - 1):
-                            edges_for_current_pass_z.append(Part.makeLine(points[i], points[i+1]))
-                    elif edge.CurveType == 'BSplineCurve': # More specific BSpline handling if possible
-                        try:
-                            bs_points = []
-                            num_samples = 20 # Or from a property
-                            for i in range(num_samples + 1):
-                                param = edge.FirstParameter + (edge.LastParameter - edge.FirstParameter) * i / num_samples
-                                pt_on_curve = edge.valueAt(param)
-                                bs_points.append(App.Vector(pt_on_curve.x, pt_on_curve.y, pass_z))
-                            if len(bs_points) >=2:
-                                bspline_at_z = Part.BSplineCurve()
-                                bspline_at_z.interpolate(bs_points)
-                                edges_for_current_pass_z.append(bspline_at_z.toShape())
-                        except Exception as e_bspline:
-                            App.Console.PrintError(f"Failed to transform BSpline for pass Z={pass_z}: {e_bspline}\n")
+            edges_for_current_pass_z = zref_wire_from_contour.Edges
+            
 
             if not edges_for_current_pass_z:
                 App.Console.PrintWarning(f"No edges created for wire at Z={pass_z}. Skipping pass.\n")
@@ -196,6 +165,10 @@ class ContournageCycle(baseOp):
             # 2. Apply tool offset to wire_at_pass_z
             offset_toolpath_wire = None
             try:
+                if actual_offset_value > 0:
+                    actual_offset_value_surep = actual_offset_value + obj.SurepRadiale
+                else:
+                    actual_offset_value_surep = actual_offset_value - obj.SurepRadiale
                 if is_contour_closed:
                     face_for_offset = Part.Face(wire_at_pass_z)
                     offset_shape_result = face_for_offset.makeOffsetShape(actual_offset_value, 0.1, fill=False)
@@ -204,22 +177,21 @@ class ContournageCycle(baseOp):
                     elif offset_shape_result.Edges: # Sometimes returns a compound of edges
                          offset_toolpath_wire = Part.Wire(offset_shape_result.Edges)
                 else:
-                    if actual_offset_value > 0:
-                        actual_offset_value_surep = actual_offset_value + obj.SurepRadiale
-                    else:
-                        actual_offset_value_surep = actual_offset_value - obj.SurepRadiale
+
                     offset_shape_result = wire_at_pass_z.makeOffset2D(actual_offset_value_surep,  openResult=True)#join=0, fill=False,
-                    App.Console.PrintMessage(f"{actual_offset_value}\n")
-                    # App.Console.PrintMessage(f"{wire_at_pass_z}\n")
-                    # App.Console.PrintMessage(f"{offset_shape_result}\n")
-                    # App.Console.PrintMessage(f"{offset_shape_result.Wires}\n")
-                    # App.Console.PrintMessage(f"{offset_shape_result.Wires[0]}\n")
+
                     if obj.Compensation == "Machine":
                         offset_shape_result = offset_shape_result.Wires[0].makeOffset2D(-actual_offset_value,  openResult=True)#join=0, fill=False, 
+                    
+                    
                     if offset_shape_result.Wires:
                         offset_toolpath_wire = offset_shape_result.Wires[0]
+                        if obj.Compensation == "Machine":
+                            offset_shape_result = offset_shape_result.reversed()
+
                     elif offset_shape_result.Edges:
                         offset_toolpath_wire = Part.Wire(offset_shape_result.Edges)
+
 
 
             except Exception as e:
@@ -232,16 +204,22 @@ class ContournageCycle(baseOp):
 
             # 3. Generate Approach and Retract for offset_toolpath_wire
 
-            indexOfFirstPoint = Contour.getFirstPoint(offset_toolpath_wire.Edges)
-            indexOfLastPoint =  Contour.getLastPoint(offset_toolpath_wire.Edges)
+            
 
-            first_toolpath_edge = offset_toolpath_wire.Edges[0]
-            last_toolpath_edge = offset_toolpath_wire.Edges[-1]
+            # if offset_toolpath_wire.Orientation == "Forward":
+            if True: #is_offset_inward:
+                indexOfFirstPoint = Contour.getFirstPoint(offset_toolpath_wire)
+                indexOfLastPoint =  Contour.getLastPoint(offset_toolpath_wire)
+                first_toolpath_edge = offset_toolpath_wire.Edges[0]
+                last_toolpath_edge = offset_toolpath_wire.Edges[-1]
+            else:
+                indexOfFirstPoint = Contour.getLastPoint(offset_toolpath_wire)
+                indexOfLastPoint =  Contour.getFirstPoint(offset_toolpath_wire)
+                first_toolpath_edge = offset_toolpath_wire.Edges[-1]
+                last_toolpath_edge = offset_toolpath_wire.Edges[0]
 
             core_toolpath_start_pt = first_toolpath_edge.Vertexes[indexOfFirstPoint].Point
             core_toolpath_end_pt = last_toolpath_edge.Vertexes[indexOfLastPoint].Point
-            start_pt = core_toolpath_start_pt # Used for tangent calculation legacy
-            end_pt = core_toolpath_end_pt # Used for tangent calculation legacy
 
             pass_approach_edges = []
             pass_retract_edges = []
@@ -249,34 +227,101 @@ class ContournageCycle(baseOp):
             App.Console.PrintMessage(f"first point: {core_toolpath_start_pt}, last point: {core_toolpath_end_pt}\n")
             # start_pt and end_pt are now core_toolpath_start_pt and core_toolpath_end_pt
 
+            obj.Gcode += f"(Pass at Z={pass_z})\n"
             # Approach
-            try:
-                tangent_start_vec = first_toolpath_edge.tangentAt(first_toolpath_edge.FirstParameter)
-                if tangent_start_vec.Length > 1e-6:
-                    tangent_start = tangent_start_vec.normalize()
-                    if approach_type == "Tangentielle":
-                        pass_approach_edges.append(Part.makeLine(start_pt - tangent_start.multiply(approach_length), start_pt))
-                    elif approach_type == "Perpendiculaire":
-                        perp_start = App.Vector(-tangent_start.y, tangent_start.x, 0).normalize() # Assuming XY plane
-                        pass_approach_edges.append(Part.makeLine(start_pt + perp_start.multiply(approach_length), start_pt))
-                # TODO: Add Helicoidal approach if needed, ensuring Z movement relative to pass_z
-            except Exception as e_approach_tangent:
-                App.Console.PrintWarning(f"Could not calculate start tangent for approach at Z={pass_z}: {e_approach_tangent}\n")
+
+            tangent_start_vec = first_toolpath_edge.tangentAt(first_toolpath_edge.FirstParameter)
+            if tangent_start_vec.Length > 1e-6:
+                tangent_start = tangent_start_vec.normalize()
+                if approach_type == "Tangentielle":
+                    if is_offset_inward:
+                        approachPoint = core_toolpath_start_pt - tangent_start.multiply(approach_length)
+                    else:
+                        approachPoint = core_toolpath_start_pt + tangent_start.multiply(approach_length)
+                    pass_approach_edges.append(Part.makeLine(approachPoint, core_toolpath_start_pt))
+                    obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{rapid_traverse_z:.3f}\n"
+                    obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{pass_z + 2:.3f}\n"
+                    obj.Gcode += f"G1 Z{pass_z:.3f}\n"
+                    obj.Gcode += f"G1 X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f}\n"
+                elif approach_type == "Perpendiculaire":
+                    if is_offset_inward:
+                        approachPoint = core_toolpath_start_pt + App.Vector(-tangent_start.y, tangent_start.x, 0).normalize().multiply(approach_length)
+                    else:
+                        approachPoint = core_toolpath_start_pt - App.Vector(-tangent_start.y, tangent_start.x, 0).normalize().multiply(approach_length)
+                    perp_start = App.Vector(-tangent_start.y, tangent_start.x, 0).normalize() # Assuming XY plane
+                    pass_approach_edges.append(Part.makeLine(core_toolpath_start_pt + perp_start.multiply(approach_length), core_toolpath_start_pt))
+                    obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{pass_z + 2:.3f}\n"
+                    obj.Gcode += f"G1 Z{pass_z:.3f}\n"
+                    obj.Gcode += f"G1 X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f}\n"
+            # TODO: Add Helicoidal approach if needed, ensuring Z movement relative to pass_z
+            
+            current_edge = None
+            for i, edge in enumerate(offset_toolpath_wire.Edges ):
+                current_edge = edge
+                bon_sens = None
+                if i < len(offset_toolpath_wire.Edges)-1:
+                    next_edge = offset_toolpath_wire.Edges[i+1]
+                    if current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[0].Point) <  1e-6 :
+                        bon_sens = True
+                        
+                    elif current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[-1].Point) <  1e-6 :
+                        bon_sens = True
+                        
+                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[-1].Point) <  1e-6 :
+                        bon_sens = False
+                        
+                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[0].Point) <  1e-6 :
+                        bon_sens = False
+                        
+                    else:
+                        pass
+                else:
+                    prev_edge = offset_toolpath_wire.Edges[i-1]
+                    
+                    if prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[0].Point) <  1e-6 :
+                        bon_sens = True
+                        
+                    elif prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[-1].Point) <  1e-6 :
+                        bon_sens = False
+                        
+                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[-1].Point) <  1e-6 :
+                        bon_sens = False
+                        
+                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[0].Point) <  1e-6 :
+                        bon_sens = True
+                        
+                    else:
+                        pass                  
+                
+                
+                obj.Gcode += Contour.edgeToGcode(edge, bonSens = bon_sens, current_z=pass_z, rapid=False)
+            
 
             # Retract
-            try:
-                tangent_end_vec = last_toolpath_edge.tangentAt(last_toolpath_edge.LastParameter)
-                if tangent_end_vec.Length > 1e-6:
-                    tangent_end = tangent_end_vec.normalize()
-                    if retract_type == "Tangentielle":
-                        pass_retract_edges.append(Part.makeLine(end_pt, end_pt + tangent_end.multiply(approach_length)))
-                    elif retract_type == "Perpendiculaire":
+           
+            tangent_end_vec = last_toolpath_edge.tangentAt(last_toolpath_edge.LastParameter)
+            if tangent_end_vec.Length > 1e-6:
+                tangent_end = tangent_end_vec.normalize()
+                if retract_type == "Tangentielle":
+                    if is_offset_inward:
+                        SortiePt = core_toolpath_end_pt + tangent_end.multiply(approach_length)
+                    else:
+                        SortiePt = core_toolpath_end_pt - tangent_end.multiply(approach_length)
+                    pass_retract_edges.append(Part.makeLine(core_toolpath_end_pt, SortiePt))
+                    
+                elif retract_type == "Perpendiculaire":
+                    if is_offset_inward:
                         perp_end = App.Vector(-tangent_end.y, tangent_end.x, 0).normalize()
-                        pass_retract_edges.append(Part.makeLine(end_pt, end_pt + perp_end.multiply(approach_length)))
-                # TODO: Add Helicoidal retract
-            except Exception as e_retract_tangent:
-                App.Console.PrintWarning(f"Could not calculate end tangent for retract at Z={pass_z}: {e_retract_tangent}\n")
-
+                        SortiePt = core_toolpath_end_pt + perp_end.multiply(approach_length)
+                    else:
+                        perp_end = App.Vector(-tangent_end.y, tangent_end.x, 0).normalize()
+                        SortiePt = core_toolpath_end_pt - perp_end.multiply(approach_length)
+                    pass_retract_edges.append(Part.makeLine(core_toolpath_end_pt, SortiePt))
+                obj.Gcode += f"G1 X{SortiePt.x:.3f} Y{SortiePt.y:.3f}\n"
+            
+            
+            obj.Gcode += f"G0 Z{rapid_traverse_z:.3f}\n"
+            
             # Determine the actual start point of this pass's full trajectory (including approach)
             current_pass_trajectory_start_point = core_toolpath_start_pt # Default to core path start
             if pass_approach_edges:
@@ -387,7 +432,6 @@ class ContournageCycle(baseOp):
         App.Console.PrintError(f"Impossible de trouver la géométrie du contour '{obj.ContourGeometryName}'.\n")
         return None
 
-    
     def __getstate__(self):
         """Appelé lors de la sauvegarde"""
         return None

@@ -7,6 +7,7 @@ from PySide import QtCore, QtGui
 from BaptTools import ToolDatabase, Tool
 from Tool import ToolSelectorDialog
 from Tool.ToolTaskPannel import ToolTaskPanel
+from utils import BQuantitySpinBox
 
 
 class DrillOperationTaskPanel:
@@ -29,6 +30,16 @@ class DrillOperationTaskPanel:
         # Onglet Général
         generalTab = QtGui.QWidget()
         generalLayout = QtGui.QVBoxLayout(generalTab)
+        
+        # Groupe pour la Nom de l'opération
+        nameGroup = QtGui.QGroupBox("Nom de l'opération")
+        nameLayout = QtGui.QHBoxLayout()
+        self.nameEdit = QtGui.QLineEdit()
+        nameLayout.addWidget(self.nameEdit)
+        nameGroup.setLayout(nameLayout)
+        generalLayout.addWidget(nameGroup)
+        self.nameEdit.setText(self.obj.Label)
+        self.nameEdit.textChanged.connect(lambda text: setattr(self.obj, "Label", text))
         
         # Groupe pour la géométrie
         geometryGroup = QtGui.QGroupBox("Géométrie")
@@ -144,9 +155,21 @@ class DrillOperationTaskPanel:
         reamingWidget = QtGui.QWidget()
         self.specificLayout.addWidget(reamingWidget)
         
+        # Widget pour le contournage
+        contouringWidget = QtGui.QWidget()
+        contouringLayout = QtGui.QFormLayout(contouringWidget)
+
+        self.Ap = BQuantitySpinBox.BQuantitySpinBox(obj,"Ap")
+        contouringLayout.addRow("Profondeur de passe (ap):", self.Ap.getWidget())
+        self.Diam = BQuantitySpinBox.BQuantitySpinBox(obj,"Diam")
+        contouringLayout.addRow("Diam:", self.Diam.getWidget())
+
+        self.specificLayout.addWidget(contouringWidget)
+
         self.specificGroup.setLayout(self.specificLayout)
         cycleLayout.addWidget(self.specificGroup)
         
+
         # Ajouter l'onglet cycle
         self.tabs.addTab(cycleTab, "Cycle")
         

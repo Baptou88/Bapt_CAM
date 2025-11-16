@@ -674,6 +674,10 @@ class baseOpViewProviderProxy:
                         pass
 
                     pass  
+                
+                elif up.startswith("(") or up.startswith(";"):
+                    # comment line, ignore
+                    pass
                 else:
                     # other lines may still change position if they contain coords
                     App.Console.PrintMessage("Ignoring line: {}\n".format(ln))
@@ -1113,11 +1117,17 @@ class GcodeAnimationControl():
     def __init__(self, animator, parent=None):
         #super(GcodeAnimationControl, self).__init__(parent)
         self.animator = animator
-        self.form = QtGui.QWidget()
-        self.form.setWindowTitle("Animation Control")
+
+        self.ui1 = QtGui.QWidget()
+        self.ui1.setWindowTitle("Animation Control")
+
+        self.ui2 = QtGui.QWidget()
+        self.ui2.setWindowTitle("Tool Position")
         
+        self.form = [self.ui1,self.ui2]
+
         # Layout principal vertical
-        layout = QtGui.QVBoxLayout(self.form)
+        layout = QtGui.QVBoxLayout(self.ui1)
         
         # Boutons de contrôle dans un layout horizontal
         btnLayout = QtGui.QHBoxLayout()
@@ -1181,6 +1191,15 @@ class GcodeAnimationControl():
         layout.addLayout(speedLayout)
         layout.addLayout(frequenceLayout)
         layout.addWidget(self.rapidCheckBox)
+
+        layoutToolPos = QtGui.QVBoxLayout(self.ui2)
+        self.toolPosXLabel = QtGui.QLabel("X: 0.0")
+        self.toolPosYLabel = QtGui.QLabel("Y: 0.0")
+        self.toolPosZLabel = QtGui.QLabel("Z: 0.0")
+
+        layoutToolPos.addWidget(self.toolPosXLabel)
+        layoutToolPos.addWidget(self.toolPosYLabel)
+        layoutToolPos.addWidget(self.toolPosZLabel)
         
         # Timer pour mettre à jour l'état des boutons
         self.updateTimer = QtCore.QTimer()
@@ -1233,6 +1252,11 @@ class GcodeAnimationControl():
         self.pauseBtn.setEnabled(running)
         self.stopBtn.setEnabled(running)
         self.stepBtn.setEnabled(not running)
+
+        if running:
+            self.toolPosXLabel.setText(f"X: {self.animator.marker_trans.translation.getValue()[0]:.3f}")
+            self.toolPosYLabel.setText(f"Y: {self.animator.marker_trans.translation.getValue()[1]:.3f}")
+            self.toolPosZLabel.setText(f"Z: {self.animator.marker_trans.translation.getValue()[2]:.3f}")
     
     def closeEvent(self, event):
         """Arrête l'animation quand on ferme la fenêtre"""
