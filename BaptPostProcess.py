@@ -219,11 +219,15 @@ def generate_gcode_for_ops(ops, cam_project=None, module=None):
             spindle = getattr(tool, 'SpindleSpeed', None)
             feed = getattr(tool, 'FeedRate', None)
             
-            gcode_lines.append(f"(Changement d'outil: {tool_name if tool_name else ''})")
-            gcode_lines.append(f"M6 T{tool_id}")
-            if spindle:
-                gcode_lines.append(f"S{spindle} M3")
-                current_spindle = spindle
+            if hasattr(module, 'toolChange'):
+                tool_change_code = module.toolChange(tool, cam_project)
+                gcode_lines.append(tool_change_code)
+            else:
+                gcode_lines.append(f"(Changement d'outil: {tool_name if tool_name else ''})")
+                gcode_lines.append(f"M6 T{tool_id}")
+                if spindle:
+                    gcode_lines.append(f"S{spindle} M3")
+                    current_spindle = spindle
             if feed:
                 gcode_lines.append(f"F{feed}")
                 current_feed = feed
@@ -232,44 +236,15 @@ def generate_gcode_for_ops(ops, cam_project=None, module=None):
         if obj.Proxy.Type == 'Surfacage' and hasattr(obj, 'Shape'):
             
             gcode_lines.append(f"(Surfacage: {obj.Label})")
-            # last_pt = None
-            # for edge in obj.Shape.Edges:
-            #     v1 = edge.Vertexes[0].Point
-            #     v2 = edge.Vertexes[1].Point
-            #     if last_pt is None or (v1.x != last_pt.x or v1.y != last_pt.y or v1.z != last_pt.z):
-            #         gcode_lines.append(f"G0 X{v1.x:.3f} Y{v1.y:.3f} Z{v1.z:.3f}")
-            #     if hasattr(edge, 'Curve') and edge.Curve and getattr(edge.Curve, "TypeId", "") == 'Part::GeomCircle':
-            #         circle = edge.Curve
-            #         center = circle.Center
-            #         I = center.x - v1.x
-            #         J = center.y - v1.y
-            #         gcode_cmd = 'G2' if getattr(edge, "Orientation", "") == 'Forward' else 'G3'
-            #         gcode_lines.append(f"{gcode_cmd} X{v2.x:.3f} Y{v2.y:.3f} I{I:.3f} J{J:.3f} Z{v2.z:.3f}")
-            #     else:
-            #         gcode_lines.append(f"G1 X{v2.x:.3f} Y{v2.y:.3f} Z{v2.z:.3f}")
-            #     last_pt = v2
+
             gcode_lines.append(obj.Gcode)
 
         # --- Contournage ---
         if obj.Proxy.Type == 'ContournageCycle' and hasattr(obj, 'Shape'):
            
             gcode_lines.append(f"(Contournage: {obj.Label})")
-            last_pt = None
-            for edge in obj.Shape.Edges:
-                v1 = edge.Vertexes[0].Point
-                v2 = edge.Vertexes[1].Point
-                if last_pt is None or (v1.x != last_pt.x or v1.y != last_pt.y or v1.z != last_pt.z):
-                    gcode_lines.append(f"G0 X{v1.x:.3f} Y{v1.y:.3f} Z{v1.z:.3f}")
-                if hasattr(edge, 'Curve') and edge.Curve and getattr(edge.Curve, "TypeId", "") == 'Part::GeomCircle':
-                    circle = edge.Curve
-                    center = circle.Center
-                    I = center.x - v1.x
-                    J = center.y - v1.y
-                    gcode_cmd = 'G2' if getattr(edge, "Orientation", "") == 'Forward' else 'G3'
-                    gcode_lines.append(f"{gcode_cmd} X{v2.x:.3f} Y{v2.y:.3f} I{I:.3f} J{J:.3f} Z{v2.z:.3f}")
-                else:
-                    gcode_lines.append(f"G1 X{v2.x:.3f} Y{v2.y:.3f} Z{v2.z:.3f}")
-                last_pt = v2
+
+            gcode_lines.append(obj.Gcode)
 
         # --- Perçage ---
         elif obj.Proxy.Type == 'DrillOperation':
@@ -282,7 +257,7 @@ def generate_gcode_for_ops(ops, cam_project=None, module=None):
             cycle = getattr(obj, 'CycleType', "Simple")
             dwell = getattr(obj, 'DwellTime', 0.5)
             peck = getattr(obj, 'PeckDepth', 2.0).Value
-            retract = getattr(obj, 'Retract', 1.0)
+            retract = getattr(obj, 'Retract', 1.0).Value
 
             gcode_lines.append(f"(Perçage: {obj.Label})")
             points = []
@@ -293,9 +268,12 @@ def generate_gcode_for_ops(ops, cam_project=None, module=None):
                     points = geom.DrillPositions
             if cycle == "Simple":
                 gcode_lines.append(f"(Cycle: G81 - Simple)")
-                for pt in points:
-                    gcode_lines.append(f"G0 X{pt.x} Y{pt.y} Z{safe_z}")
-                    gcode_lines.append(f"G80")
+                if hasattr(module,"G81"):
+                    gcode_lines.append(module.G81(obj))
+                else:
+                    for pt in points:
+                        gcode_lines.append(f"G0 X{pt.x} Y{pt.y} Z{safe_z}")
+                        gcode_lines.append(f"G80")
             elif cycle == "Peck":
                 gcode_lines.append(f"(Cycle: G83 - Perçage par reprise)")
                 for pt in points:

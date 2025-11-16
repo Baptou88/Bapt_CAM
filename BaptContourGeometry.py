@@ -203,8 +203,9 @@ class ContourGeometry:
             #sorted_edges = Part.getSortedClusters(list(edges))[0]
             #sorted_edges = edges.copy()  # Faire une copie des arêtes pour le tri
             #sorted_edges = edges
-
+            a = None
             if obj.Direction == "Anti-horaire":
+                a = sorted_edges.copy()
                 sorted_edges.reverse()
 
             self.debugEdges(sorted_edges, "Sorted Edges")
@@ -301,8 +302,11 @@ class ContourGeometry:
                 else:
                     App.Console.PrintError("Les listes d'arêtes ajustées n'ont pas la même taille, impossible de créer les faces.\n")
 
+                first_point = wire_zref.Edges[0].Vertexes[0].Point
+                sph = Part.makeSphere(2,first_point)
+
                 # Créer un compound contenant les deux fils, les flèches et les faces
-                shapes = [wire_zref, wire_zfinal]
+                shapes = [wire_zref, wire_zfinal,sph]
                 # shapes = [wire_zref]
 
                 if obj.debugArrow:
@@ -319,12 +323,12 @@ class ContourGeometry:
                 else:
                     obj.IsClosed = False
 
-                prefs = BaptPreferences()
+                # prefs = BaptPreferences()
                 
-                autoRecomputeChildren = prefs.getAutoChildUpdate()
-                if autoRecomputeChildren:
-                    for child in obj.Group:
-                        child.recompute()
+                # autoRecomputeChildren = prefs.getAutoChildUpdate()
+                # if autoRecomputeChildren:
+                #     for child in obj.Group:
+                #         child.recompute()
 
             except Exception as e:
                 App.Console.PrintError(f"Impossible de créer un fil à partir des arêtes sélectionnées: {str(e)}\n")
@@ -577,31 +581,14 @@ class ContourGeometry:
                 tangent = App.Vector(1, 0, 0)
             tangent = tangent.normalize()
 
-            # Inverser la tangente si l'orientation de l'arête est inversée
-            # try:
-            #     if hasattr(edge.Vertexes[0], "Orientation"): # and edge.Vertexes[0].Orientation == "Reversed":
-            #         tangent = tangent.multiply(-1)
-            #         pass
-            # except Exception:
-            #     pass
-            # if hasattr(obj, "Direction") and obj.Direction == "Anti-horaire":
-            #     tangent = tangent.multiply(-1)
-
-            if invert_direction:
+            if invert_direction :
                 tangent = tangent.multiply(-1)
 
             # Projet de la tangente sur XY et normalisation
             tangent_z = App.Vector(tangent.x, tangent.y, 0.0)
-            if tangent_z.Length < 1e-9:
-                # Cas pathologique (tangente verticale) : utiliser direction calculée pour les cercles
-                if isinstance(edge.Curve, Part.Circle):
-                    center = edge.Curve.Center
-                    center_z = App.Vector(center.x, center.y, obj.Zref)
-                    radius_vector = mid_point_z.sub(center_z)
-                    tangent_z = App.Vector(-radius_vector.y, radius_vector.x, 0.0)
-                else:
-                    tangent_z = App.Vector(1, 0, 0)
+
             tangent_z = tangent_z.normalize()
+
 
             # Normale (perpendiculaire) dans le plan XY
             normal_xy = App.Vector(-tangent_z.y, tangent_z.x, 0.0)
@@ -612,21 +599,9 @@ class ContourGeometry:
             # Décalage le long de la normale : proportionnel à la taille, ajustable
             offset_distance = size * 0.6
             
-            if hasattr(obj, "Direction") and obj.Direction == "Anti-horaire":
-                offset_distance = -offset_distance
+            # if hasattr(obj, "Direction") and obj.Direction == "Anti-horaire" :
+            #     offset_distance = -offset_distance
                 
-            # # Si l'arête est un cercle/arc, essayer d'orienter la normale vers l'extérieur du cercle
-            # try:
-            #     if isinstance(edge.Curve, Part.Circle):
-            #         center = edge.Curve.Center
-            #         center_z = App.Vector(center.x, center.y, z_value)
-            #         # vecteur du centre vers le point milieu
-            #         v_center = mid_point_z.sub(center_z)
-            #         # choisir le signe de normal_xy pour pointer dans la même direction que v_center
-            #         if v_center.dot(normal_xy) < 0:
-            #             normal_xy = normal_xy.multiply(-1)
-            # except Exception:
-            #     pass
 
             # Point milieu décalé le long de la normale
             shifted_mid = mid_point_z.add(normal_xy.multiply(offset_distance))
@@ -643,10 +618,12 @@ class ContourGeometry:
             arrow_p1 = end_point.sub(tangent_z.multiply(size / 3.0)).add(perp.multiply(size / 4.0))
             arrow_p2 = end_point.sub(tangent_z.multiply(size / 3.0)).sub(perp.multiply(size / 4.0))
 
+            perp_line = Part.makeLine(mid_point, shifted_mid )
+
             arrow_line1 = Part.makeLine(end_point, arrow_p1)
             arrow_line2 = Part.makeLine(end_point, arrow_p2)
 
-            arrow_shape = Part.makeCompound([arrow_line, arrow_line1, arrow_line2])
+            arrow_shape = Part.makeCompound([arrow_line, arrow_line1, arrow_line2, perp_line])
             return arrow_shape
 
         except Exception as e:
