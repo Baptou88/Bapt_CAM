@@ -47,7 +47,7 @@ def getLastPoint(wire):
         App.Console.PrintError("Error: Contour edges are not connected properly.\n")
         return 0
     
-def edgeToGcode(edge, bonSens=True, current_z=0.0, rapid=False, feed_rate=1000):
+def edgeToGcode(edge, bonSens=True, current_z=0.0, rapid=False, feed_rate=1000,is_offset_inward = True):
     """
     Convert an edge to G-code.
     :param edge: The edge to convert.
@@ -90,15 +90,27 @@ def edgeToGcode(edge, bonSens=True, current_z=0.0, rapid=False, feed_rate=1000):
         angle_start = vec_start.getAngle(App.Vector(1, 0, 0))
         angle_end = vec_end.getAngle(App.Vector(1, 0, 0))
 
+
+        u1 = edge.FirstParameter
+        u2 = edge.LastParameter
+
+
+        App.Console.PrintMessage(f'O{edge.Orientation} {bonSens} u1:{u1:.3f} u2:{u2:.3f} {u2-u1:.3f} {is_offset_inward}\n')
         # Determine direction
-        if bonSens:
-            if angle_end < angle_start:
-                angle_end += 2 * math.pi
-            gcode += f"G2 X{end_point.x:.3f} Y{end_point.y:.3f} I{center.x - start_point.x:.3f} J{center.y - start_point.y:.3f} F{feed_rate}\n"
+        if  u2-u1 > math.pi :
+            # if angle_end < angle_start:
+            #     angle_end += 2 * math.pi
+            if  is_offset_inward:
+                arc = "G3"  # Clockwise
+            else:
+                arc = "G2"  
         else:
-            if angle_start < angle_end:
-                angle_start += 2 * math.pi
-            gcode += f"G3 X{end_point.x:.3f} Y{end_point.y:.3f} I{center.x - start_point.x:.3f} J{center.y - start_point.y:.3f} F{feed_rate}\n"
+            if not is_offset_inward: 
+                arc = "G3"
+            else:
+                arc = "G2"
+        gcode += f"{arc} X{end_point.x:.3f} Y{end_point.y:.3f} I{center.x - start_point.x:.3f} J{center.y - start_point.y:.3f} F{feed_rate}\n"
+        
     elif edge.CurveType == 'BSplineCurve': # More specific BSpline handling if possible
         raise NotImplementedError(f"Edge type {edge.Curve.TypeId} not implemented in G-code generation.")
         try:

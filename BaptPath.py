@@ -874,7 +874,7 @@ class GcodeEditorTaskPanel:
 class GcodeAnimator:
     """
     Simule le parcours d'usinage en déplaçant un marqueur (sphere) le long des segments
-    feed (optionnellement rapid). Utilise QTimer (PySide2) pour l'animation.
+    feed (optionnellement rapid). Utilise QTimer (PySide) pour l'animation.
     Usage:
       anim = GcodeAnimator(view_provider)
       anim.load_paths(include_rapid=False)   # lit les listes du view provider
@@ -884,7 +884,7 @@ class GcodeAnimator:
       anim.step()                            # avance d'un pas de timer
     """
     def __init__(self, view_provider):
-        from PySide2 import QtCore
+        from PySide import QtCore
         self.vp = view_provider
         self.timer = QtCore.QTimer()
         self.timer.setInterval(30)  # ms, ~33 FPS default

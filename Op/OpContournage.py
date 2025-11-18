@@ -76,7 +76,7 @@ class ContournageCycle(baseOp):
             obj.SurepAxiale = 0.0
 
         if not hasattr(obj,"Tool"):
-            obj.addProperty("App::PropertyLink", "Tool", "Surfacage", "Tool")
+            obj.addProperty("App::PropertyLink", "Tool", "Tool", "Tool")
 
         obj.Proxy = self
 
@@ -294,7 +294,7 @@ class ContournageCycle(baseOp):
                         pass                  
                 
                 
-                obj.Gcode += Contour.edgeToGcode(edge, bonSens = bon_sens, current_z=pass_z, rapid=False)
+                obj.Gcode += Contour.edgeToGcode(edge, bonSens = bon_sens, current_z=pass_z, rapid=False,is_offset_inward=is_offset_inward)
             
 
             # Retract

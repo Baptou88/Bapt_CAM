@@ -274,7 +274,7 @@ class DrillOperation(baseOp):
         
 
             
-        # Récupérer l'outil depuis la base de données
+        # Récupérer l'outil depuis la base de données #TODO à modifier pour prendre en compte l'objet lien
         db = ToolDatabase()
         tool = db.get_tool_by_id(obj.Tool.Id)
         return tool

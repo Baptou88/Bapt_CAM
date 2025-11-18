@@ -1,3 +1,4 @@
+import sys
 from BaptUtilities import find_cam_project, getIconPath
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -22,6 +23,9 @@ class ToolTaskPanel:
         self.selectToolButton = QtGui.QPushButton("Sélectionner un outil")
         layout.addWidget(self.selectToolButton)
 
+        self.toolComboBox = QtGui.QComboBox()
+        layout.addWidget(self.toolComboBox)
+        
 
         self.toolLayout = QtGui.QFormLayout()
         #champ pour afficher l'outil sélectionné
@@ -45,6 +49,24 @@ class ToolTaskPanel:
         layout.addLayout(self.toolLayout)
     
         self.initValues()
+        self.toolComboBox.currentTextChanged.connect(lambda: self.onToolComboBoxChanged())
+
+    def onToolComboBoxChanged(self):
+        App.Console.PrintMessage(f'par là\n')
+        try:
+            tool = self.toolComboBox.currentText()
+            if tool:
+                self.obj.Tool = App.ActiveDocument.getObject(tool)
+                self.selectedToolLabel.setText(f"Outil sélectionné: {self.obj.Tool.Name} (ID: {self.obj.Tool.Id})")
+                self.diameter.setValue(self.obj.Tool.Radius * 2.0)
+                self.idTool.setValue(self.obj.Tool.Id)
+                self.nameTool.setText(self.obj.Tool.Name)
+        except Exception as e:
+            
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            line_number = exc_traceback.tb_lineno
+            App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
+            App.Console.PrintError(f"Erreur lors du changement d'outil: {e}\n")
 
     def selectTool(self):
         App.Console.PrintMessage(f'label\n')
@@ -86,12 +108,25 @@ class ToolTaskPanel:
                 self.diameter.setValue(sel.diameter)
 
     def initValues(self):
+        #populate tool combo box
+        p = find_cam_project(self.obj)
+        if p:
+            groupTools = p.Proxy.getToolsGroup()
+            self.toolComboBox.clear()
+            for t in groupTools.Group:
+                self.toolComboBox.addItem(t.Label)
+            idx = self.toolComboBox.findText(self.obj.Tool.Label)
+            if idx >= 0:
+                self.toolComboBox.setCurrentIndex(idx)
+
         if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
             tool = self.obj.Tool
             self.selectedToolLabel.setText(f"Outil sélectionné: {tool.Name} (ID: {tool.Id})")
             self.diameter.setValue(tool.Radius * 2.0)
             self.idTool.setValue(tool.Id)
             self.nameTool.setText(tool.Name)
+
+        
 
     def initVListeners(self):
         self.selectToolButton.clicked.connect(lambda: self.selectTool())

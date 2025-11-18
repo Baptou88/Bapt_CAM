@@ -1,4 +1,5 @@
 import os
+import FreeCAD as App
 
 def get_module_path():
     '''
@@ -29,6 +30,11 @@ def getPostProPath(postPro: str):
     '''
     return os.path.join(get_module_path(), "PostPro", postPro)
 
+def getExamplesPath():
+    '''
+    Returns the examples path.
+    '''
+    return os.path.join(App.getUserConfigDir(), "Mod","Bapt","examples")
 
 def find_cam_project(o):
     """Remonte les parents (InList) jusqu'à trouver le CamProject."""
