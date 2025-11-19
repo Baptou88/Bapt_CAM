@@ -9,6 +9,7 @@ import os
 import BaptCamProject
 import BaptDrillGeometry
 import BaptPath
+from BaptPreferences import BaptPreferences
 import Op.DrillOp as DrillOp
 import BaptContourGeometry
 from BaptHighlight import CreateHighlightCommand
@@ -96,7 +97,7 @@ class CreateContourCommand:
         contour_geometry = Gui.Selection.getSelection()[0]
         
         # Créer l'objet de contournage
-        obj = App.ActiveDocument.addObject("Part::FeaturePython", "Contournage")
+        obj = doc.addObject("Part::FeaturePython", "Contournage")
         
         # Ajouter la fonctionnalité
         contour = OpContournage.ContournageCycle(obj)
@@ -125,8 +126,31 @@ class CreateContourCommand:
         #             App.Console.PrintMessage(f"Contournage ajouté comme enfant de {parent.Label}\n")
         #             break
         
-        contour_geometry.addObject(obj)
-        contour_geometry.Group.append(obj)
+        pref = BaptPreferences()
+        modeAjout = pref.getModeAjout()
+        
+        # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
+        # 1 = ajouter à la géométrie comme enfant (pas conseillé)
+        # 2 = ajouter au groupe opérations du projet CAM
+        
+        if modeAjout == 1 or modeAjout == 0:
+
+            # Ajouter le contournage comme enfant de la géométrie du contour
+            contour_geometry.addObject(obj)
+            contour_geometry.Group.append(obj)
+
+        if modeAjout == 2 or modeAjout == 0:
+            camProject = BaptUtilities.find_cam_project(contour_geometry)
+            if camProject:
+                operations_group = camProject.Proxy.getOperationsGroup(camProject)
+                if modeAjout == 2:
+                    operations_group.addObject(obj)
+                    operations_group.Group.append(obj)
+                elif modeAjout == 0:
+                    link = doc.addObject('App::Link', f'Link_{obj.Label}')
+                    link.setLink(obj)
+                    operations_group.addObject(link)
+                    operations_group.Group.append(link)
 
         # Recomputer
         
@@ -578,20 +602,31 @@ class CreateDrillOperationCommand:
         # Définir le nom de la géométrie de perçage associée (au lieu d'un lien direct)
         obj.DrillGeometryName = drill_geometry.Name
         
-        # Ajouter l'opération comme enfant direct de la géométrie de perçage
-        # Maintenant que DrillGeometry est un DocumentObjectGroupPython, on peut utiliser addObject
-        drill_geometry.addObject(obj)
-        drill_geometry.Group.append(obj)
+        pref = BaptPreferences()
+        modeAjout = pref.getModeAjout()
+        
+        # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
+        # 1 = ajouter à la géométrie comme enfant (pas conseillé)
+        # 2 = ajouter au groupe opérations du projet CAM
+        
+        if modeAjout == 1 or modeAjout == 0:
 
-        link = doc.addObject('App::Link', f'Link_{obj.Label}')
-        link.setLink(obj)
-        camProject = BaptUtilities.find_cam_project(drill_geometry)
-        if camProject:
-            App.Console.PrintMessage(f'camproj {camProject.Label}\n')
-            operations_group = camProject.Proxy.getOperationsGroup(camProject)
-            App.Console.PrintMessage(f'camproj op g {operations_group.Label}\n')
-            operations_group.addObject(link)
-            operations_group.Group.append(link)
+            # Ajouter le contournage comme enfant de la géométrie du contour
+            drill_geometry.addObject(obj)
+            drill_geometry.Group.append(obj)
+
+        if modeAjout == 2 or modeAjout == 0:
+            camProject = BaptUtilities.find_cam_project(drill_geometry)
+            if camProject:
+                operations_group = camProject.Proxy.getOperationsGroup(camProject)
+                if modeAjout == 2:
+                    operations_group.addObject(obj)
+                    operations_group.Group.append(obj)
+                elif modeAjout == 0:
+                    link = doc.addObject('App::Link', f'Link_{obj.Label}')
+                    link.setLink(obj)
+                    operations_group.addObject(link)
+                    operations_group.Group.append(link)
         
         # Recomputer
         doc.recompute()

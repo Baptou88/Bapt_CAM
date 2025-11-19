@@ -1,3 +1,4 @@
+import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
@@ -8,9 +9,16 @@ class DrillGeometryTaskPanel:
         self.obj = obj
         
         # Créer l'interface utilisateur
-        self.form = QtGui.QWidget()
-        self.form.setWindowTitle("Edit Drill Geometry")
-        layout = QtGui.QVBoxLayout(self.form)
+        self.ui1 = QtGui.QWidget()
+        self.ui1.setWindowTitle("Edit Drill Geometry")
+
+        self.ui2 = QtGui.QWidget()  
+        self.ui2.setWindowTitle("Operations") 
+
+        self.form = [self.ui1, self.ui2]
+        
+        layout = QtGui.QVBoxLayout(self.ui1)
+        layoutOp = QtGui.QVBoxLayout(self.ui2)
         
         # Groupe pour la Nom de l'opération
         nameGroup = QtGui.QGroupBox("Nom de la géométrie")
@@ -58,6 +66,7 @@ class DrillGeometryTaskPanel:
         self.drillTable.setColumnCount(4)
         self.drillTable.setHorizontalHeaderLabels(["X", "Y", "Z", ""])
         self.drillTable.horizontalHeader().setStretchLastSection(True)
+        self.drillTable.setMinimumHeight(150)
         self.drillTable.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
         self.drillTable.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
         # Connecter le signal de changement de sélection
@@ -107,6 +116,31 @@ class DrillGeometryTaskPanel:
         drillGroup.setLayout(drillLayout)
         layout.addWidget(drillGroup)
 
+        optable = QtGui.QTableWidget()
+        optable.setColumnCount(2)
+        optable.setHorizontalHeaderLabels(["Operation", "Status"])
+        optable.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
+        optable.setRowCount(0)
+        layoutOp.addWidget(QtGui.QLabel("Drill Operations will be listed here."))
+        layoutOp.addWidget(optable)
+        
+        # cam_project = BaptUtilities.find_cam_project(self.obj)
+        # if cam_project:
+            #cam_project.getOperationsGroup(cam_project)
+        for op in self.obj.Group:
+            if hasattr(op, "Proxy") and hasattr(op.Proxy, "Type") and op.Proxy.Type == "DrillOperation":
+                row = optable.rowCount()
+                optable.insertRow(row)
+                optable.setItem(row, 0, QtGui.QTableWidgetItem(op.Label))
+                status_item = QtGui.QTableWidgetItem("OK" if op.Active else "Disabled")
+                optable.setItem(row, 1, status_item)
+        
+        # Connecter le signal de sélection du tableau
+        optable.itemSelectionChanged.connect(self.onTableSelectionChanged)
+
+    
+    def onTableSelectionChanged(self):
+        pass
     def itemChanged(self, item):
         """Mise à jour des positions lorsqu'un élément de la table est modifié"""
         print(f"Item at ({item.row()}, {item.column()}) changed to: {item.text()}")

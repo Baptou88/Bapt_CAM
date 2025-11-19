@@ -115,9 +115,10 @@ class ToolTaskPanel:
             self.toolComboBox.clear()
             for t in groupTools.Group:
                 self.toolComboBox.addItem(t.Label)
-            idx = self.toolComboBox.findText(self.obj.Tool.Label)
-            if idx >= 0:
-                self.toolComboBox.setCurrentIndex(idx)
+            if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
+                idx = self.toolComboBox.findText(self.obj.Tool.Label)
+                if idx >= 0:
+                    self.toolComboBox.setCurrentIndex(idx)
 
         if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
             tool = self.obj.Tool

@@ -10,6 +10,16 @@ from BaptTaskPanel import PostProcessorTaskPanel
 import FreeCAD as App # type: ignore
 from PySide import QtGui, QtCore # type: ignore
 import BaptUtilities as BaptUtils
+
+def isOp(obj)->bool:
+    """
+    Retourne True si obj est une opération d'usinage (ContournageCycle, DrillOperation, etc.).
+    """
+    if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type in [
+        'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path']:
+        return True
+    return False
+
 def list_machining_operations(obj):
     """
     Parcourt récursivement toute l'arborescence de obj (Group, enfants, etc.)
@@ -17,13 +27,23 @@ def list_machining_operations(obj):
     """
 
     ops = []
-    if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type in [
-        'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path']:
+    if isOp(obj):
         ops.append(obj)
+    elif  hasattr(obj, 'LinkedObject'):
+        linked_obj = obj.LinkedObject
+        if linked_obj and isOp(linked_obj):
+            #ops.extend(list_machining_operations(linked_obj))
+            ops.append(obj)
     # Parcours récursif des groupes/enfants
     if hasattr(obj, 'Group') and obj.Group:
         for child in obj.Group:
             ops.extend(list_machining_operations(child))
+    #evite les doublons
+    unique_ops = []
+    for op in ops:
+        if op not in unique_ops:
+            unique_ops.append(op)
+    ops = unique_ops
     return ops
 
 def generate_gcode(cam_project):
@@ -206,6 +226,10 @@ def generate_gcode_for_ops(ops, cam_project=None, module=None):
 
     App.Console.PrintMessage(f"Nombre d'opérations d'usinage sélectionnées: {len(ops)}\n")
     for obj in ops:
+        if hasattr(obj, 'LinkedObject'):
+            linked_obj = obj.LinkedObject
+            if linked_obj and isOp(linked_obj):
+                obj = linked_obj
         if not (hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type')):
             continue
         tool = getattr(obj, 'Tool', None)   
@@ -408,7 +432,9 @@ class PostProcessDialog(QtGui.QDialog):
 
     def populate_list(self):
         self.listWidget.clear()
-        ops = list_machining_operations(self.cam_project)
+        groupeOps = self.cam_project.Proxy.getOperationsGroup(self.cam_project)
+        
+        ops = list_machining_operations(groupeOps)
         for op in ops:
             displayText = f"{op.Label} {self._tool_label(op)}"
             item = QtGui.QListWidgetItem(displayText)
@@ -475,6 +501,19 @@ class PostProcessDialog(QtGui.QDialog):
         # final fallback: empty icon
         return QtGui.QIcon()
 
+    def updateOrder(self):
+        #reorganise le groupeOperations dans le cam_project
+            groupeOps = self.cam_project.Proxy.getOperationsGroup(self.cam_project)
+            for r in range(self.listWidget.count()):
+                item = self.listWidget.item(r)
+                op = item.data(QtCore.Qt.UserRole)
+                if op in groupeOps.Group:
+                    groupeOps.removeObject(op)
+            for r in range(self.listWidget.count()):
+                item = self.listWidget.item(r)
+                op = item.data(QtCore.Qt.UserRole)
+                groupeOps.addObject(op)
+
     def move_item_up(self):
         row = self.listWidget.currentRow()
         if row > 0:
@@ -482,12 +521,16 @@ class PostProcessDialog(QtGui.QDialog):
             self.listWidget.insertItem(row-1, item)
             self.listWidget.setCurrentRow(row-1)
 
+            self.updateOrder()
+
     def move_item_down(self):
         row = self.listWidget.currentRow()
         if row < self.listWidget.count()-1 and row >= 0:
             item = self.listWidget.takeItem(row)
             self.listWidget.insertItem(row+1, item)
             self.listWidget.setCurrentRow(row+1)
+
+            self.updateOrder()
 
     def get_selected_ordered_ops(self):
         ops = []

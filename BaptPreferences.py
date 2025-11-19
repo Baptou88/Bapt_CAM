@@ -63,6 +63,19 @@ class BaptPreferences:
         #self.auto_child_update_checkbox.setChecked(BaptUtilities.getAutoChildUpdate())
         #self.auto_child_update_checkbox.stateChanged.connect(self.onAutoChildUpdateChanged)
 
+        mode_ajout_label = QtGui.QLabel("Mode d'ajout des opérations:")
+        mode_ajout_label.setToolTip("Sélectionnez comment les opérations doivent être ajoutées aux projets CAM.")
+        layout.addWidget(mode_ajout_label)
+        
+        self.mode_ajout_combo = QtGui.QComboBox()
+        self.mode_ajout_combo.addItem("Ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien (default)")
+        self.mode_ajout_combo.addItem("Ajouter à la géométrie comme enfant (pas conseillé)")
+        self.mode_ajout_combo.addItem("Ajouter uniquement au groupe opérations du projet CAM comme lien")
+        
+        self.mode_ajout_combo.currentIndexChanged.connect(self.onModeAjoutChanged)
+
+        layout.addWidget(self.mode_ajout_combo)
+
         layout.addWidget(tools_db_group)
         
         # Ajouter un espace extensible en bas
@@ -164,12 +177,14 @@ class BaptPreferences:
         self.preferences.SetString("ToolsDbPath", self.toolsDbPath.text())
         self.preferences.SetString("GCodeFolderPath", self.gcodeFolderPath.text())
         self.preferences.SetBool("AutoChildUpdate", self.auto_child_update_checkbox.isChecked())
+        self.preferences.SetInt("ModeAjout", self.mode_ajout_combo.currentIndex())
         
     def loadSettings(self):
         """Charger les paramètres"""
         self.toolsDbPath.setText(self.preferences.GetString("ToolsDbPath", ""))
         self.gcodeFolderPath.setText(self.preferences.GetString("GCodeFolderPath", ""))
         self.auto_child_update_checkbox.setChecked(self.preferences.GetBool("AutoChildUpdate", True))
+        self.mode_ajout_combo.setCurrentIndex(self.getModeAjout())
         
     def getToolsDbPath(self):
         """Obtenir le chemin de la base de données d'outils"""
@@ -184,7 +199,16 @@ class BaptPreferences:
         """Obtenir le dossier par défaut des programmes G-code"""
         return self.preferences.GetString("GCodeFolderPath", "")
 
+    def onModeAjoutChanged(self, index):
+        """Gérer le changement du mode d'ajout des opérations"""
+        pass  
 
+    def getModeAjout(self):
+        """Obtenir le mode d'ajout des opérations"""
+        # preferences = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Bapt")
+        # return preferences.GetInt("ModeAjout", 0)  # Valeur par défaut 0
+        return self.preferences.GetInt("ModeAjout", 0)
+    
 class BaptPreferencesPage(QtGui.QWidget):
     name = "Bapt CAM Pref"
     def __init__(self, parent=None):
