@@ -36,6 +36,10 @@ def getExamplesPath():
     '''
     return os.path.join(App.getUserConfigDir(), "Mod","Bapt","examples")
 
+def getDefaultToolsDbPath():
+    """Retourne le chemin par défaut de la base de données d'outils."""
+    return os.path.join(App.getUserAppDataDir(), "Bapt", "tools.db")
+
 def find_cam_project(o):
     """Remonte les parents (InList) jusqu'à trouver le CamProject."""
 

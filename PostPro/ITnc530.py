@@ -28,14 +28,14 @@ def G81(obj):
 
     gcode_lines = ""
     gcode_lines +=(f"CYCL DEF 200 PERCAGE \n\
-                       \tQ200={safe_z};DISTANCE D'APPROCHE\n\
-                       \tQ201={final_z};PROFONDEUR\n\
-                       \tQ206=250;AVANCE PLONGÉE PROF.\n\
-                       \tQ202={math.fabs(final_z)};PROFONDEUR DE PASSE\n\
-                       \tQ210=0;TEMPO. EN HAUT\n\
-                       \tQ203=+0;COORD. SURFACE PIÈCE\n\
-                       \tQ204=100;SAUT DE BRID\n\
-                       \tQ211=0.1;TEMPO. AU FOND\n")
+        Q200={safe_z};DISTANCE D'APPROCHE\n\
+        Q201={final_z};PROFONDEUR\n\
+        Q206=250;AVANCE PLONGÉE PROF.\n\
+        Q202={math.fabs(final_z)};PROFONDEUR DE PASSE\n\
+        Q210=0;TEMPO. EN HAUT\n\
+        Q203=+0;COORD. SURFACE PIÈCE\n\
+        Q204=100;SAUT DE BRID\n\
+        Q211=0.1;TEMPO. AU FOND\n")
     for pt in points:
         gcode_lines += (f"L X{pt.x:.3f} Y{pt.y:.3f} FMAX M99\n")
         

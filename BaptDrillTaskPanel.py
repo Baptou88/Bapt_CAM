@@ -1,3 +1,4 @@
+from tkinter.filedialog import Open
 import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -116,31 +117,54 @@ class DrillGeometryTaskPanel:
         drillGroup.setLayout(drillLayout)
         layout.addWidget(drillGroup)
 
-        optable = QtGui.QTableWidget()
-        optable.setColumnCount(2)
-        optable.setHorizontalHeaderLabels(["Operation", "Status"])
-        optable.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
-        optable.setRowCount(0)
+        self.optable = QtGui.QTableWidget()
+        self.optable.setColumnCount(2)
+        self.optable.setHorizontalHeaderLabels(["Operation", "Status"])
+        self.optable.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
+        self.optable.setRowCount(0)
         layoutOp.addWidget(QtGui.QLabel("Drill Operations will be listed here."))
-        layoutOp.addWidget(optable)
+        layoutOp.addWidget(self.optable)
         
-        # cam_project = BaptUtilities.find_cam_project(self.obj)
-        # if cam_project:
-            #cam_project.getOperationsGroup(cam_project)
-        for op in self.obj.Group:
-            if hasattr(op, "Proxy") and hasattr(op.Proxy, "Type") and op.Proxy.Type == "DrillOperation":
-                row = optable.rowCount()
-                optable.insertRow(row)
-                optable.setItem(row, 0, QtGui.QTableWidgetItem(op.Label))
-                status_item = QtGui.QTableWidgetItem("OK" if op.Active else "Disabled")
-                optable.setItem(row, 1, status_item)
+        self.populateOperationsTable()
         
         # Connecter le signal de sélection du tableau
-        optable.itemSelectionChanged.connect(self.onTableSelectionChanged)
+        self.optable.itemSelectionChanged.connect(self.onTableSelectionChanged)
 
-    
+        #connecter le signal de double clic sur la table
+        self.optable.itemDoubleClicked.connect(self.onTableSelectionDblClicked)
+
+    def populateOperationsTable(self):
+        cam_project = BaptUtilities.find_cam_project(self.obj)
+        if  not cam_project:
+            return
+        ops = cam_project.Proxy.getOperationsGroup(cam_project)
+        if not ops and not hasattr(ops, "Group"):
+            return
+        for op in ops.Group: 
+            if hasattr(op, "Proxy") and hasattr(op.Proxy, "Type") and op.Proxy.Type == "DrillOperation":
+                row = self.optable.rowCount()
+                self.optable.insertRow(row)
+                self.optable.setItem(row, 0, QtGui.QTableWidgetItem(op.Label))
+                status_item = QtGui.QTableWidgetItem("OK" if op.Active else "Disabled")
+                self.optable.setItem(row, 1, status_item)
+
     def onTableSelectionChanged(self):
         pass
+
+    def onTableSelectionDblClicked(self, item):
+        label = item.text()
+        # 1. Close the current dialog
+        self.reject()
+
+        App.Console.PrintMessage(f'dialog closed \n')
+        # 2. Open the Task Panel for the selected operation
+        for op in self.obj.Group:
+            if op.Label == label:
+                obj = App.ActiveDocument.getObject(label)
+                if obj.ViewObject:
+                    obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        pass
+
     def itemChanged(self, item):
         """Mise à jour des positions lorsqu'un élément de la table est modifié"""
         print(f"Item at ({item.row()}, {item.column()}) changed to: {item.text()}")

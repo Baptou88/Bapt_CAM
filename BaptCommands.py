@@ -610,7 +610,7 @@ class CreateDrillOperationCommand:
         # 2 = ajouter au groupe opérations du projet CAM
         
         if modeAjout == 1 or modeAjout == 0:
-
+            App.Console.PrintMessage(f'm10 \n')
             # Ajouter le contournage comme enfant de la géométrie du contour
             drill_geometry.addObject(obj)
             drill_geometry.Group.append(obj)
@@ -620,9 +620,11 @@ class CreateDrillOperationCommand:
             if camProject:
                 operations_group = camProject.Proxy.getOperationsGroup(camProject)
                 if modeAjout == 2:
+                    App.Console.PrintMessage(f'm2 \n')
                     operations_group.addObject(obj)
                     operations_group.Group.append(obj)
                 elif modeAjout == 0:
+                    App.Console.PrintMessage(f'm0 \n')
                     link = doc.addObject('App::Link', f'Link_{obj.Label}')
                     link.setLink(obj)
                     operations_group.addObject(link)
@@ -639,22 +641,6 @@ class CreateDrillOperationCommand:
         App.Console.PrintMessage("Opération de perçage créée et ajoutée comme enfant de la géométrie de perçage.\n")
         
         doc.commitTransaction()
-
-class BaptCommand:
-    """Ma première commande"""
-
-    def GetResources(self):
-        return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
-                'MenuText': "Ma Commande",
-                'ToolTip': "Description de ma commande"}
-
-    def IsActive(self):
-        """Si cette fonction retourne False, la commande sera désactivée"""
-        return True
-
-    def Activated(self):
-        """Cette fonction est exécutée quand la commande est activée"""
-        App.Console.PrintMessage("Hello, FreeCAD!\n")
 
 class PostProcessGCodeCommand:
     """Commande pour générer un programme G-code à partir du projet CAM"""
@@ -734,7 +720,6 @@ class TestPathCommand:
         doc.recompute()
 
 # Enregistrer les commandes
-Gui.addCommand('Bapt_Command', BaptCommand())
 Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
 Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
