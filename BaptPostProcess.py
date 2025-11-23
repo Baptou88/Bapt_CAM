@@ -7,6 +7,7 @@ import importlib
 import os
 from BaptPreferences import BaptPreferences
 from BaptTaskPanel import PostProcessorTaskPanel
+from BasePostPro import BasePostPro
 import FreeCAD as App # type: ignore
 from PySide import QtGui, QtCore # type: ignore
 import BaptUtilities as BaptUtils
@@ -46,183 +47,21 @@ def list_machining_operations(obj):
     ops = unique_ops
     return ops
 
-def generate_gcode(cam_project):
-    """
-    Parcourt les opérations du projet CAM et génère du G-code (contournage, cycles de perçage, changements d'outil).
-    Retourne le G-code sous forme de string.
-    """
-    raise NotImplementedError("Cette fonction est obsolète. Utilisez generate_gcode_for_ops à la place.")
-    gcode_lines = ["(Programme généré par BaptPostProcess)", "G21 (unit: mm)", "G90 (abs mode)"]
-    current_tool = None
-    current_spindle = None
-    current_feed = None
-    machining_ops = list_machining_operations(cam_project)
-    App.Console.PrintMessage(f"Nombre d'opérations d'usinage: {len(machining_ops)}\n")
-    for obj in machining_ops:
-        if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type'):
-            # --- Surfacage ---
-            if obj.Proxy.Type == 'Surfacage' and hasattr(obj, 'Shape'):
-                # Gestion du changement d'outil si ToolId présent
-                tool_id = getattr(obj, 'ToolId', None)
-                tool_name = getattr(obj, 'ToolName', None)
-                spindle = getattr(obj, 'SpindleSpeed', None)
-                feed = getattr(obj, 'FeedRate', None)
-                if tool_id is not None and tool_id != current_tool:
-                    gcode_lines.append(f"(Changement d'outil: {tool_name if tool_name else ''})")
-                    gcode_lines.append(f"M6 T{tool_id}")
-                    if spindle:
-                        gcode_lines.append(f"S{spindle} M3")
-                        current_spindle = spindle
-                    if feed:
-                        gcode_lines.append(f"F{feed}")
-                        current_feed = feed
-                    current_tool = tool_id
-                gcode_lines.append(f"(Surfacage: {obj.Label})")
-                last_pt = None
-                for edge in obj.Shape.Edges:
-                    v1 = edge.Vertexes[0].Point
-                    v2 = edge.Vertexes[1].Point
-                    # Premier point: déplacement rapide (G0)
-                    if last_pt is None or (v1.x != last_pt.x or v1.y != last_pt.y or v1.z != last_pt.z):
-                        gcode_lines.append(f"G0 X{v1.x:.3f} Y{v1.y:.3f} Z{v1.z:.3f}")
-                    # Arc de cercle ?
-                    if hasattr(edge, 'Curve') and edge.Curve and edge.Curve.TypeId == 'Part::GeomCircle':
-                        circle = edge.Curve
-                        center = circle.Center
-                        # Calculer I, J (relatifs au point de départ)
-                        I = center.x - v1.x
-                        J = center.y - v1.y
-                        # Sens horaire/anti-horaire
-                        if edge.Orientation == 'Forward':
-                            gcode_cmd = 'G2'  # Horaire
-                        else:
-                            gcode_cmd = 'G3'  # Anti-horaire
-                        gcode_lines.append(f"{gcode_cmd} X{v2.x:.3f} Y{v2.y:.3f} I{I:.3f} J{J:.3f} Z{v2.z:.3f}")
-                    else:
-                        # Usinage (G1)
-                        gcode_lines.append(f"G1 X{v2.x:.3f} Y{v2.y:.3f} Z{v2.z:.3f}")
-                    last_pt = v2
-            # --- Contournage ---
-            if obj.Proxy.Type == 'ContournageCycle' and hasattr(obj, 'Shape'):
-                # Gestion du changement d'outil si ToolId présent
-                tool_id = getattr(obj, 'ToolId', None)
-                tool_name = getattr(obj, 'ToolName', None)
-                spindle = getattr(obj, 'SpindleSpeed', None)
-                feed = getattr(obj, 'FeedRate', None)
-                if tool_id is not None and tool_id != current_tool:
-                    gcode_lines.append(f"(Changement d'outil: {tool_name if tool_name else ''})")
-                    gcode_lines.append(f"M6 T{tool_id}")
-                    if spindle:
-                        gcode_lines.append(f"S{spindle} M3")
-                        current_spindle = spindle
-                    if feed:
-                        gcode_lines.append(f"F{feed}")
-                        current_feed = feed
-                    current_tool = tool_id
-                gcode_lines.append(f"(Contournage: {obj.Label})")
-                last_pt = None
-                for edge in obj.Shape.Edges:
-                    v1 = edge.Vertexes[0].Point
-                    v2 = edge.Vertexes[1].Point
-                    # Premier point: déplacement rapide (G0)
-                    if last_pt is None or (v1.x != last_pt.x or v1.y != last_pt.y or v1.z != last_pt.z):
-                        gcode_lines.append(f"G0 X{v1.x:.3f} Y{v1.y:.3f} Z{v1.z:.3f}")
-                    # Arc de cercle ?
-                    if hasattr(edge, 'Curve') and edge.Curve and edge.Curve.TypeId == 'Part::GeomCircle':
-                        circle = edge.Curve
-                        center = circle.Center
-                        # Calculer I, J (relatifs au point de départ)
-                        I = center.x - v1.x
-                        J = center.y - v1.y
-                        # Sens horaire/anti-horaire
-                        if edge.Orientation == 'Forward':
-                            gcode_cmd = 'G2'  # Horaire
-                        else:
-                            gcode_cmd = 'G3'  # Anti-horaire
-                        gcode_lines.append(f"{gcode_cmd} X{v2.x:.3f} Y{v2.y:.3f} I{I:.3f} J{J:.3f} Z{v2.z:.3f}")
-                    else:
-                        # Usinage (G1)
-                        gcode_lines.append(f"G1 X{v2.x:.3f} Y{v2.y:.3f} Z{v2.z:.3f}")
-                    last_pt = v2
-            # --- Perçage ---
-            elif obj.Proxy.Type == 'DrillOperation':
-                tool_id = getattr(obj, 'ToolId', None)
-                tool_name = getattr(obj, 'ToolName', None)
-                spindle = getattr(obj, 'SpindleSpeed', None)
-                feed = getattr(obj, 'FeedRate', None)
-                safe_z = getattr(obj, 'SafeHeight', 10.0)
-                final_z = getattr(obj, 'FinalDepth', -5.0)
-                cycle = getattr(obj, 'CycleType', "Simple")
-                dwell = getattr(obj, 'DwellTime', 0.5)
-                peck = getattr(obj, 'PeckDepth', 2.0)
-                retract = getattr(obj, 'Retract', 1.0)
-                # Changement d'outil si nécessaire
-                if tool_id is not None and tool_id != current_tool:
-                    gcode_lines.append(f"(Changement d'outil: {tool_name if tool_name else ''})")
-                    gcode_lines.append(f"M6 T{tool_id}")
-                    if spindle:
-                        gcode_lines.append(f"S{spindle} M3")
-                        current_spindle = spindle
-                    if feed:
-                        gcode_lines.append(f"F{feed}")
-                        current_feed = feed
-                    current_tool = tool_id
-                gcode_lines.append(f"(Perçage: {obj.Label})")
-                # Récupérer les points de perçage
-                points = []
-                if hasattr(obj, 'DrillGeometryName'):
-                    doc = App.ActiveDocument
-                    geom = doc.getObject(obj.DrillGeometryName)
-                    if geom and hasattr(geom, 'DrillPositions'):
-                        points = geom.DrillPositions
-                # Générer le cycle G-code
-                if cycle == "Simple":
-                    gcode_lines.append(f"(Cycle: G81 - Simple)")
-                    for pt in points:
-                        gcode_lines.append(f"G0 X{pt.x} Y{pt.y} Z{safe_z}")
-                        #gcode_lines.append(f"G81 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
-                        gcode_lines.append(f"G80")
-                elif cycle == "Peck":
-                    gcode_lines.append(f"(Cycle: G83 - Perçage par reprise)")
-                    for pt in points:
-                        gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
-                        gcode_lines.append(f"G83 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} Q{peck:.3f} F{feed}")
-                        gcode_lines.append(f"G80")
-                elif cycle == "Tapping":
-                    gcode_lines.append(f"(Cycle: G84 - Taraudage)")
-                    for pt in points:
-                        gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
-                        gcode_lines.append(f"G84 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
-                        gcode_lines.append(f"G80")
-                elif cycle == "Boring":
-                    gcode_lines.append(f"(Cycle: G85 - Alésage)")
-                    for pt in points:
-                        gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
-                        gcode_lines.append(f"G85 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
-                        gcode_lines.append(f"G80")
-                elif cycle == "Reaming":
-                    gcode_lines.append(f"(Cycle: G85 - Alésage/finition)")
-                    for pt in points:
-                        gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
-                        gcode_lines.append(f"G85 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
-                        gcode_lines.append(f"G80")
-    gcode_lines.append("M30 (fin programme)")
-    return '\n'.join(gcode_lines)
 
-def generate_gcode_for_ops(ops, cam_project=None, module=None):
+def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
     """
     Génère le G-code à partir d'une liste ordonnée d'opérations (ops).
     Semblable à generate_gcode mais prend une liste explicite d'objets.
     """
-    gcode_lines = ["(Programme généré par BaptPostProcess)", "G21 (unit: mm)", "G90 (abs mode)"]
+    gcode_lines = [Postpro.writeHeader()]
+
     current_tool = None
     current_spindle = None
     current_feed = None
 
-    if module is not None and cam_project is not None:
-        if hasattr(module, 'blockForm'):
-            blockForm = module.blockForm(cam_project.Proxy.getStock(cam_project))
-            gcode_lines.append(blockForm)
+
+    blockForm = Postpro.blockForm(cam_project.Proxy.getStock(cam_project))
+    gcode_lines.append(blockForm)
 
     App.Console.PrintMessage(f"Nombre d'opérations d'usinage sélectionnées: {len(ops)}\n")
     for obj in ops:
@@ -235,27 +74,15 @@ def generate_gcode_for_ops(ops, cam_project=None, module=None):
         tool = getattr(obj, 'Tool', None)   
         if tool is None:
             App.Console.PrintWarning(f"L'opération {obj.Label} n'a pas d'outil associé !\n")
-            gcode_lines.append(f"(Attention: L'opération {obj.Label} n'a pas d'outil associé !)")
+            gcode_lines.append(Postpro.writeComment(f"Skipping operation {obj.Label} due to missing tool."))
             continue
         if current_tool != tool:
-            tool_id = getattr(tool, 'Id', None)
-            tool_name = getattr(tool, 'Label', None)
-            spindle = getattr(tool, 'SpindleSpeed', None)
-            feed = getattr(tool, 'FeedRate', None)
+            tool_change_code = Postpro.toolChange(tool, cam_project)
+            gcode_lines.append(tool_change_code)
             
-            if hasattr(module, 'toolChange'):
-                tool_change_code = module.toolChange(tool, cam_project)
-                gcode_lines.append(tool_change_code)
-            else:
-                gcode_lines.append(f"(Changement d'outil: {tool_name if tool_name else ''})")
-                gcode_lines.append(f"M6 T{tool_id}")
-                if spindle:
-                    gcode_lines.append(f"S{spindle} M3")
-                    current_spindle = spindle
-            if feed:
-                gcode_lines.append(f"F{feed}")
-                current_feed = feed
+
             current_tool = tool
+
         # --- Surfacage ---
         if obj.Proxy.Type == 'Surfacage' and hasattr(obj, 'Shape'):
             
@@ -266,7 +93,7 @@ def generate_gcode_for_ops(ops, cam_project=None, module=None):
         # --- Contournage ---
         if obj.Proxy.Type == 'ContournageCycle' and hasattr(obj, 'Shape'):
            
-            gcode_lines.append(f"(Contournage: {obj.Label})")
+            gcode_lines.append(Postpro.writeComment(f"Contournage operation: {obj.Label}"))
 
             gcode_lines.append(obj.Gcode)
 
@@ -283,7 +110,8 @@ def generate_gcode_for_ops(ops, cam_project=None, module=None):
             peck = getattr(obj, 'PeckDepth', 2.0).Value
             retract = getattr(obj, 'Retract', 1.0).Value
 
-            gcode_lines.append(f"(Perçage: {obj.Label})")
+
+            gcode_lines.append(Postpro.writeComment(f"Perçage: {obj.Label}"))
             points = []
             if hasattr(obj, 'DrillGeometryName'):
                 doc = App.ActiveDocument
@@ -291,42 +119,46 @@ def generate_gcode_for_ops(ops, cam_project=None, module=None):
                 if geom and hasattr(geom, 'DrillPositions'):
                     points = geom.DrillPositions
             if cycle == "Simple":
-                gcode_lines.append(f"(Cycle: G81 - Simple)")
-                if hasattr(module,"G81"):
-                    gcode_lines.append(module.G81(obj))
-                else:
-                    for pt in points:
-                        gcode_lines.append(f"G0 X{pt.x} Y{pt.y} Z{safe_z}")
-                        gcode_lines.append(f"G80")
+                gcode_lines.append(f"{Postpro.writeComment('Cycle: G81 - Simple')}")
+                gcode_lines.append(Postpro.G81(obj))
+
             elif cycle == "Peck":
-                gcode_lines.append(f"(Cycle: G83 - Perçage par reprise)")
+                commentaire = Postpro.writeComment(f"Cycle: G83 - Perçage par reprise")
+                gcode_lines.append(commentaire)
                 for pt in points:
                     gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
                     gcode_lines.append(f"G83 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} Q{peck:.3f} F{feed}")
                     gcode_lines.append(f"G80")
             elif cycle == "Tapping":
-                gcode_lines.append(f"(Cycle: G84 - Taraudage)")
+                commentaire = Postpro.writeComment(f"Cycle: G84 - Taraudage")
+                gcode_lines.append(commentaire)
                 for pt in points:
                     gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
                     gcode_lines.append(f"G84 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
                     gcode_lines.append(f"G80")
             elif cycle == "Boring":
-                gcode_lines.append(f"(Cycle: G85 - Alésage)")
+                commentaire = Postpro.writeComment(f"Cycle: G85 - Alésage")
+                gcode_lines.append(commentaire)
                 for pt in points:
                     gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
                     gcode_lines.append(f"G85 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
                     gcode_lines.append(f"G80")
             elif cycle == "Reaming":
                 gcode_lines.append(f"(Cycle: G85 - Alésage/finition)")
+                commentaire = Postpro.writeComment(f"Cycle: Contournage personnalisé")
+                gcode_lines.append(commentaire)
                 for pt in points:
                     gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
                     gcode_lines.append(f"G85 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
                     gcode_lines.append(f"G80")
             elif cycle == "Contournage":
-                gcode_lines.append(f"(Cycle: Contournage personnalisé)")
+                commentaire = Postpro.writeComment(f"Cycle: Contournage personnalisé")
+                gcode_lines.append(commentaire)
                 gcode_lines.append(obj.Gcode)
-                
-    gcode_lines.append("M30 (fin programme)")
+     
+
+    gcode_lines.append(Postpro.writeFooter())
+
     return '\n'.join(gcode_lines)
 
 def postprocess_gcode():
@@ -554,12 +386,12 @@ class PostProcessDialog(QtGui.QDialog):
             spec = importlib.util.spec_from_file_location(nom_du_module, chemin_du_module)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            App.Console.PrintMessage(f'{module.Name}\n')
+            pp = module.PostPro()
         except Exception as e:
             App.Console.PrintError(f"Erreur lors du chargement du module de post-traitement : {e}\n")
             QtGui.QMessageBox.critical(self, "Erreur", f"Impossible de charger le module de post-traitement:\n{e}")
             return
-        gcode = generate_gcode_for_ops(ops,self.cam_project, module)
+        gcode = generate_gcode_for_ops(ops,self.cam_project, pp)
         prefs = BaptPreferences()
         filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Enregistrer le G-code", prefs.getGCodeFolderPath(), "Fichiers G-code (*.nc *.gcode *.tap);;Tous les fichiers (*)")
         if not filename:

@@ -11,7 +11,7 @@ import BaptUtilities
 class Tool:
     """Classe représentant un outil d'usinage"""
     def __init__(self, id=None, name="", type="", diameter=0.0, length=0.0, flutes=0, material="", comment="",
-                 point_angle=118.0, torus_radius=0.0, thread_pitch=0.0):
+                 point_angle=118.0, torus_radius=0.0, thread_pitch=0.0, speed=0.0, feed=0.0):
         self.id = id
         self.name = name
         self.type = type
@@ -25,7 +25,10 @@ class Tool:
         self.point_angle = point_angle  # Angle de pointe pour les forets (en degrés)
         self.torus_radius = torus_radius  # Rayon du tore pour les fraises toriques (en mm)
         self.thread_pitch = thread_pitch  # Pas pour les tarauds (en mm)
-    
+
+        self.speed = speed  # Vitesse de coupe (en rpm)
+        self.feed = feed    # Avance (en mm/min)
+
     def to_dict(self):
         """Convertit l'outil en dictionnaire"""
         return {
@@ -39,7 +42,9 @@ class Tool:
             'comment': self.comment,
             'point_angle': self.point_angle,
             'torus_radius': self.torus_radius,
-            'thread_pitch': self.thread_pitch
+            'thread_pitch': self.thread_pitch,
+            'speed': self.speed,
+            'feed': self.feed
         }
     
     @classmethod
@@ -56,7 +61,9 @@ class Tool:
             comment=data.get('comment', ""),
             point_angle=data.get('point_angle', 118.0),
             torus_radius=data.get('torus_radius', 0.0),
-            thread_pitch=data.get('thread_pitch', 0.0)
+            thread_pitch=data.get('thread_pitch', 0.0),
+            speed=data.get('speed', 0.0),
+            feed=data.get('feed', 0.0)
         )
 
 
@@ -93,7 +100,9 @@ class ToolDatabase:
                 comment TEXT,
                 point_angle REAL DEFAULT 118.0,
                 torus_radius REAL DEFAULT 0.0,
-                thread_pitch REAL DEFAULT 0.0
+                thread_pitch REAL DEFAULT 0.0,
+                speed REAL DEFAULT 0.0,
+                feed REAL DEFAULT 0.0
             )
             ''')
         else:
@@ -112,6 +121,16 @@ class ToolDatabase:
                 cursor.execute("SELECT thread_pitch FROM tools LIMIT 1")
             except sqlite3.OperationalError:
                 cursor.execute("ALTER TABLE tools ADD COLUMN thread_pitch REAL DEFAULT 0.0")
+            
+            try:
+                cursor.execute("SELECT speed FROM tools LIMIT 1")
+            except sqlite3.OperationalError:
+                cursor.execute("ALTER TABLE tools ADD COLUMN speed REAL DEFAULT 0.0")
+            
+            try:
+                cursor.execute("SELECT feed FROM tools LIMIT 1")
+            except sqlite3.OperationalError:
+                cursor.execute("ALTER TABLE tools ADD COLUMN feed REAL DEFAULT 0.0")
         
         conn.commit()
         conn.close()
@@ -121,7 +140,7 @@ class ToolDatabase:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch FROM tools")
+        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch, speed, feed FROM tools")
         rows = cursor.fetchall()
         
         tools = []
@@ -137,7 +156,9 @@ class ToolDatabase:
                 comment=row[7],
                 point_angle=row[8],
                 torus_radius=row[9],
-                thread_pitch=row[10]
+                thread_pitch=row[10],
+                speed=row[11],
+                feed=row[12]
             )
             tools.append(tool)
         
@@ -149,7 +170,7 @@ class ToolDatabase:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch FROM tools WHERE id=?", (tool_id,))
+        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch, speed, feed FROM tools WHERE id=?", (tool_id,))
         row = cursor.fetchone()
         
         if row:
@@ -164,7 +185,9 @@ class ToolDatabase:
                 comment=row[7],
                 point_angle=row[8],
                 torus_radius=row[9],
-                thread_pitch=row[10]
+                thread_pitch=row[10],
+                speed=row[11],
+                feed=row[12]
             )
             conn.close()
             return tool
@@ -197,13 +220,14 @@ class ToolDatabase:
         
         cursor.execute('''
         UPDATE tools
-        SET name=?, type=?, diameter=?, length=?, flutes=?, material=?, comment=?, point_angle=?, torus_radius=?, thread_pitch=?
+        SET name=?, type=?, diameter=?, length=?, flutes=?, material=?, comment=?, point_angle=?, torus_radius=?, thread_pitch=?, speed=?, feed=?
         WHERE id=?
         ''', (tool.name, tool.type, tool.diameter, tool.length, tool.flutes, tool.material, tool.comment,
-              tool.point_angle, tool.torus_radius, tool.thread_pitch, tool.id))
+              tool.point_angle, tool.torus_radius, tool.thread_pitch, tool.speed, tool.feed, tool.id))
         
         conn.commit()
         conn.close()
+        return tool
     
     def delete_tool(self, tool_id):
         """Supprime un outil de la base de données"""
@@ -426,6 +450,22 @@ class ToolDialog(QtGui.QDialog):
         self.comment_edit.setPlainText(self.tool.comment)
         self.comment_edit.setMaximumHeight(100)
         form_layout.addRow("Commentaire:", self.comment_edit)
+
+        # Vitesse de coupe (rpm)
+        self.speed_spin = QtGui.QDoubleSpinBox()
+        self.speed_spin.setRange(0, 100000)
+        self.speed_spin.setSingleStep(100)
+        self.speed_spin.setSuffix(" rpm")
+        self.speed_spin.setValue(self.tool.speed)
+        form_layout.addRow("Vitesse de coupe:", self.speed_spin)
+        
+        # Avance (mm/min)
+        self.feed_spin = QtGui.QDoubleSpinBox()
+        self.feed_spin.setRange(0, 10000)
+        self.feed_spin.setSingleStep(10)
+        self.feed_spin.setSuffix(" mm/min")
+        self.feed_spin.setValue(self.tool.feed)
+        form_layout.addRow("Avance:", self.feed_spin)
         
         layout.addLayout(form_layout)
         
@@ -526,10 +566,19 @@ class ToolDialog(QtGui.QDialog):
         self.tool.point_angle = self.point_angle_spin.value()
         self.tool.torus_radius = self.torus_radius_spin.value()
         self.tool.thread_pitch = self.thread_pitch_spin.value()
+
+        # Vitesse et avance
+        self.tool.speed = self.speed_spin.value()
+        self.tool.feed = self.feed_spin.value()
         
-        App.Console.PrintMessage(f"Outil enregistré avec les paramètres spécifiques: Angle={self.tool.point_angle}, Rayon={self.tool.torus_radius}, Pas={self.tool.thread_pitch}\n")
+        tb = ToolDatabase()
+        tool = tb.update_tool(self.tool) if self.tool.id else tb.add_tool(self.tool)
+        status = (tool is not None) 
+        App.Console.PrintMessage(f"Outil enregistré {status} avec les paramètres spécifiques: Angle={self.tool.point_angle}, Rayon={self.tool.torus_radius}, Pas={self.tool.thread_pitch}\n")
         
-        super(ToolDialog, self).accept()
+        #super(ToolDialog, self).accept()
+        Gui.Control.closeDialog()
+        return True
 
 
 class ToolsManagerPanel:

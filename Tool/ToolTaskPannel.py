@@ -6,6 +6,7 @@ import FreeCADGui as Gui
 from PySide import QtCore, QtGui
 from Tool import ToolSelectorDialog
 
+import utils.BQuantitySpinBox as BQantitySpinBox
 
 class ToolTaskPanel:
     def __init__(self,obj,parent=None):
@@ -46,27 +47,36 @@ class ToolTaskPanel:
         self.diameter.setRange(0, 100)
         self.toolLayout.addRow("Diamètre:", self.diameter)
 
+        #champ d'edition Speed
+        self.speed = QtGui.QDoubleSpinBox()
+        self.speed = BQantitySpinBox.BQuantitySpinBox(self.obj.Tool,"Speed")
+        #self.speed.setRange(0, 10000)
+        self.toolLayout.addRow("Vitesse de coupe (RPM):", self.speed.getWidget())
+
+        #champ d'edition Feed
+        #self.feed = QtGui.QDoubleSpinBox()
+        self.feed = BQantitySpinBox.BQuantitySpinBox(self.obj.Tool,"Feed")
+        #self.feed.setRange(0, 10000)
+        self.toolLayout.addRow("Vitesse d'avance:", self.feed.getWidget())
+
         layout.addLayout(self.toolLayout)
     
         self.initValues()
-        self.toolComboBox.currentTextChanged.connect(lambda: self.onToolComboBoxChanged())
+        
+        self.initListeners()
 
     def onToolComboBoxChanged(self):
-        App.Console.PrintMessage(f'par là\n')
-        try:
-            tool = self.toolComboBox.currentText()
-            if tool:
-                self.obj.Tool = App.ActiveDocument.getObject(tool)
-                self.selectedToolLabel.setText(f"Outil sélectionné: {self.obj.Tool.Name} (ID: {self.obj.Tool.Id})")
-                self.diameter.setValue(self.obj.Tool.Radius * 2.0)
-                self.idTool.setValue(self.obj.Tool.Id)
-                self.nameTool.setText(self.obj.Tool.Name)
-        except Exception as e:
-            
-            exc_type, exc_value, exc_traceback = sys.exc_info()
-            line_number = exc_traceback.tb_lineno
-            App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
-            App.Console.PrintError(f"Erreur lors du changement d'outil: {e}\n")
+
+        tool = self.toolComboBox.currentText()
+        if tool:
+            self.obj.Tool = App.ActiveDocument.getObject(tool)
+            self.selectedToolLabel.setText(f"Outil sélectionné: {self.obj.Tool.Name} (ID: {self.obj.Tool.Id})")
+            self.diameter.setValue(self.obj.Tool.Radius * 2.0)
+            self.idTool.setValue(self.obj.Tool.Id)
+            self.nameTool.setText(self.obj.Tool.Name)
+            self.speed.setValue(self.obj.Tool.Speed)
+            self.feed.setValue(self.obj.Tool.Feed)
+
 
     def selectTool(self):
         App.Console.PrintMessage(f'label\n')
@@ -93,6 +103,8 @@ class ToolTaskPanel:
                     new_tool = App.ActiveDocument.addObject("Part::Cylinder",f"T{sel.id} ({sel.name})")
                     new_tool.addProperty("App::PropertyInteger","Id","Tool","Tool ID").Id = sel.id
                     new_tool.addProperty("App::PropertyString","Name","Tool","Tool Name").Name = sel.name
+                    new_tool.addProperty("App::PropertySpeed","Speed","Tool","Tool Speed").Speed = f"{sel.speed} mm/min"
+                    new_tool.addProperty("App::PropertySpeed","Feed","Tool","Tool Feed").Feed = f"{sel.feed} mm/min"
                     groupTools.addObject(new_tool)
                     self.obj.Tool = new_tool
                     new_tool.Radius = sel.diameter / 2.0
@@ -106,9 +118,28 @@ class ToolTaskPanel:
                 self.idTool.setValue(sel.id)
                 self.nameTool.setText(sel.name)
                 self.diameter.setValue(sel.diameter)
+                self.speed.setValue(sel.speed)
+                self.feed.setValue(sel.feed)
+                
+                self.initToolComboBox()
+
+
 
     def initValues(self):
-        #populate tool combo box
+        
+        self.initToolComboBox()
+
+        if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
+            tool = self.obj.Tool
+            self.selectedToolLabel.setText(f"Outil sélectionné: {tool.Name} (ID: {tool.Id})")
+            self.diameter.setValue(tool.Radius * 2.0)
+            self.idTool.setValue(tool.Id)
+            self.nameTool.setText(tool.Name)
+            # self.speed.setValue(tool.Speed)
+            # self.feed.setValue(tool.Feed)
+        
+    def initToolComboBox(self):
+        '''populate tool combo box'''
         p = find_cam_project(self.obj)
         if p:
             groupTools = p.Proxy.getToolsGroup()
@@ -117,23 +148,19 @@ class ToolTaskPanel:
                 self.toolComboBox.addItem(t.Label)
             if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
                 idx = self.toolComboBox.findText(self.obj.Tool.Label)
-                if idx >= 0:
-                    self.toolComboBox.setCurrentIndex(idx)
+                #if idx >= 0:
+                self.toolComboBox.setCurrentIndex(idx)
+                
+            else:
+                self.toolComboBox.setCurrentIndex(-1)
 
-        if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
-            tool = self.obj.Tool
-            self.selectedToolLabel.setText(f"Outil sélectionné: {tool.Name} (ID: {tool.Id})")
-            self.diameter.setValue(tool.Radius * 2.0)
-            self.idTool.setValue(tool.Id)
-            self.nameTool.setText(tool.Name)
-
-        
-
-    def initVListeners(self):
+    def initListeners(self):
         self.selectToolButton.clicked.connect(lambda: self.selectTool())
         self.idTool.valueChanged.connect(lambda: self.updateToolId())
         self.nameTool.textChanged.connect(lambda: self.updateToolName())
         self.diameter.valueChanged.connect(lambda: self.updateToolDiameter())
+        self.toolComboBox.currentTextChanged.connect(lambda: self.onToolComboBoxChanged())
+
     def updateToolDiameter(self):
         if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
             tool = self.obj.Tool

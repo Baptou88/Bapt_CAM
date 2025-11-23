@@ -1,5 +1,6 @@
 import os
 import FreeCAD as App
+import FreeCADGui 
 
 def get_module_path():
     '''

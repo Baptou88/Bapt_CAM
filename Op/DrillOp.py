@@ -1,7 +1,9 @@
-from BaptPath import baseOp,baseOpViewProviderProxy
+from Op.BaseOp import baseOpViewProviderProxy
 from BaptTools import ToolDatabase
 import FreeCAD as App
 import FreeCADGui as Gui
+from Op.BaseOp import baseOp
+from Op.utils import CoolantMode
 import Part
 import os
 import math
@@ -40,20 +42,6 @@ class DrillOperation(baseOp):
             obj.CycleType = cycleType
             obj.CycleType = "Simple"  # Valeur par défaut
         
-        # Paramètres communs à tous les cycles
-        if not hasattr(obj, "FeedRate"):
-            obj.addProperty("App::PropertySpeed", "FeedRate", "Feeds", "Feed rate for drilling")
-            obj.FeedRate = 100.0  # mm/min par défaut
-        
-        if not hasattr(obj, "SpindleSpeed"):
-            obj.addProperty("App::PropertySpeed", "SpindleSpeed", "Feeds", "Spindle speed")
-            obj.SpindleSpeed = 1000.0  # tr/min par défaut
-        
-        if not hasattr(obj, "CoolantMode"):
-            obj.addProperty("App::PropertyEnumeration", "CoolantMode", "Coolant", "Coolant mode")
-            obj.CoolantMode = ["Off", "Flood", "Mist"]
-            obj.CoolantMode = "Flood"  # Valeur par défaut
-            
         
         # Paramètres spécifiques au cycle de perçage profond (Peck)
         if not hasattr(obj, "PeckDepth"):
@@ -127,17 +115,22 @@ class DrillOperation(baseOp):
         obj.setEditorMode("ThreadPitch", 2)  # caché
         obj.setEditorMode("DwellTime", 2)  # caché
         obj.setEditorMode("Diam",2)
-        
+        obj.setEditorMode("Ap",2)
+
         # Afficher les propriétés spécifiques au cycle sélectionné
+        if obj.CycleType == "Simple":
+            obj.setEditorMode("DwellTime", 0) # visible
         if obj.CycleType == "Peck":
             obj.setEditorMode("PeckDepth", 0)  # visible
             obj.setEditorMode("Retract", 0)  # visible
+            obj.setEditorMode("DwellTime", 0)  # visible
         elif obj.CycleType == "Tapping":
             obj.setEditorMode("ThreadPitch", 0)  # visible
         elif obj.CycleType == "Boring":
             obj.setEditorMode("DwellTime", 0)  # visible
         elif obj.CycleType == "Contournage":
             obj.setEditorMode("Diam",0)
+            obj.setEditorMode("Ap",0)
 
     def updateFromGeometry(self, obj):
         """Met à jour les paramètres en fonction de la géométrie sélectionnée"""

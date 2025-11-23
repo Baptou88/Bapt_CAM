@@ -5,27 +5,28 @@ BaptCommands.py
 Contient les commandes principales du workbench
 """
 
-import os
 import BaptCamProject
-import BaptDrillGeometry
-import BaptPath
-from BaptPreferences import BaptPreferences
-import Op.DrillOp as DrillOp
-import BaptContourGeometry
-from BaptHighlight import CreateHighlightCommand
-import BaptOrigin
-import BaptPocketOperation
 import BaptContourEditableGeometry
+import BaptContourGeometry
+import BaptDrillGeometry
+from BaptHighlight import CreateHighlightCommand
 import BaptMpfReader
-import BaptTools
+import BaptPath
+import BaptPocketOperation
 import BaptPostProcess
-import Op.OpContournage as OpContournage
-from Op import OpSurfacage
+import BaptPreferences
+import BaptTools
+import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
-from PySide import QtCore, QtGui
-import BaptUtilities
+import os
+
+import BaptOrigin
+
+from Op import DrillOp, OpContournage, OpSurfacage, PathOp
 from Probe import probeFace
+from PySide import QtCore, QtGui
+
 from utils import BQuantitySpinBox
 
 class CreateOriginCommand:    
@@ -126,7 +127,7 @@ class CreateContourCommand:
         #             App.Console.PrintMessage(f"Contournage ajouté comme enfant de {parent.Label}\n")
         #             break
         
-        pref = BaptPreferences()
+        pref = BaptPreferences.BaptPreferences()
         modeAjout = pref.getModeAjout()
         
         # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
@@ -531,6 +532,8 @@ class CreateHotReloadCommand:
             reload(BaptDrillOperationTaskPanel)
             import utils.BQuantitySpinBox as BQuantitySpinBox
             reload(BQuantitySpinBox)
+            import Tool.ToolTaskPannel as ToolTaskPannel
+            reload(ToolTaskPannel)
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 
@@ -602,7 +605,7 @@ class CreateDrillOperationCommand:
         # Définir le nom de la géométrie de perçage associée (au lieu d'un lien direct)
         obj.DrillGeometryName = drill_geometry.Name
         
-        pref = BaptPreferences()
+        pref = BaptPreferences.BaptPreferences()
         modeAjout = pref.getModeAjout()
         
         # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
@@ -699,13 +702,13 @@ class TestPathCommand:
 
         import BaptPath
         App.Console.PrintMessage("Testing BaptPath.path...\n")
-        BaptPath.path(obj)
+        PathOp.path(obj)
         
         #obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
 
         obj.Gcode = "R1=10\nG0 X0 Y0 Z10\nG1 Z0 F500\nLABEL1:\nG91\nG1 Z-2\nG90\nG1 X16 Y0\nG3 X20 Y4 I0 J4 \nG1 X20 Y20\nG1 X0 Y20\nG1 X0 Y0\nREPEAT LABEL1 P=R1\nG0 Z10\n"
         obj.Gcode = "G0 X20 Y20 Z2\nG81 Z-20 R2\nG0 X30\nG80\nG0 X40\nG83 Z-30 R2 Q2"
-        BaptPath.pathViewProviderProxy(obj.ViewObject)
+        PathOp.pathViewProviderProxy(obj.ViewObject)
 
         # Ajouter au groupe Operations
         operations_group = project.Proxy.getOperationsGroup(project)

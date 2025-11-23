@@ -1,7 +1,8 @@
-from BaptPath import baseOp, baseOpViewProviderProxy
+from Op.BaseOp import baseOpViewProviderProxy
 import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
+from Op.BaseOp import baseOp
 import Part
 from utils import Contour
 

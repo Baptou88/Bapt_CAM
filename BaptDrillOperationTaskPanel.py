@@ -1,7 +1,9 @@
+from Gui.cuttingConditionTaskPanel import cuttingConditionTaskPanel
 import Op.DrillOp as DrillOp
 from BaptUtilities import getIconPath
 import FreeCAD as App
 import FreeCADGui as Gui
+from Op.utils import CoolantMode
 from PySide import QtCore, QtGui
 
 from BaptTools import ToolDatabase, Tool
@@ -14,6 +16,9 @@ class DrillOperationTaskPanel:
     def __init__(self, obj):
         # Garder une référence à l'objet
         self.obj = obj
+
+        self.cuttingCondition = cuttingConditionTaskPanel(obj)
+
         ui1 = QtGui.QWidget()
         ui1.setWindowTitle("Opération de perçage")
         ui2 = ToolTaskPanel(obj, self)
@@ -77,26 +82,29 @@ class DrillOperationTaskPanel:
         
         # Groupe pour les paramètres communs
         commonGroup = QtGui.QGroupBox("Paramètres communs")
-        commonLayout = QtGui.QFormLayout()
+        # commonLayout = QtGui.QFormLayout()
+        commonLayout = self.cuttingCondition.getLayout()
         
-        # Vitesse de broche
-        self.spindleSpeed = QtGui.QSpinBox()
-        self.spindleSpeed.setRange(1, 100000)
-        self.spindleSpeed.setSingleStep(100)
-        self.spindleSpeed.setSuffix(" tr/min")
-        commonLayout.addRow("Vitesse de broche:", self.spindleSpeed)
+        # # Vitesse de broche
+        # self.spindleSpeed = BQuantitySpinBox.BQuantitySpinBox(obj,"SpindleSpeed")
+        # # self.spindleSpeed = QtGui.QSpinBox()
+        # # self.spindleSpeed.setRange(1, 100000)
+        # # self.spindleSpeed.setSingleStep(100)
+        # # self.spindleSpeed.setSuffix(" tr/min")
+        # commonLayout.addRow("Vitesse de broche:", self.spindleSpeed.getWidget())
         
-        # Vitesse d'avance
-        self.feedRate = QtGui.QSpinBox()
-        self.feedRate.setRange(1, 10000)
-        self.feedRate.setSingleStep(10)
-        self.feedRate.setSuffix(" mm/min")
-        commonLayout.addRow("Vitesse d'avance:", self.feedRate)
+        # # Vitesse d'avance
+        # self.feedRate = BQuantitySpinBox.BQuantitySpinBox(obj,"FeedRate")
+        # # self.feedRate.setRange(1, 10000)
+        # # self.feedRate.setSingleStep(10)
+        # # self.feedRate.setSuffix(" mm/min")
+        # commonLayout.addRow("Vitesse d'avance:", self.feedRate.getWidget())
+        #commonLayout.addRow(self.cuttingCondition.getLayout())
         
-        # Mode de refroidissement
-        self.coolantMode = QtGui.QComboBox()
-        self.coolantMode.addItems(["Off", "Flood", "Mist"])
-        commonLayout.addRow("Refroidissement:", self.coolantMode)
+        # # Mode de refroidissement
+        # self.coolantMode = QtGui.QComboBox()
+        # self.coolantMode.addItems(CoolantMode)
+        # commonLayout.addRow("Refroidissement:", self.coolantMode)
         
         commonGroup.setLayout(commonLayout)
         cycleLayout.addWidget(commonGroup)
@@ -105,8 +113,20 @@ class DrillOperationTaskPanel:
         self.specificGroup = QtGui.QGroupBox("Paramètres spécifiques")
         self.specificLayout = QtGui.QStackedLayout()
         
+        def createDwellTimeSpinBox():
+            spinbox = QtGui.QDoubleSpinBox()
+            spinbox.setRange(0.0, 10.0)
+            spinbox.setSingleStep(0.1)
+            spinbox.setSuffix(" s")
+            spinbox.valueChanged.connect(self.syncDwellTimes)
+            return spinbox
+        
         # Widget pour le perçage simple (vide)
         simpleWidget = QtGui.QWidget()
+        simpleLayout = QtGui.QFormLayout(simpleWidget)
+        self.dwellTimeSimple = createDwellTimeSpinBox()
+        simpleLayout.addRow("Temps de pause:", self.dwellTimeSimple)
+
         self.specificLayout.addWidget(simpleWidget)
         
         # Widget pour le perçage profond (Peck)
@@ -125,6 +145,8 @@ class DrillOperationTaskPanel:
         self.retract.setSuffix(" mm")
         peckLayout.addRow("Retrait:", self.retract)
         
+        self.dwellTimePeck = createDwellTimeSpinBox()
+        peckLayout.addRow("Temps de pause:", self.dwellTimePeck)
         self.specificLayout.addWidget(peckWidget)
         
         # Widget pour le taraudage
@@ -143,11 +165,8 @@ class DrillOperationTaskPanel:
         boringWidget = QtGui.QWidget()
         boringLayout = QtGui.QFormLayout(boringWidget)
         
-        self.dwellTime = QtGui.QDoubleSpinBox()
-        self.dwellTime.setRange(0.0, 10.0)
-        self.dwellTime.setSingleStep(0.1)
-        self.dwellTime.setSuffix(" s")
-        boringLayout.addRow("Temps de pause:", self.dwellTime)
+        self.dwellTimeBoring = createDwellTimeSpinBox()
+        boringLayout.addRow("Temps de pause:", self.dwellTimeBoring)
         
         self.specificLayout.addWidget(boringWidget)
         
@@ -214,31 +233,12 @@ class DrillOperationTaskPanel:
         self.zRefLabel = QtGui.QLabel("Référence Z:")
         depthParamsLayout.addRow(self.zRefLabel, self.zReference)
         
-        # # Hauteur de sécurité
-        # self.safeHeight = QtGui.QDoubleSpinBox()
-        # self.safeHeight.setRange(0.0, 1000.0)
-        # self.safeHeight.setSingleStep(1.0)
-        # self.safeHeight.setSuffix(" mm")
-        # depthParamsLayout.addRow("Hauteur de sécurité:", self.safeHeight)
-
-        # Container pour SafeHeight avec spinbox + bouton expression
-        safeHeightContainer = QtGui.QWidget()
-        safeHeightLayout = QtGui.QHBoxLayout(safeHeightContainer)
-        safeHeightLayout.setContentsMargins(0, 0, 0, 0)
-        
+        # Hauteur de sécurité
         self.safeHeight = QtGui.QDoubleSpinBox()
         self.safeHeight.setRange(0.0, 1000.0)
         self.safeHeight.setSingleStep(1.0)
-        self.safeHeight.setSuffix(" mmm")
-        safeHeightLayout.addWidget(self.safeHeight)
-        
-        # Bouton pour l'éditeur d'expression
-        self.safeHeightExprButton = QtGui.QPushButton()
-        self.safeHeightExprButton.setIcon(QtGui.QIcon(":/icons/expressions.svg"))
-        self.safeHeightExprButton.setToolTip("Éditer l'expression")
-        self.safeHeightExprButton.clicked.connect(lambda: self.openExpressionEditor(self.safeHeight))
-        safeHeightLayout.addWidget(self.safeHeightExprButton)
-        depthParamsLayout.addRow("Hauteur de sécurité:", safeHeightContainer)
+        self.safeHeight.setSuffix(" mm")
+        depthParamsLayout.addRow("Hauteur de sécurité:", self.safeHeight)
 
         depthParamsGroup.setLayout(depthParamsLayout)
         depthLayout.addWidget(depthParamsGroup)
@@ -257,16 +257,10 @@ class DrillOperationTaskPanel:
         self.finalDepth.valueChanged.connect(lambda: self.updateVisual())
 
         #u2.testButton.clicked.connect(lambda: u2.onTestButtonClicked()) 
-        ui2.initVListeners() 
+        if self.obj.Tool:
+            self.obj.Tool.Visibility = True
 
-    def openExpressionEditor(self, prop):
-        """Ouvre l'éditeur d'expression pour la propriété donnée"""
-        try:
-            Gui.ExpressionBinding(self.obj.Document.Name, self.obj.Name, prop).showPopup()
-            Gui.ExpressionBinding(prop).bind(self.obj,"SafeHeight")
-            prop.show()
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de l'ouverture de l'éditeur d'expression: {str(e)}\n")
+
 
     def updateVisual(self):
         """Mise à jour visuelle des paramètres"""
@@ -328,13 +322,39 @@ class DrillOperationTaskPanel:
         # Sélectionner la géométrie actuelle si elle existe
         if hasattr(self.obj, "DrillGeometryName") and self.obj.DrillGeometryName:
             index = self.geometryCombo.findData(self.obj.DrillGeometryName)
-            if index >= 0:
-                self.geometryCombo.setCurrentIndex(index)
+            self.geometryCombo.setCurrentIndex(index)
 
     
     
     
-    
+    def syncDwellTimes(self,value):
+        """Synchronise toutes les valeurs dwellTime quand l'une change"""
+        # Créer une liste de tous les widgets dwellTime
+        dwellWidgets = [self.dwellTimeSimple, self.dwellTimePeck, self.dwellTimeBoring]
+        
+        # Trouver quel widget a la valeur actuelle (celui qui a changé)
+        senderWidget = None
+        for widget in dwellWidgets:
+            if widget.value() == value and widget.hasFocus():
+                senderWidget = widget
+                break
+        
+        # Si on ne trouve pas via hasFocus(), on utilise une autre approche
+        if senderWidget is None:
+            # On met à jour tous les widgets qui n'ont pas déjà cette valeur
+            for widget in dwellWidgets:
+                if abs(widget.value() - value) > 0.001:  # Tolérance pour les flottants
+                    widget.blockSignals(True)
+                    widget.setValue(value)
+                    widget.blockSignals(False)
+        else:
+            # Mettre à jour tous les autres widgets
+            for widget in dwellWidgets:
+                if widget != senderWidget:
+                    widget.blockSignals(True)
+                    widget.setValue(value)
+                    widget.blockSignals(False)
+
     def initValues(self):
         """Initialise les valeurs des widgets depuis l'objet"""
         # Onglet Cycle
@@ -345,16 +365,16 @@ class DrillOperationTaskPanel:
         
         
         
-        if hasattr(self.obj, "SpindleSpeed"):
-            self.spindleSpeed.setValue(self.obj.SpindleSpeed.Value)
+        # if hasattr(self.obj, "SpindleSpeed"):
+        #     self.spindleSpeed.setValue(self.obj.SpindleSpeed.Value)
         
-        if hasattr(self.obj, "FeedRate"):
-            self.feedRate.setValue(self.obj.FeedRate.Value)
+        # if hasattr(self.obj, "FeedRate"):
+        #     self.feedRate.setValue(self.obj.FeedRate.Value)
         
-        if hasattr(self.obj, "CoolantMode"):
-            index = self.coolantMode.findText(self.obj.CoolantMode)
-            if index >= 0:
-                self.coolantMode.setCurrentIndex(index)
+        # if hasattr(self.obj, "CoolantMode"):
+        #     index = self.coolantMode.findText(self.obj.CoolantMode)
+        #     if index >= 0:
+        #         self.coolantMode.setCurrentIndex(index)
         
         if hasattr(self.obj, "PeckDepth"):
             self.peckDepth.setValue(self.obj.PeckDepth.Value)
@@ -366,7 +386,11 @@ class DrillOperationTaskPanel:
             self.threadPitch.setValue(self.obj.ThreadPitch.Value)
         
         if hasattr(self.obj, "DwellTime"):
-            self.dwellTime.setValue(self.obj.DwellTime)
+            #self.dwellTime.setValue(self.obj.DwellTime)
+            for widget in [self.dwellTimeSimple, self.dwellTimePeck, self.dwellTimeBoring]:
+                widget.blockSignals(True)
+                widget.setValue(self.obj.DwellTime)
+                widget.blockSignals(False)
         
         # Onglet Profondeur
         if hasattr(self.obj, "DepthMode"):
@@ -409,15 +433,25 @@ class DrillOperationTaskPanel:
         self.obj.CycleType = self.cycleTypeCombo.currentText()
         
         # Mettre à jour les paramètres communs
-        self.obj.SpindleSpeed = self.spindleSpeed.value()
-        self.obj.FeedRate = self.feedRate.value()
-        self.obj.CoolantMode = self.coolantMode.currentText()
+        # self.obj.SpindleSpeed = self.spindleSpeed.value()
+        # self.obj.FeedRate = self.feedRate.value()
+        # self.obj.CoolantMode = self.coolantMode.currentText()
         
         # Mettre à jour les paramètres spécifiques
         self.obj.PeckDepth = self.peckDepth.value()
         self.obj.Retract = self.retract.value()
         self.obj.ThreadPitch = self.threadPitch.value()
-        self.obj.DwellTime = self.dwellTime.value()
+
+        # Prendre la valeur du widget dwellTime visible actuellement
+        if self.specificLayout.currentIndex() == 0:  # Simple
+            self.obj.DwellTime = self.dwellTimeSimple.value()
+        elif self.specificLayout.currentIndex() == 1:  # Peck
+            self.obj.DwellTime = self.dwellTimePeck.value()
+        elif self.specificLayout.currentIndex() == 3:  # Boring
+            self.obj.DwellTime = self.dwellTimeBoring.value()
+        else:
+            # Fallback sur la première valeur
+            self.obj.DwellTime = self.dwellTimeSimple.value()
         
         # Mettre à jour le mode de profondeur
         self.obj.DepthMode = "Absolute" if self.absoluteRadio.isChecked() else "Relative"
@@ -430,7 +464,10 @@ class DrillOperationTaskPanel:
         # Mettre à jour les paramètres d'affichage
         # self.obj.ShowPathLine = self.showPathLine.isChecked()
         # self.obj.PathLineColor = self.selectedPathLineColor
-        
+
+        if self.obj.Tool:
+            self.obj.Tool.Visibility = False
+
         # Recompute
         self.obj.Document.recompute()
         
@@ -440,6 +477,10 @@ class DrillOperationTaskPanel:
     
     def reject(self):
         """Appelé quand l'utilisateur clique sur Cancel"""
+
+        if self.obj.Tool:
+            self.obj.Tool.Visibility = False
+            
         Gui.Control.closeDialog()
         return False
 
