@@ -1,3 +1,5 @@
+from tkinter.filedialog import Open
+import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
@@ -8,9 +10,16 @@ class DrillGeometryTaskPanel:
         self.obj = obj
         
         # Créer l'interface utilisateur
-        self.form = QtGui.QWidget()
-        self.form.setWindowTitle("Edit Drill Geometry")
-        layout = QtGui.QVBoxLayout(self.form)
+        self.ui1 = QtGui.QWidget()
+        self.ui1.setWindowTitle("Edit Drill Geometry")
+
+        self.ui2 = QtGui.QWidget()  
+        self.ui2.setWindowTitle("Operations") 
+
+        self.form = [self.ui1, self.ui2]
+        
+        layout = QtGui.QVBoxLayout(self.ui1)
+        layoutOp = QtGui.QVBoxLayout(self.ui2)
         
         # Groupe pour la Nom de l'opération
         nameGroup = QtGui.QGroupBox("Nom de la géométrie")
@@ -58,6 +67,7 @@ class DrillGeometryTaskPanel:
         self.drillTable.setColumnCount(4)
         self.drillTable.setHorizontalHeaderLabels(["X", "Y", "Z", ""])
         self.drillTable.horizontalHeader().setStretchLastSection(True)
+        self.drillTable.setMinimumHeight(150)
         self.drillTable.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
         self.drillTable.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
         # Connecter le signal de changement de sélection
@@ -106,6 +116,54 @@ class DrillGeometryTaskPanel:
         drillLayout.addLayout(buttonLayout)
         drillGroup.setLayout(drillLayout)
         layout.addWidget(drillGroup)
+
+        self.optable = QtGui.QTableWidget()
+        self.optable.setColumnCount(2)
+        self.optable.setHorizontalHeaderLabels(["Operation", "Status"])
+        self.optable.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
+        self.optable.setRowCount(0)
+        layoutOp.addWidget(QtGui.QLabel("Drill Operations will be listed here."))
+        layoutOp.addWidget(self.optable)
+        
+        self.populateOperationsTable()
+        
+        # Connecter le signal de sélection du tableau
+        self.optable.itemSelectionChanged.connect(self.onTableSelectionChanged)
+
+        #connecter le signal de double clic sur la table
+        self.optable.itemDoubleClicked.connect(self.onTableSelectionDblClicked)
+
+    def populateOperationsTable(self):
+        cam_project = BaptUtilities.find_cam_project(self.obj)
+        if  not cam_project:
+            return
+        ops = cam_project.Proxy.getOperationsGroup(cam_project)
+        if not ops and not hasattr(ops, "Group"):
+            return
+        for op in ops.Group: 
+            if hasattr(op, "Proxy") and hasattr(op.Proxy, "Type") and op.Proxy.Type == "DrillOperation":
+                row = self.optable.rowCount()
+                self.optable.insertRow(row)
+                self.optable.setItem(row, 0, QtGui.QTableWidgetItem(op.Label))
+                status_item = QtGui.QTableWidgetItem("OK" if op.Active else "Disabled")
+                self.optable.setItem(row, 1, status_item)
+
+    def onTableSelectionChanged(self):
+        pass
+
+    def onTableSelectionDblClicked(self, item):
+        label = item.text()
+        # 1. Close the current dialog
+        self.reject()
+
+        App.Console.PrintMessage(f'dialog closed \n')
+        # 2. Open the Task Panel for the selected operation
+        for op in self.obj.Group:
+            if op.Label == label:
+                obj = App.ActiveDocument.getObject(label)
+                if obj.ViewObject:
+                    obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        pass
 
     def itemChanged(self, item):
         """Mise à jour des positions lorsqu'un élément de la table est modifié"""

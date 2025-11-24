@@ -9,7 +9,7 @@ def reload_modules():
         modules_to_reload = [
             "BaptGeometry",
             "BaptContourTaskPanel",
-            "BaptCommands"
+            
         ]
         
         # Recharger chaque module

@@ -4,6 +4,7 @@ import FreeCADGui as Gui
 from Op import OpContournage
 from PySide import QtCore, QtGui
 from Tool.ToolTaskPannel import ToolTaskPanel
+from Gui.cuttingConditionTaskPanel import cuttingConditionTaskPanel
 from utils import BQuantitySpinBox
 
 class ContournageTaskPanel:
@@ -13,12 +14,14 @@ class ContournageTaskPanel:
         """Initialise le panneau avec l'objet de contournage"""
         self.obj = obj
         
+        self.cuttingConditionPanel = cuttingConditionTaskPanel(obj)
+
         # Créer l'interface utilisateur
         self.ui1 = QtGui.QWidget()
         self.ui1.setWindowTitle("Paramètres de contournage")
 
         ui2 = ToolTaskPanel(obj)
-        self.form = [self.ui1, ui2.getForm()]
+        self.form = [self.ui1, ui2.getForm(), self.cuttingConditionPanel.getForm()]
         
         layout = QtGui.QFormLayout(self.ui1)
         # Groupe Outil
@@ -71,6 +74,12 @@ class ContournageTaskPanel:
                 self.compensationTool.setCurrentIndex(idx)
         toolLayout.addRow("Compensation de l'outil:", self.compensationTool)
         self.compensationTool.currentTextChanged.connect(self.updateCompensation)
+        
+        #Surep
+        self.SurepAxiale = BQuantitySpinBox.BQuantitySpinBox(obj, "SurepAxiale")
+        toolLayout.addRow("Surep Axiale:", self.SurepAxiale.getWidget())
+        self.SurepRadiale = BQuantitySpinBox.BQuantitySpinBox(obj, "SurepRadiale")
+        toolLayout.addRow("Surep Radiale:", self.SurepRadiale.getWidget())
         
         toolGroup.setLayout(toolLayout)
         layout.addWidget(toolGroup)
@@ -171,7 +180,9 @@ class ContournageTaskPanel:
         self.showToolPath.stateChanged.connect(self.updateDisplay)
         self.pathWidth.valueChanged.connect(self.updateDisplay)
 
-        ui2.initVListeners()
+        if self.obj.Tool:
+            self.obj.Tool.Visibility = True
+
     
     def chooseColor(self):
         """Ouvre un sélecteur de couleur"""
@@ -226,10 +237,18 @@ class ContournageTaskPanel:
         """Appelé lorsque l'utilisateur clique sur OK"""
         self.updateContournage()
         self.updateDisplay()
+
+        if self.obj.Tool:
+            self.obj.Tool.Visibility = False
+
         Gui.Control.closeDialog()
         return True
     
     def reject(self):
         """Appelé lorsque l'utilisateur clique sur Annuler"""
+
+        if self.obj.Tool:
+            self.obj.Tool.Visibility = False
+
         Gui.Control.closeDialog()
         return True

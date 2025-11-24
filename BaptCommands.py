@@ -5,26 +5,28 @@ BaptCommands.py
 Contient les commandes principales du workbench
 """
 
-import os
 import BaptCamProject
-import BaptDrillGeometry
-import BaptPath
-import Op.DrillOp as DrillOp
-import BaptContourGeometry
-from BaptHighlight import CreateHighlightCommand
-import BaptOrigin
-import BaptPocketOperation
 import BaptContourEditableGeometry
+import BaptContourGeometry
+import BaptDrillGeometry
+from BaptHighlight import CreateHighlightCommand
 import BaptMpfReader
-import BaptTools
+import BaptPath
+import BaptPocketOperation
 import BaptPostProcess
-import Op.OpContournage as OpContournage
-from Op import OpSurfacage
+import BaptPreferences
+import BaptTools
+import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
-from PySide import QtCore, QtGui
-import BaptUtilities
+import os
+
+import BaptOrigin
+
+from Op import DrillOp, OpContournage, OpSurfacage, PathOp
 from Probe import probeFace
+from PySide import QtCore, QtGui
+
 from utils import BQuantitySpinBox
 
 class CreateOriginCommand:    
@@ -96,7 +98,7 @@ class CreateContourCommand:
         contour_geometry = Gui.Selection.getSelection()[0]
         
         # Créer l'objet de contournage
-        obj = App.ActiveDocument.addObject("Part::FeaturePython", "Contournage")
+        obj = doc.addObject("Part::FeaturePython", "Contournage")
         
         # Ajouter la fonctionnalité
         contour = OpContournage.ContournageCycle(obj)
@@ -125,8 +127,31 @@ class CreateContourCommand:
         #             App.Console.PrintMessage(f"Contournage ajouté comme enfant de {parent.Label}\n")
         #             break
         
-        contour_geometry.addObject(obj)
-        contour_geometry.Group.append(obj)
+        pref = BaptPreferences.BaptPreferences()
+        modeAjout = pref.getModeAjout()
+        
+        # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
+        # 1 = ajouter à la géométrie comme enfant (pas conseillé)
+        # 2 = ajouter au groupe opérations du projet CAM
+        
+        if modeAjout == 1 or modeAjout == 0:
+
+            # Ajouter le contournage comme enfant de la géométrie du contour
+            contour_geometry.addObject(obj)
+            contour_geometry.Group.append(obj)
+
+        if modeAjout == 2 or modeAjout == 0:
+            camProject = BaptUtilities.find_cam_project(contour_geometry)
+            if camProject:
+                operations_group = camProject.Proxy.getOperationsGroup(camProject)
+                if modeAjout == 2:
+                    operations_group.addObject(obj)
+                    operations_group.Group.append(obj)
+                elif modeAjout == 0:
+                    link = doc.addObject('App::Link', f'Link_{obj.Label}')
+                    link.setLink(obj)
+                    operations_group.addObject(link)
+                    operations_group.Group.append(link)
 
         # Recomputer
         
@@ -486,13 +511,16 @@ class CreateHotReloadCommand:
         try:    
             from importlib import reload
             reload(BaptCamProject)
+            import BaptContourGeometry
             reload(BaptContourGeometry)
+            import BaptContournageTaskPanel
+            reload(BaptContournageTaskPanel)
+            import BaptContourTaskPanel
+            reload(BaptContourTaskPanel)
             reload(DrillOp) 
             reload(BaptTools)  # Ajouter le module BaptTools
             reload(OpContournage)
             reload(BaptPath)
-            import BaptContournageTaskPanel
-            reload(BaptContournageTaskPanel)
             import BaptDrillTaskPanel
             reload(BaptDrillTaskPanel)
             import BaptPreferences
@@ -507,6 +535,8 @@ class CreateHotReloadCommand:
             reload(BaptDrillOperationTaskPanel)
             import utils.BQuantitySpinBox as BQuantitySpinBox
             reload(BQuantitySpinBox)
+            import Tool.ToolTaskPannel as ToolTaskPannel
+            reload(ToolTaskPannel)
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 
@@ -578,20 +608,33 @@ class CreateDrillOperationCommand:
         # Définir le nom de la géométrie de perçage associée (au lieu d'un lien direct)
         obj.DrillGeometryName = drill_geometry.Name
         
-        # Ajouter l'opération comme enfant direct de la géométrie de perçage
-        # Maintenant que DrillGeometry est un DocumentObjectGroupPython, on peut utiliser addObject
-        drill_geometry.addObject(obj)
-        drill_geometry.Group.append(obj)
+        pref = BaptPreferences.BaptPreferences()
+        modeAjout = pref.getModeAjout()
+        
+        # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
+        # 1 = ajouter à la géométrie comme enfant (pas conseillé)
+        # 2 = ajouter au groupe opérations du projet CAM
+        
+        if modeAjout == 1 or modeAjout == 0:
+            App.Console.PrintMessage(f'm10 \n')
+            # Ajouter le contournage comme enfant de la géométrie du contour
+            drill_geometry.addObject(obj)
+            drill_geometry.Group.append(obj)
 
-        link = doc.addObject('App::Link', f'Link_{obj.Label}')
-        link.setLink(obj)
-        camProject = BaptUtilities.find_cam_project(drill_geometry)
-        if camProject:
-            App.Console.PrintMessage(f'camproj {camProject.Label}\n')
-            operations_group = camProject.Proxy.getOperationsGroup(camProject)
-            App.Console.PrintMessage(f'camproj op g {operations_group.Label}\n')
-            operations_group.addObject(link)
-            operations_group.Group.append(link)
+        if modeAjout == 2 or modeAjout == 0:
+            camProject = BaptUtilities.find_cam_project(drill_geometry)
+            if camProject:
+                operations_group = camProject.Proxy.getOperationsGroup(camProject)
+                if modeAjout == 2:
+                    App.Console.PrintMessage(f'm2 \n')
+                    operations_group.addObject(obj)
+                    operations_group.Group.append(obj)
+                elif modeAjout == 0:
+                    App.Console.PrintMessage(f'm0 \n')
+                    link = doc.addObject('App::Link', f'Link_{obj.Label}')
+                    link.setLink(obj)
+                    operations_group.addObject(link)
+                    operations_group.Group.append(link)
         
         # Recomputer
         doc.recompute()
@@ -604,22 +647,6 @@ class CreateDrillOperationCommand:
         App.Console.PrintMessage("Opération de perçage créée et ajoutée comme enfant de la géométrie de perçage.\n")
         
         doc.commitTransaction()
-
-class BaptCommand:
-    """Ma première commande"""
-
-    def GetResources(self):
-        return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
-                'MenuText': "Ma Commande",
-                'ToolTip': "Description de ma commande"}
-
-    def IsActive(self):
-        """Si cette fonction retourne False, la commande sera désactivée"""
-        return True
-
-    def Activated(self):
-        """Cette fonction est exécutée quand la commande est activée"""
-        App.Console.PrintMessage("Hello, FreeCAD!\n")
 
 class PostProcessGCodeCommand:
     """Commande pour générer un programme G-code à partir du projet CAM"""
@@ -678,13 +705,13 @@ class TestPathCommand:
 
         import BaptPath
         App.Console.PrintMessage("Testing BaptPath.path...\n")
-        BaptPath.path(obj)
+        PathOp.path(obj)
         
         #obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
 
         obj.Gcode = "R1=10\nG0 X0 Y0 Z10\nG1 Z0 F500\nLABEL1:\nG91\nG1 Z-2\nG90\nG1 X16 Y0\nG3 X20 Y4 I0 J4 \nG1 X20 Y20\nG1 X0 Y20\nG1 X0 Y0\nREPEAT LABEL1 P=R1\nG0 Z10\n"
         obj.Gcode = "G0 X20 Y20 Z2\nG81 Z-20 R2\nG0 X30\nG80\nG0 X40\nG83 Z-30 R2 Q2"
-        BaptPath.pathViewProviderProxy(obj.ViewObject)
+        PathOp.pathViewProviderProxy(obj.ViewObject)
 
         # Ajouter au groupe Operations
         operations_group = project.Proxy.getOperationsGroup(project)
@@ -699,7 +726,6 @@ class TestPathCommand:
         doc.recompute()
 
 # Enregistrer les commandes
-Gui.addCommand('Bapt_Command', BaptCommand())
 Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
 Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())

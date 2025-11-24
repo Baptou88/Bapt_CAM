@@ -1,4 +1,6 @@
 import os
+import FreeCAD as App
+import FreeCADGui 
 
 def get_module_path():
     '''
@@ -29,6 +31,15 @@ def getPostProPath(postPro: str):
     '''
     return os.path.join(get_module_path(), "PostPro", postPro)
 
+def getExamplesPath():
+    '''
+    Returns the examples path.
+    '''
+    return os.path.join(App.getUserConfigDir(), "Mod","Bapt","examples")
+
+def getDefaultToolsDbPath():
+    """Retourne le chemin par défaut de la base de données d'outils."""
+    return os.path.join(App.getUserAppDataDir(), "Bapt", "tools.db")
 
 def find_cam_project(o):
     """Remonte les parents (InList) jusqu'à trouver le CamProject."""

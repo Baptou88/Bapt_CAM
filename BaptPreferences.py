@@ -5,9 +5,79 @@ from PySide import QtCore, QtGui
 import BaptUtilities
 
 class BaptPreferences:
+    ''' Exemple d'utilisation:
+     from BaptPreferences import BaptPreferences
+     prefs = BaptPreferences()
+     db_path = prefs.getToolsDbPath()
+     dossier_gcode = prefs.getGCodeFolderPath()
+     '''
     def __init__(self):
+        
+        self.ToolsDbPath = None
+        self.GCodeFolderPath = None
+        self.AutoChildUpdate = None
+        self.ModeAjout= None
+        
+        # Load settings
+        self.preferences = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Bapt")
+        self.loadSettings()
+
+    
+        self.Dirty = False
+    
+
+    def getAutoChildUpdate(self) -> bool:
+        """Obtenir l'état de la mise à jour automatique des enfants"""
+        return self.AutoChildUpdate
+
+    
+    def saveSettings(self):
+        """Enregistrer les paramètres"""
+        self.preferences.SetString("ToolsDbPath", self.ToolsDbPath)
+        self.preferences.SetString("GCodeFolderPath", self.GCodeFolderPath)
+        self.preferences.SetBool("AutoChildUpdate", self.AutoChildUpdate)
+        self.preferences.SetInt("ModeAjout", self.ModeAjout)
+
+        self.Dirty = False
+        
+    def loadSettings(self):
+        """Charger les paramètres"""
+        self.ToolsDbPath = self.preferences.GetString("ToolsDbPath", "")
+        self.GCodeFolderPath = self.preferences.GetString("GCodeFolderPath", "")
+        self.AutoChildUpdate = self.preferences.GetBool("AutoChildUpdate", False)
+        self.ModeAjout = self.preferences.GetInt("ModeAjout", 0)
+        
+        
+    def getToolsDbPath(self) -> str:
+        """Obtenir le chemin de la base de données d'outils"""
+        path = self.ToolsDbPath
+        if not path or not os.path.isdir(os.path.dirname(path)):
+            path = BaptUtilities.getDefaultToolsDbPath()
+            # Créer le dossier s'il n'existe pas
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+        return path
+
+    def getGCodeFolderPath(self) -> str :
+        """Obtenir le dossier par défaut des programmes G-code"""
+        return self.GCodeFolderPath
+
+    
+
+    def getModeAjout(self) -> int:
+        """Obtenir le mode d'ajout des opérations"""
+        # preferences = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Bapt")
+        # return preferences.GetInt("ModeAjout", 0)  # Valeur par défaut 0
+        return self.ModeAjout
+    
+class BaptPreferencesPage(QtGui.QWidget):
+    name = "Bapt CAM Pref"
+    def __init__(self, parent=None):
+        #super(BaptPreferencesPage, self).__init__(parent)
+        super().__init__(parent)
         self.form = QtGui.QWidget()
-        self.form.setWindowTitle("Édition de l'opérateur")
+        self.form.setWindowTitle(self.name)
+        
+        # Create layout
         layout = QtGui.QVBoxLayout(self.form)
         
         # Groupe pour les paramètres de la base de données d'outils
@@ -32,18 +102,6 @@ class BaptPreferences:
         path_layout.addWidget(self.toolsDbPathButton)
         tools_db_layout.addLayout(path_layout)
         
-        # Chemin du dossier G-code
-        gcode_folder_layout = QtGui.QHBoxLayout()
-        gcode_folder_label = QtGui.QLabel("Dossier par défaut des programmes G-code:")
-        self.gcodeFolderPath = QtGui.QLineEdit()
-        self.gcodeFolderPath.setReadOnly(True)  # Rendre le champ en lecture seule pour éviter les erreurs
-        self.gcodeFolderPathButton = QtGui.QPushButton("Parcourir...")
-        
-        gcode_folder_layout.addWidget(gcode_folder_label)
-        gcode_folder_layout.addWidget(self.gcodeFolderPath)
-        gcode_folder_layout.addWidget(self.gcodeFolderPathButton)
-        tools_db_layout.addLayout(gcode_folder_layout)
-        
         # Boutons pour créer une nouvelle base de données ou utiliser celle par défaut
         buttons_layout = QtGui.QHBoxLayout()
         
@@ -63,7 +121,35 @@ class BaptPreferences:
         #self.auto_child_update_checkbox.setChecked(BaptUtilities.getAutoChildUpdate())
         #self.auto_child_update_checkbox.stateChanged.connect(self.onAutoChildUpdateChanged)
 
+        mode_ajout_label = QtGui.QLabel("Mode d'ajout des opérations:")
+        mode_ajout_label.setToolTip("Sélectionnez comment les opérations doivent être ajoutées aux projets CAM.")
+        layout.addWidget(mode_ajout_label)
+        
+        self.mode_ajout_combo = QtGui.QComboBox()
+        self.mode_ajout_combo.addItem("Ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien (default)")
+        self.mode_ajout_combo.addItem("Ajouter à la géométrie comme enfant (pas conseillé)")
+        self.mode_ajout_combo.addItem("Ajouter uniquement au groupe opérations du projet CAM comme lien")
+        
+
+                
+        # Chemin du dossier G-code
+        gcode_group = QtGui.QGroupBox("Dossier G-code par défaut")
+        gcode_folder_layout = QtGui.QHBoxLayout()
+        gcode_folder_label = QtGui.QLabel("Dossier par défaut des programmes G-code:")
+        self.gcodeFolderPath = QtGui.QLineEdit()
+        self.gcodeFolderPath.setReadOnly(True)  # Rendre le champ en lecture seule pour éviter les erreurs
+        self.gcodeFolderPathButton = QtGui.QPushButton("Parcourir...")
+        
+        gcode_folder_layout.addWidget(gcode_folder_label)
+        gcode_folder_layout.addWidget(self.gcodeFolderPath)
+        gcode_folder_layout.addWidget(self.gcodeFolderPathButton)
+        gcode_group.setLayout(gcode_folder_layout)
+
+        layout.addWidget(self.mode_ajout_combo)
+
         layout.addWidget(tools_db_group)
+
+        layout.addWidget(gcode_group)
         
         # Ajouter un espace extensible en bas
         layout.addStretch()
@@ -73,18 +159,32 @@ class BaptPreferences:
         self.createNewDbButton.clicked.connect(self.createNewDb)
         self.useDefaultDbButton.clicked.connect(self.useDefaultDb)
         self.gcodeFolderPathButton.clicked.connect(self.chooseGCodeFolder)
+        self.mode_ajout_combo.currentIndexChanged.connect(self.onModeAjoutChanged)
         
-        # Load settings
-        self.preferences = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Bapt")
+        
+        
+        # Create BaptPreferences instance
+        self.prefs = BaptPreferences()
         self.loadSettings()
-    
-    def onAutoChildUpdateChanged(self, state):
-        """Gérer le changement de l'option de mise à jour automatique des enfants"""
-        is_checked = state == QtCore.Qt.Checked
+        
+        
+    def saveSettings(self):
+        """Enregistrer les paramètres"""
+        App.Console.PrintMessage(f'saveSettings !\n')
+        self.prefs.ToolsDbPath = self.toolsDbPath.text()
+        self.prefs.GCodeFolderPath = self.gcodeFolderPath.text()
+        self.prefs.AutoChildUpdate = self.auto_child_update_checkbox.isChecked()
+        self.prefs.ModeAjout = self.mode_ajout_combo.currentIndex()
 
-    def getAutoChildUpdate(self):
-        """Obtenir l'état de la mise à jour automatique des enfants"""
-        return self.preferences.GetBool("AutoChildUpdate", True)    
+        self.prefs.saveSettings()
+        
+    def loadSettings(self):
+        """Charger les paramètres"""
+
+        self.toolsDbPath.setText(self.prefs.ToolsDbPath)
+        self.gcodeFolderPath.setText(self.prefs.GCodeFolderPath)
+        self.auto_child_update_checkbox.setChecked(self.prefs.AutoChildUpdate)
+        self.mode_ajout_combo.setCurrentIndex(self.prefs.getModeAjout())
 
     def chooseExistingDb(self):
         """Sélectionner une base de données existante"""
@@ -105,7 +205,7 @@ class BaptPreferences:
                 "Base de données sélectionnée",
                 f"La base de données à l'emplacement suivant sera utilisée:\n{path}"
             )
-    
+
     def createNewDb(self):
         """Créer une nouvelle base de données"""
         path = QtGui.QFileDialog.getSaveFileName(
@@ -130,21 +230,7 @@ class BaptPreferences:
                 f"Une nouvelle base de données sera créée à l'emplacement suivant:\n{path}\n\n"
                 "La base de données sera initialisée lors de la prochaine utilisation du gestionnaire d'outils."
             )
-    
-    def useDefaultDb(self):
-        """Utiliser la base de données par défaut"""
-        self.toolsDbPath.clear()
-        self.saveSettings()
-        
-        default_path = BaptUtilities.getToolsDbPath()
-        
-        # Afficher un message de confirmation
-        QtGui.QMessageBox.information(
-            self.form,
-            "Base de données par défaut",
-            f"La base de données par défaut sera utilisée à l'emplacement suivant:\n{default_path}"
-        )
-    
+
     def chooseGCodeFolder(self):
         """Sélectionner le dossier par défaut des programmes G-code"""
         folder = QtGui.QFileDialog.getExistingDirectory(self.form, "Sélectionner le dossier G-code")
@@ -158,58 +244,25 @@ class BaptPreferences:
                 "Dossier G-code sélectionné",
                 f"Le dossier G-code à l'emplacement suivant sera utilisé:\n{folder}"
             )
-    
-    def saveSettings(self):
-        """Enregistrer les paramètres"""
-        self.preferences.SetString("ToolsDbPath", self.toolsDbPath.text())
-        self.preferences.SetString("GCodeFolderPath", self.gcodeFolderPath.text())
-        self.preferences.SetBool("AutoChildUpdate", self.auto_child_update_checkbox.isChecked())
-        
-    def loadSettings(self):
-        """Charger les paramètres"""
-        self.toolsDbPath.setText(self.preferences.GetString("ToolsDbPath", ""))
-        self.gcodeFolderPath.setText(self.preferences.GetString("GCodeFolderPath", ""))
-        self.auto_child_update_checkbox.setChecked(self.preferences.GetBool("AutoChildUpdate", True))
-        
-    def getToolsDbPath(self):
-        """Obtenir le chemin de la base de données d'outils"""
-        path = self.preferences.GetString("ToolsDbPath", "")
-        if not path or not os.path.isdir(os.path.dirname(path)):
-            path = os.path.join(App.getUserAppDataDir(), "Bapt", "tools.db")
-            # Créer le dossier s'il n'existe pas
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-        return path
 
-    def getGCodeFolderPath(self):
-        """Obtenir le dossier par défaut des programmes G-code"""
-        return self.preferences.GetString("GCodeFolderPath", "")
+    def onModeAjoutChanged(self, index):
+        """Gérer le changement du mode d'ajout des opérations"""
+        pass  
 
+    def onAutoChildUpdateChanged(self, state):
+        """Gérer le changement de l'option de mise à jour automatique des enfants"""
+        is_checked = state == QtCore.Qt.Checked
 
-class BaptPreferencesPage(QtGui.QWidget):
-    name = "Bapt CAM Pref"
-    def __init__(self, parent=None):
-        #super(BaptPreferencesPage, self).__init__(parent)
-        super().__init__(parent)
-        self.form = QtGui.QWidget()
-        self.form.setWindowTitle(self.name)
-        # Create layout
-        layout = QtGui.QVBoxLayout(self.form)
+    def useDefaultDb(self):
+        """Utiliser la base de données par défaut"""
+        self.toolsDbPath.clear()
+        self.saveSettings()
         
-        # Create BaptPreferences instance
-        self.prefs = BaptPreferences()
-        layout.addWidget(self.prefs.form)
+        default_path = BaptUtilities.getDefaultToolsDbPath()
         
-    def saveSettings(self):
-        """Enregistrer les paramètres"""
-        self.prefs.saveSettings()
-        
-    def loadSettings(self):
-        """Charger les paramètres"""
-        self.prefs.loadSettings()
-
-
-# Exemple d'utilisation:
-# from BaptPreferences import BaptPreferences
-# prefs = BaptPreferences()
-# db_path = prefs.getToolsDbPath()
-# dossier_gcode = prefs.getGCodeFolderPath()
+        # Afficher un message de confirmation
+        QtGui.QMessageBox.information(
+            self.form,
+            "Base de données par défaut",
+            f"La base de données par défaut sera utilisée à l'emplacement suivant:\n{default_path}"
+        )

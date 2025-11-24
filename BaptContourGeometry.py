@@ -231,35 +231,37 @@ class ContourGeometry:
                     next_edge = sorted_edges[i+1]
                     if current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[0].Point) <  1e-6 :
                         bon_sens = True
-                        App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
+                        #App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
                     elif current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[-1].Point) <  1e-6 :
                         bon_sens = True
-                        App.Console.PrintMessage(f"Edge {i} Ok ,Edge {i+1} est inversée, inversion de l'arête pour correspondre au sens.\n")
+                        #App.Console.PrintMessage(f"Edge {i} Ok ,Edge {i+1} est inversée, inversion de l'arête pour correspondre au sens.\n")
                     elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[-1].Point) <  1e-6 :
                         bon_sens = False
-                        App.Console.PrintMessage(f"Edge {i} et Edge {i+1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
+                        #App.Console.PrintMessage(f"Edge {i} et Edge {i+1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
                     elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[0].Point) <  1e-6 :
                         bon_sens = False
-                        App.Console.PrintMessage(f"Edge {i} est inversée, inversion de l'arête pour correspondre au sens.\n")
+                        #App.Console.PrintMessage(f"Edge {i} est inversée, inversion de l'arête pour correspondre au sens.\n")
                     else:
-                        App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")  
+                        #App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")  
+                        pass
                 else:
                     prev_edge = sorted_edges[i-1]
                     
                     if prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[0].Point) <  1e-6 :
                         bon_sens = True
-                        App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
+                        #App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
                     elif prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[-1].Point) <  1e-6 :
                         bon_sens = False
-                        App.Console.PrintMessage(f"Edge {i} NOk ,Edge {i-1} est inversée, inversion de l'arête pour correspondre au sens.\n")
+                        #App.Console.PrintMessage(f"Edge {i} NOk ,Edge {i-1} est inversée, inversion de l'arête pour correspondre au sens.\n")
                     elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[-1].Point) <  1e-6 :
                         bon_sens = False
-                        App.Console.PrintMessage(f"Edge {i} et Edge {i-1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
+                        #App.Console.PrintMessage(f"Edge {i} et Edge {i-1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
                     elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[0].Point) <  1e-6 :
                         bon_sens = True
-                        App.Console.PrintMessage(f"Edge {i} Ok, inversion de l'arête pour correspondre au sens.\n")
+                        #App.Console.PrintMessage(f"Edge {i} Ok, inversion de l'arête pour correspondre au sens.\n")
                     else:
-                        App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")                    
+                        #App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n") 
+                        pass                   
 
                 self.debugEdge(edge,i,"")
 
@@ -268,14 +270,14 @@ class ContourGeometry:
                 if arrow:
                     direction_arrows.append(arrow)
 
-                edge_zref = self._create_adjusted_edge(edge, obj.Zref, selected= (i == selected_index))
-                edge_zref = edge
+                #edge_zref = self._create_adjusted_edge(edge, obj.Zref, selected= (i == selected_index))
+                edge_zref = edge.copy().translate(App.Vector(0,0, obj.Zref - edge.Vertexes[0].Z))
 
-                if obj.DepthMode == "Relatif":
-                    edge_zfinal = self._create_adjusted_edge(edge, obj.Zref + obj.depth, selected=(i == selected_index))
-                else:
-                    edge_zfinal = self._create_adjusted_edge(edge, obj.depth, selected=(i == selected_index))
-                edge_zfinal = edge.copy().translate(App.Vector(0,0, obj.depth if obj.DepthMode == "Relatif" else obj.depth - edge.Vertexes[0].Z))
+                # if obj.DepthMode == "Relatif":
+                #     edge_zfinal = self._create_adjusted_edge(edge, obj.Zref + obj.depth, selected=(i == selected_index))
+                # else:
+                #     edge_zfinal = self._create_adjusted_edge(edge, obj.depth, selected=(i == selected_index))
+                edge_zfinal = edge.copy().translate(App.Vector(0,0, obj.Zref - edge.Vertexes[0].Z + obj.depth if obj.DepthMode == "Relatif" else obj.depth - edge.Vertexes[0].Z))
                 adjusted_edges_zref.append(edge_zref)
                 adjusted_edges_depth.append(edge_zfinal)
 
@@ -618,12 +620,12 @@ class ContourGeometry:
             arrow_p1 = end_point.sub(tangent_z.multiply(size / 3.0)).add(perp.multiply(size / 4.0))
             arrow_p2 = end_point.sub(tangent_z.multiply(size / 3.0)).sub(perp.multiply(size / 4.0))
 
-            perp_line = Part.makeLine(mid_point, shifted_mid )
+            #perp_line = Part.makeLine(mid_point, shifted_mid )
 
             arrow_line1 = Part.makeLine(end_point, arrow_p1)
             arrow_line2 = Part.makeLine(end_point, arrow_p2)
 
-            arrow_shape = Part.makeCompound([arrow_line, arrow_line1, arrow_line2, perp_line])
+            arrow_shape = Part.makeCompound([arrow_line, arrow_line1, arrow_line2])
             return arrow_shape
 
         except Exception as e:

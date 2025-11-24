@@ -1,6 +1,8 @@
-from BaptPath import baseOp, baseOpViewProviderProxy
+from Gui import cuttingConditionTaskPanel as cc
+from Op.BaseOp import baseOpViewProviderProxy
 import FreeCAD as App
 import FreeCADGui as Gui
+from Op.BaseOp import baseOp
 from PySide import QtGui
 from Tool.ToolTaskPannel import ToolTaskPanel
 import Part 
@@ -60,7 +62,7 @@ class Surfacage(baseOp):
 
         obj.Gcode = ""
         obj.Gcode += f"G0 X{posX} Y{posY} Z{posZ+2}\n"
-        obj.Gcode += f"G1 Z{posZ} F500\n"
+        obj.Gcode += f"G1 Z{posZ} F{obj.FeedRate.getValueAs('mm/min')}\n"
 
 
         for i in range(int(nbPasseLat)):
@@ -249,10 +251,11 @@ class SurfacageTaskPanel:
         self.obj = obj
         self.deleteOnReject = deleteOnReject
 
+        self.cuttingCondition = cc.cuttingConditionTaskPanel(obj)
+
         self.ui1 = QtGui.QWidget()
         ui2 = ToolTaskPanel(obj)
-        self.form = [self.ui1,ui2.getForm()]
-
+        self.form = [self.ui1,ui2.getForm(),self.cuttingCondition.getForm()]
         self.ui1.setWindowTitle("Édition de l'opérateur")
         self.ui1.setWindowIcon(QtGui.QIcon(BaptUtilities.getIconPath("surfacage.svg")))
 
@@ -289,7 +292,7 @@ class SurfacageTaskPanel:
         #self.depthEdit.valueChanged.connect(self.updateValue)
         #self.recouvrement.valueChanged.connect(self.updateValue)
 
-        ui2.initVListeners()
+        
                 
         if self.obj.Tool:
             self.obj.Tool.Visibility = True

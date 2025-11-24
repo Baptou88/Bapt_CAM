@@ -351,9 +351,9 @@ class PostProcessorTaskPanel:
     
     def postProcessorSelectionChanged(self, state, PostProcessorName):
         """Appelé quand une checkbox de postprocessor est modifiée"""
-        isChecked = (state == QtCore.Qt.Checked)
-
-        App.Console.PrintMessage(f"PostProcessor '{PostProcessorName}' {'sélectionné' if isChecked else 'désélectionné'}\n")
+        isChecked = (state == 2)
+        #App.Console.PrintMessage(f'{state} {QtCore.Qt.Checked}\n')
+        #App.Console.PrintMessage(f"PostProcessor '{PostProcessorName}' {'sélectionné' if isChecked else 'désélectionné'}\n")
 
         # Mettre à jour la propriété du projet CAM si elle existe
         if hasattr(self.obj, "PostProcessor"):

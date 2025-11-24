@@ -23,7 +23,10 @@ class BaptWorkbench (Workbench):
         It is executed once in a FreeCAD session."""
         import BaptCommands
         import BaptTools
-        self.list = ["Bapt_CreateCamProject", "Bapt_CreateSurfacage", "Bapt_Command", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateContourEditableGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreatePocketOperation", "Bapt_CreateOrigin", "Bapt_CreateHotReload", "ImportMpf", "Bapt_PostProcessGCode", "Bapt_CreateProbeFace", "Bapt_TestPath", "Bapt_HighlightCollisions"]  # Ajout des commandes d'opération, poche et origine
+
+        self.addExamplePath()
+
+        self.list = ["Bapt_CreateCamProject", "Bapt_CreateSurfacage", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateContourEditableGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreatePocketOperation", "Bapt_CreateOrigin", "Bapt_CreateHotReload", "ImportMpf", "Bapt_PostProcessGCode", "Bapt_CreateProbeFace", "Bapt_TestPath", "Bapt_HighlightCollisions"]  # Ajout des commandes d'opération, poche et origine
         self.appendToolbar("Bapt Tools", self.list)
         self.appendMenu("Bapt", self.list)
 
@@ -38,6 +41,76 @@ class BaptWorkbench (Workbench):
     def GetClassName(self):
         """This function is mandatory if this is a full Python workbench"""
         return "Gui::PythonWorkbench"
+
+    def addExamplePath(self):
+        """Add the examples path to FreeCAD's standard paths"""
+        start_prefs = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Start")
+        customFolder = start_prefs.GetString(
+            "CustomFolder", ""
+        )  # Note: allow multiple locations separated by ";;"
+        
+        customFolders = [f.strip() for f in customFolder.split(";;") if f.strip()]
+        import BaptUtilities
+        exPath = BaptUtilities.getExamplesPath()
+        
+        if exPath not in customFolders:
+            #boite de dialogue pour demander à l'utilisateur s'il veut ajouter le dossier d'exemples
+            
+            from PySide import QtWidgets, QtCore, QtGui
+            msgBox = QtWidgets.QMessageBox()
+            msgBox.setIcon(QtWidgets.QMessageBox.Question)
+            msgBox.setWindowTitle("Add Examples Folder")
+            msgBox.setText("Do you want to add the Bapt examples folder to the Start workbench?")
+            msgBox.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+            msgBox.setDefaultButton(QtWidgets.QMessageBox.Yes)
+            ret = msgBox.exec()
+            if ret != QtWidgets.QMessageBox.Yes:
+                return
+            customFolders.append(exPath)
+            newCustomFolder = ";;".join(customFolders)
+            start_prefs.SetString("CustomFolder", newCustomFolder)
+            msgBox = QtWidgets.QMessageBox()
+            msgBox.setIcon(QtWidgets.QMessageBox.Information)
+            msgBox.setWindowTitle("Add Examples Folder")
+            msgBox.setText("The Bapt examples folder has been added to the Start workbench.\nYou may need to restart FreeCAD for the changes to take effect.")
+            msgBox.exec()
+            # class addExamplePath(QtGui.QMainWindow):
+            #     def __init__(self):
+            #         super(addExamplePath, self).__init__()
+            #         self.initUI()
+            #     def initUI(self):
+            #         self.result = "Canceled"
+            #         # create our window
+            #         # define window		xLoc,yLoc,xDim,yDim
+            #         self.setGeometry(	250, 250, 400, 150)
+            #         self.setWindowTitle("Add Examples Folder")
+            #         self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
+            #         self.setMouseTracking(True)
+            #         # create Labels
+            #         self.label4 = QtGui.QLabel("Do you want to add the Bapt examples folder to the Start workbench?", self)
+            #         self.label4.move(20, 20)
+            #         # cancel button
+            #         cancelButton = QtGui.QPushButton('Cancel', self)
+            #         cancelButton.clicked.connect(self.onCancel)
+            #         cancelButton.setAutoDefault(True)
+            #         cancelButton.move(150, 110)
+            #         # OK button
+            #         okButton = QtGui.QPushButton('OK', self)
+            #         okButton.clicked.connect(self.onOk)
+            #         okButton.move(260, 110)
+            #         # now make the window visible
+            #         self.show()
+            #     def onCancel(self):
+            #         self.result			= "Canceled"
+            #         self.close()
+            #     def onOk(self):
+            #         self.result			= "OK"
+            #         self.close()
+
+            # form = addExamplePath()
+
+            
+        
 
 Gui.addWorkbench(BaptWorkbench())
 

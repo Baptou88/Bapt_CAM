@@ -28,9 +28,9 @@ class BaptWorkbench (Workbench):
         import BaptCommands # import here all the needed files
         # Ajouter le répertoire au chemin de recherche Python
         path = os.path.dirname(__file__)
-        self.list = ["Bapt_Command"] # A list of command names created in the line above
-        self.appendToolbar("Bapt Tools", self.list) # creates a new toolbar with your commands
-        self.appendMenu("Bapt", self.list) # creates a new menu
+        # self.list = ["Bapt_Command"] # A list of command names created in the line above
+        # self.appendToolbar("Bapt Tools", self.list) # creates a new toolbar with your commands
+        # self.appendMenu("Bapt", self.list) # creates a new menu
 
     def Activated(self):
         """This function is executed when the workbench is activated"""

@@ -4,10 +4,10 @@ setlocal enabledelayedexpansion
 echo Creation du lien symbolique pour le dossier examples...
 
 :: Définir les chemins
-set "SOURCE_DIR=%~dp0examples"
-:: set "SOURCE_DIR=%~dp0"
-:: set "SOURCE_DIR=%SOURCE_DIR:~0,-1%"
-set "TARGET_DIR=%APPDATA%\FreeCAD\Mod\BaptExamples"
+:: set "SOURCE_DIR=%~dp0examples"
+set "SOURCE_DIR=%~dp0"
+set "SOURCE_DIR=%SOURCE_DIR:~0,-1%"
+set "TARGET_DIR=%APPDATA%\FreeCAD\v1-1\Mod\Bapt"
 
 :: Vérifier que le dossier source existe
 if not exist "%SOURCE_DIR%" (
@@ -20,6 +20,13 @@ if not exist "%SOURCE_DIR%" (
 if not exist "%APPDATA%\FreeCAD\Mod" (
     echo Creation du dossier %APPDATA%\FreeCAD\Mod
     mkdir "%APPDATA%\FreeCAD\Mod"
+)
+
+
+:: Créer le dossier parent si nécessaire
+if not exist "%APPDATA%\FreeCAD\v1-1\Mod" (
+    echo Creation du dossier %APPDATA%\FreeCAD\v1-1\Mod
+    mkdir "%APPDATA%\FreeCAD\v1-1\Mod"
 )
 
 :: Supprimer le lien existant s'il existe
