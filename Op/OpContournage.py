@@ -170,7 +170,8 @@ class ContournageCycle(baseOp):
                     actual_offset_value_surep = actual_offset_value + obj.SurepRadiale
                 else:
                     actual_offset_value_surep = actual_offset_value - obj.SurepRadiale
-                if is_contour_closed:
+
+                if is_contour_closed and False:
                     face_for_offset = Part.Face(wire_at_pass_z)
                     offset_shape_result = face_for_offset.makeOffsetShape(actual_offset_value, 0.1, fill=False)
                     if offset_shape_result.Wires:
@@ -179,10 +180,10 @@ class ContournageCycle(baseOp):
                          offset_toolpath_wire = Part.Wire(offset_shape_result.Edges)
                 else:
 
-                    offset_shape_result = wire_at_pass_z.makeOffset2D(actual_offset_value_surep,  openResult=True)#join=0, fill=False,
+                    offset_shape_result = wire_at_pass_z.makeOffset2D(actual_offset_value_surep,  openResult=not is_contour_closed)#join=0, fill=False,
 
                     if obj.Compensation == "Machine":
-                        offset_shape_result = offset_shape_result.Wires[0].makeOffset2D(-actual_offset_value,  openResult=True)#join=0, fill=False, 
+                        offset_shape_result = offset_shape_result.Wires[0].makeOffset2D(-actual_offset_value,  openResult=not is_contour_closed)#join=0, fill=False, 
                     
                     
                     if offset_shape_result.Wires:

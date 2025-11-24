@@ -75,6 +75,12 @@ class ContournageTaskPanel:
         toolLayout.addRow("Compensation de l'outil:", self.compensationTool)
         self.compensationTool.currentTextChanged.connect(self.updateCompensation)
         
+        #Surep
+        self.SurepAxiale = BQuantitySpinBox.BQuantitySpinBox(obj, "SurepAxiale")
+        toolLayout.addRow("Surep Axiale:", self.SurepAxiale.getWidget())
+        self.SurepRadiale = BQuantitySpinBox.BQuantitySpinBox(obj, "SurepRadiale")
+        toolLayout.addRow("Surep Radiale:", self.SurepRadiale.getWidget())
+        
         toolGroup.setLayout(toolLayout)
         layout.addWidget(toolGroup)
         

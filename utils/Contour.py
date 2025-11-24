@@ -90,25 +90,66 @@ def edgeToGcode(edge, bonSens=True, current_z=0.0, rapid=False, feed_rate=1000,i
         angle_start = vec_start.getAngle(App.Vector(1, 0, 0))
         angle_end = vec_end.getAngle(App.Vector(1, 0, 0))
 
+        # 2. Calculer le produit vectoriel pour déterminer l'orientation
+        # cross_product.z > 0 : sens anti-horaire (CCW)
+        # cross_product.z < 0 : sens horaire (CW)
+        cross_product = vec_start.cross(vec_end)
+
+        # 3. Prendre en compte l'orientation de l'axe du cercle
+        # Si l'axe pointe vers le bas (z < 0), inverser la logique
+        axis_z = circle.Axis.z
 
         u1 = edge.FirstParameter
         u2 = edge.LastParameter
+        arc_angle = u2 - u1
 
-
-        App.Console.PrintMessage(f'O{edge.Orientation} {bonSens} u1:{u1:.3f} u2:{u2:.3f} {u2-u1:.3f} {is_offset_inward}\n')
         # Determine direction
-        if  u2-u1 > math.pi :
-            # if angle_end < angle_start:
-            #     angle_end += 2 * math.pi
-            if  is_offset_inward:
-                arc = "G3"  # Clockwise
-            else:
-                arc = "G2"  
+        # if  u2-u1 > math.pi :
+        #     # if angle_end < angle_start:
+        #     #     angle_end += 2 * math.pi
+        #     if  is_offset_inward:
+        #         arc = "G3"  # Clockwise
+        #     else:
+        #         arc = "G2"  
+        # else:
+        #     if not is_offset_inward: 
+        #         arc = "G3"
+        #     else:
+        #         arc = "G2"
+        # if edge.Curve.Axis.z > 0:
+        #     arc = "G2" if arc == "G3" else "G3"
+
+        
+        # # Normaliser l'angle dans [0, 2π]
+        # if arc_angle < 0:
+        #     arc_angle += 2 * math.pi
+
+        # 5. Déterminer si c'est CCW ou CW dans le plan XY
+        # Logique de base : cross_product.z * axis_z > 0 → CCW, sinon CW
+        is_ccw = ( axis_z) > 0
+
+        #App.Console.PrintMessage(f'O {edge.Orientation} dir {edge.Curve.Axis} {bonSens} u1:{u1:.3f} u2:{u2:.3f} {cross_product.z} {axis_z} {is_offset_inward}\n')
+
+        # 6. Ajuster selon l'angle de l'arc
+        # Si l'arc fait plus de 180°, le produit vectoriel peut être trompeur
+        # if arc_angle > math.pi:
+        #     # Pour les arcs > 180°, vérifier le point médian
+        #     mid_param = (u1 + u2) / 2
+        #     mid_point = edge.valueAt(mid_param)
+        #     vec_mid = mid_point.sub(center)
+            
+        #     # Recalculer avec le point médian
+        #     cross_mid = vec_start.cross(vec_mid)
+        #     is_ccw = (cross_mid.z * axis_z) > 0
+
+        if not bonSens:
+            is_ccw = not is_ccw
+        if is_ccw:
+            arc = "G3"  # Counter-clockwise
         else:
-            if not is_offset_inward: 
-                arc = "G3"
-            else:
-                arc = "G2"
+            arc = "G2"  # Clockwise
+        
+            
         gcode += f"{arc} X{end_point.x:.3f} Y{end_point.y:.3f} I{center.x - start_point.x:.3f} J{center.y - start_point.y:.3f} F{feed_rate}\n"
         
     elif edge.CurveType == 'BSplineCurve': # More specific BSpline handling if possible

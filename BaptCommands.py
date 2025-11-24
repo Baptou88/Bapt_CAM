@@ -511,13 +511,16 @@ class CreateHotReloadCommand:
         try:    
             from importlib import reload
             reload(BaptCamProject)
+            import BaptContourGeometry
             reload(BaptContourGeometry)
+            import BaptContournageTaskPanel
+            reload(BaptContournageTaskPanel)
+            import BaptContourTaskPanel
+            reload(BaptContourTaskPanel)
             reload(DrillOp) 
             reload(BaptTools)  # Ajouter le module BaptTools
             reload(OpContournage)
             reload(BaptPath)
-            import BaptContournageTaskPanel
-            reload(BaptContournageTaskPanel)
             import BaptDrillTaskPanel
             reload(BaptDrillTaskPanel)
             import BaptPreferences

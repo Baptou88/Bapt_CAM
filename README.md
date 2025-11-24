@@ -10,7 +10,9 @@ And in my personal life, I'm very interested in software programming.
 
 Therefore, I wanted to develop software that would meet my needs, and I found FreeCAD to be a very good basis for developing my own MOD.
 
-![Bapt's CAM Workbench Screenshot](/resources/image.bmp)
+![Bapt's CAM Workbench Screenshot v0.0.1](/resources/image.bmp)
+
+![Bapt's CAM Workbench Screenshot v0.0.3](/resources/Animation.gif)
 
 ## Philosophy and goal
 
