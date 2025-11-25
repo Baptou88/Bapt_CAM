@@ -2,6 +2,7 @@
 from collections import deque
 import math
 import sys
+from BaptUtilities import find_cam_project
 import FreeCAD as App
 import FreeCADGui
 
@@ -115,9 +116,10 @@ class GcodeAnimator:
         self.stock = None
 
         self.stockMesh = None
-        project = FreeCADGui.activeView().getActiveObject("camproject")  #FIXME 
+        
+        # Récupérer le projet CAM actif
+        project = find_cam_project(self.vp.Object)
         if project:
-            #App.Console.PrintMessage(f'project name : {project.Name}\n')
             self.stock = project.Proxy.getStock(project)
             self.stockMesh = App.activeDocument().addObject("Mesh::Feature", "stockMesh")
             self.stockMesh.Mesh = MeshPart.meshFromShape(Shape=self.stock.Shape, MaxLength=5)
@@ -390,7 +392,6 @@ class GcodeAnimationControl():
         self.frequenceSpinBox = QtGui.QDoubleSpinBox()
         self.frequenceSpinBox.setRange(0., 1000.0)
         self.frequenceSpinBox.setValue(self.animator.frequence_cut)
-        self.frequenceSpinBox.setSuffix(" mm/s")
         self.frequenceSpinBox.valueChanged.connect(self.frequenceChanged)
         frequenceLayout.addWidget(self.frequenceSpinBox)
         
@@ -480,19 +481,25 @@ class GcodeAnimationControl():
         """Arrête l'animation quand on ferme la fenêtre"""
         self.animator.stop()
         self.updateTimer.stop()
+        if self.animator.tool is not None:
+            self.animator.tool.Visibility = False
+        if self.animator.stockMesh is not None:
+            App.activeDocument().removeObject(self.animator.stockMesh.Name)
+            self.animator.stockMesh = None
+        if self.animator.toolMesh is not None:
+            App.activeDocument().removeObject(self.animator.toolMesh.Name)
+            self.animator.toolMesh = None
         #super(GcodeAnimationControl, self).closeEvent(event)
 
     def accept(self):
         self.stop()
-        if self.animator.tool is not None:
-            self.animator.tool.Visibility = False
+        self.closeEvent(None)
         FreeCADGui.Control.closeDialog()
         return True
     
     def reject(self):
         self.stop()
-        if self.animator.tool is not None:
-            self.animator.tool.Visibility = False
+        self.closeEvent(None)
         FreeCADGui.Control.closeDialog()
         return False
     

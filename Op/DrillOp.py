@@ -205,19 +205,19 @@ class DrillOperation(baseOp):
                 prisePasse = (profTotale / nbTour) / 2
                 
 
-                obj.Gcode += f"LABEL1:\n"
+                obj.Gcode += f"{obj.Label}:\n"
                 obj.Gcode += f"G91\n"
                 obj.Gcode += f"G1 X{r}\n"
                 for _ in range(nbTour):
-                    obj.Gcode += f"G3 X{-d} Z-{prisePasse} I{-r} J{0}\n"
-                    obj.Gcode += f"G3 X{d} Z-{prisePasse} I{r} J{0}\n"
+                    obj.Gcode += f"G3 X{-d} Y0 Z-{prisePasse} I{-r} J{0}\n"
+                    obj.Gcode += f"G3 X{d} Y0 Z-{prisePasse} I{r} J{0}\n"
 
-                obj.Gcode += f"G3 X{-d} I{-r} J{0}\n"
-                obj.Gcode += f"G3 X{d} I{r} J{0}\n"
+                obj.Gcode += f"G3 X{-d} Y0 I{-r} J{0}\n"
+                obj.Gcode += f"G3 X{d} Y0 I{r} J{0}\n"
                 obj.Gcode += f"G1 X{-r}\n"
                 obj.Gcode += f"G1 Z{profTotale}\n"
                 obj.Gcode += f"G90\n"
-                obj.Gcode += f"LABEL2:\n"
+                obj.Gcode += f"{obj.Label}_FIN:\n"
             else:
                 raise Exception(f"Unsupported Cycle Type : {obj.CycleType}")
             
@@ -225,7 +225,7 @@ class DrillOperation(baseOp):
                     
                 obj.Gcode += f"G0 X{positions[i].x} Y{positions[i].y} Z{positions[i].z + obj.SafeHeight.Value} \n"
                 if obj.CycleType == "Contournage":
-                    obj.Gcode += "REPEAT LABEL1 LABEL2 P=1\n"
+                    obj.Gcode += f"REPEAT {obj.Label} {obj.Label}_FIN P=1\n"
                     # obj.Gcode += f"G91\n"
                     # obj.Gcode += f"G1 X{r}\n"
                     # obj.Gcode += f"G3 X{-d} Z-0.5 I{-r} J{0}\n"

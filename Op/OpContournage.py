@@ -241,10 +241,10 @@ class ContournageCycle(baseOp):
                     else:
                         approachPoint = core_toolpath_start_pt + tangent_start.multiply(approach_length)
                     pass_approach_edges.append(Part.makeLine(approachPoint, core_toolpath_start_pt))
-                    obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{rapid_traverse_z:.3f}\n"
-                    obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{pass_z + 2:.3f}\n"
-                    obj.Gcode += f"G1 Z{pass_z:.3f}\n"
-                    obj.Gcode += f"G1 X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f}\n"
+                    # obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{rapid_traverse_z:.3f}\n"
+                    # obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{pass_z + 2:.3f}\n"
+                    # obj.Gcode += f"G1 Z{pass_z:.3f}\n"
+                    # obj.Gcode += f"G1 X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f}\n"
                 elif approach_type == "Perpendiculaire":
                     if is_offset_inward:
                         approachPoint = core_toolpath_start_pt + App.Vector(-tangent_start.y, tangent_start.x, 0).normalize().multiply(approach_length)
@@ -252,9 +252,10 @@ class ContournageCycle(baseOp):
                         approachPoint = core_toolpath_start_pt - App.Vector(-tangent_start.y, tangent_start.x, 0).normalize().multiply(approach_length)
                     perp_start = App.Vector(-tangent_start.y, tangent_start.x, 0).normalize() # Assuming XY plane
                     pass_approach_edges.append(Part.makeLine(core_toolpath_start_pt + perp_start.multiply(approach_length), core_toolpath_start_pt))
-                    obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{pass_z + 2:.3f}\n"
-                    obj.Gcode += f"G1 Z{pass_z:.3f}\n"
-                    obj.Gcode += f"G1 X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f}\n"
+                obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{rapid_traverse_z:.3f}\n"
+                obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{pass_z + 2:.3f}\n"
+                obj.Gcode += f"G1 Z{pass_z:.3f}\n"
+                obj.Gcode += f"G1 X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f}\n"
             # TODO: Add Helicoidal approach if needed, ensuring Z movement relative to pass_z
             
             current_edge = None

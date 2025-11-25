@@ -8,7 +8,8 @@ class PostPro(BasePostPro.BasePostPro):
     def __init__(self):
         super().__init__()
 
-    pass
+    def writeHeader(self):
+        return ""
 
     def coolantModeToCode(self, mode):
         if mode == "Off":
@@ -20,6 +21,16 @@ class PostPro(BasePostPro.BasePostPro):
         else:
             return "9"  # Default to Off if unknown mode
         
+    def transformGCode(self, gcode):
+        lines = gcode.split('\n')
+        retour = []
+        for i in range(len(lines)):
+            if lines[i].startswith('(') and lines[i].endswith(')'):
+                lines[i] = lines[i][1:-1]  # Remove parentheses
+                lines[i]  = self.writeComment(lines[i])
+            retour.append(lines[i])
+        return '\n'.join(retour)
+
     def writeComment(self, comment):
         return f"; {comment}"
 
@@ -57,5 +68,5 @@ class PostPro(BasePostPro.BasePostPro):
                 z0 = pt.z
                 gcode_lines +=(f"CYCLE81({z0 + planDeRetrait},{z0},{DistSecurite},{final_z},,{dwell},0,1,12)\n")
             gcode_lines += (f"G0 X{pt.x:.3f} Y{pt.y:.3f} \n")
-        gcode_lines += "G80\n"
+        gcode_lines += "MCALL\n"
         return gcode_lines
