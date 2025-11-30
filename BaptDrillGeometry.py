@@ -19,7 +19,7 @@ class DrillGeometry:
             obj.addProperty("App::PropertyLinkSubList", "DrillFaces", "Drill", "Selected drill faces")
 
         # Liste des positions de perçage
-        if not hasattr(obj, "DrillPositions"):
+        if not hasattr(obj, "DrillPositions"): #TODO Renamer en HolePositions
             obj.addProperty("App::PropertyVectorList", "DrillPositions", "Drill", "Drill positions")
 
         # Diamètre des perçages (détecté automatiquement)

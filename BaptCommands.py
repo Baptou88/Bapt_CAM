@@ -537,6 +537,10 @@ class CreateHotReloadCommand:
             reload(BQuantitySpinBox)
             import Tool.ToolTaskPannel as ToolTaskPannel
             reload(ToolTaskPannel)
+            import BaptHoleRecognition
+            reload(BaptHoleRecognition)
+            import BaptHoleRecognitionTaskPanel
+            reload(BaptHoleRecognitionTaskPanel)
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 
@@ -725,6 +729,47 @@ class TestPathCommand:
 
         doc.recompute()
 
+
+class HoleRecognitionCommand:
+    """Commande pour la reconnaissance automatique de trous"""
+    def GetResources(self):
+        return {
+            'Pixmap': BaptUtilities.getIconPath("Tree_HoleRecognition.svg"),
+            'MenuText': "Reconnaissance de trous",
+            'ToolTip': "Détecter automatiquement les trous cylindriques perpendiculaires au plan de travail"
+        }
+    
+    def IsActive(self):
+        """La commande est active si un document est ouvert"""
+        doc = App.ActiveDocument
+        if doc is None:
+            return False
+        cam_project = BaptUtilities.getActiveCamProject()
+        
+        return cam_project is not None
+    
+    def Activated(self):
+        """Créer un nouvel objet de reconnaissance de trous"""
+        import BaptHoleRecognition
+        
+        doc = App.ActiveDocument
+
+        cam_project = BaptUtilities.getActiveCamProject()
+        if cam_project is None:
+            App.Console.PrintError("Aucun projet CAM actif. Veuillez sélectionner ou activer un projet CAM.\n")
+            return
+        
+        doc.openTransaction('Create Hole Recognition')
+        obj = BaptHoleRecognition.createHoleRecognition()
+        cam_project.Proxy.getGeometryGroup(cam_project).addObject(obj)
+        # Ouvrir le TaskPanel
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        
+        doc.commitTransaction()
+        App.Console.PrintMessage("Objet de reconnaissance de trous créé.\n")
+
+
 # Enregistrer les commandes
 Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
 Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
@@ -743,3 +788,4 @@ Gui.addCommand('Bapt_CreateSurfacage', CreateSurfacageCommand())
 Gui.addCommand('Bapt_CreateProbeFace', ProbeFaceCommand())
 Gui.addCommand('Bapt_TestPath', TestPathCommand())
 Gui.addCommand('Bapt_HighlightCollisions', CreateHighlightCommand())
+Gui.addCommand('Bapt_HoleRecognition', HoleRecognitionCommand())
