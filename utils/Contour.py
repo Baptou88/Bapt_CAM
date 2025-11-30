@@ -1,13 +1,14 @@
 import math
 import FreeCAD as App
 
-def getFirstPoint(wire):
+def getFirstPoint(edges):
     """
     Get the indice of the first point in a contour list.
     :param contourList: List of contours, where each contour is a list of edges.
     :return: 0 or -1 depending on the orientation of the contour.
     """
-    edges = wire.Edges
+    #edges = wire.Edges
+
     if len(edges) < 2:
         App.Console.PrintError("Error: Contour list must contain at least two contours.\n")
         return 0  # Not enough points to determine orientation
@@ -24,13 +25,14 @@ def getFirstPoint(wire):
         App.Console.PrintError("Error: Contour edges are not connected properly.\n")
         return 0
 
-def getLastPoint(wire):
+def getLastPoint(edges):
     """
     Get the indice of the last point in a contour list.
     :param contourList: List of contours, where each contour is a list of edges.
     :return: 0 or -1 depending on the orientation of the contour.
     """
-    edges = wire.Edges
+    # edges = wire.Edges
+
     if len(edges) < 2:
         App.Console.PrintError("Error: Contour list must contain at least two contours.\n")
         return 0  # Not enough points to determine orientation

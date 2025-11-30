@@ -1,4 +1,5 @@
 from BaptPath import GcodeAnimationControl, GcodeAnimator, absinc, comp, memory
+from BaptPreferences import BaptPreferences
 import FreeCAD as App
 import FreeCADGui as Gui
 
@@ -10,7 +11,7 @@ import math
 class baseOp:
     
     def __init__(self,obj):
-        App.Console.PrintMessage("Initializing baseOp object proxy for: {}\n".format(__class__.__name__))
+        # App.Console.PrintMessage("Initializing baseOp object proxy for: {}\n".format(__class__.__name__))
         if not hasattr(obj, "Gcode"):
             obj.addProperty("App::PropertyString", "Gcode", "Gcode", "Gcode").Gcode = ""
             #obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
@@ -50,18 +51,20 @@ class baseOp:
 class baseOpViewProviderProxy:
     def __init__(self, obj):
         "Set this object as the proxy object of the actual view provider"
-        App.Console.PrintMessage("Initializing baseOpViewProviderProxy for: {}\n".format(__class__.__name__))
+        # App.Console.PrintMessage("Initializing baseOpViewProviderProxy for: {}\n".format(__class__.__name__))
         self.deleteOnReject = True
         self.pick_radius = 5  # pixels
         self.icon = "BaptWorkbench.svg"
 
+        BaptPref = BaptPreferences()
+
         if not hasattr(obj, "Rapid"):
             obj.addProperty("App::PropertyColor", "Rapid", "Gcode", "Color for rapid moves")
-            obj.Rapid = (1.0, 0.0, 0.0)
+            obj.Rapid = BaptPref.DefaultRapidColor
 
         if not hasattr(obj, "Feed"):
             obj.addProperty("App::PropertyColor", "Feed", "Gcode", "Color for feed moves")
-            obj.Feed = (0.0, 1.0, 0.0)
+            obj.Feed = BaptPref.DefaultFeedColor
 
 
         # self.Object = obj.Object
@@ -90,7 +93,7 @@ class baseOpViewProviderProxy:
         return None
 
     def attach(self, obj):
-        App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
+        # App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
         self.pick_radius = 5
         self.Path = coin.SoGroup()
 
@@ -98,6 +101,9 @@ class baseOpViewProviderProxy:
         self.rapid_color = coin.SoBaseColor()
         self.rapid_points = coin.SoCoordinate3()
         self.rapid_lines = coin.SoIndexedLineSet()
+        pick = coin.SoPickStyle()
+        pick.style = coin.SoPickStyle.SHAPE
+        self.rapid_group.insertChild(pick, 0)
         self.rapid_group.addChild(self.rapid_color)
         self.rapid_group.addChild(self.rapid_points)
         self.rapid_group.addChild(self.rapid_lines)
@@ -106,10 +112,17 @@ class baseOpViewProviderProxy:
         self.feed_color = coin.SoBaseColor()
         self.feed_points = coin.SoCoordinate3()
         self.feed_lines = coin.SoIndexedLineSet()
+        pick = coin.SoPickStyle()
+        pick.style = coin.SoPickStyle.SHAPE
+        self.feed_group.insertChild(pick, 0)
         self.feed_group.addChild(self.feed_color)
         self.feed_group.addChild(self.feed_points)
         self.feed_group.addChild(self.feed_lines)
 
+        self.line_set_kind = {
+            self.rapid_lines: "rapid",
+            self.feed_lines: "feed",
+        }
         # Créer le groupe pour le cône de direction
         self.direction_group = coin.SoSeparator()
         self.direction_switch = coin.SoSwitch()  # Pour montrer/cacher le cône
@@ -133,7 +146,8 @@ class baseOpViewProviderProxy:
         # Ajouter les événements de souris
         self.mouse_cb = coin.SoEventCallback()
         #self.mouse_cb.setCallback(self.mouse_event_cb)
-        self.mouse_cb.addEventCallback(coin.SoLocation2Event.getClassTypeId(), self.mouse_event_cb)
+
+        #self.mouse_cb.addEventCallback(coin.SoLocation2Event.getClassTypeId(), self.mouse_event_cb)
 
         self.Path.addChild(self.rapid_group)
         self.Path.addChild(self.feed_group)
@@ -155,89 +169,98 @@ class baseOpViewProviderProxy:
 
     def mouse_event_cb(self, user_data, event_callback):
         event = event_callback.getEvent()
-        if not hasattr(self, "rapid_coords"):
+        if not isinstance(event, coin.SoLocation2Event):
             return
-        if isinstance(event, coin.SoLocation2Event):
-            pos = event.getPosition()
-            view = Gui.ActiveDocument.ActiveView
-            renderer = view.getViewer().getSoRenderManager().getViewportRegion()
-            picking = coin.SoRayPickAction(renderer)
-            picking.setPoint(pos)
-            picking.setRadius(self.pick_radius)
 
-            # appliquer le pick sur le groupe complet
-            picking.apply(self.Path)
+        if not hasattr(self, "segment_metadata"):
+            return
 
-            pp = picking.getPickedPoint()
-            if pp is not None:
-                detail = pp.getDetail()
-                path = pp.getPath()  # SoPath
-                tail = None
-                try:
-                    tail = path.getTail()
-                except:
-                    tail = None
+        pos = event.getPosition()
+        view = Gui.ActiveDocument.ActiveView
+        renderer = view.getViewer().getSoRenderManager().getViewportRegion()
+        picking = coin.SoRayPickAction(renderer)
+        picking.setPoint(pos)
+        picking.setRadius(self.pick_radius)
+        picking.apply(self.Path)
+        App.Console.PrintMessage(f'mouse event cb 0\n')
 
-                # déterminer si la ligne appartient à rapid ou feed en regardant le tail node
-                if tail is self.rapid_lines:
-                    pts = getattr(self, "rapid_coords", [])
-                    color = (1.0, 0.0, 0.0)
-                elif tail is self.feed_lines:
-                    pts = getattr(self, "feed_coords", [])
-                    color = (0.0, 1.0, 0.0)
-                else:
-                    # fallback : essayer de deviner via lineIndex (ancienne méthode)
-                    if hasattr(self, "rapid_coords") and isinstance(detail, coin.SoLineDetail):
-                        li = detail.getLineIndex()
-                        if li < (len(self.rapid_coords) // 2):
-                            pts = self.rapid_coords
-                            color = (1.0, 0.0, 0.0)
-                        else:
-                            pts = getattr(self, "feed_coords", [])
-                            color = (0.0, 1.0, 0.0)
-                    else:
-                        pts = []
-                        color = (1.0, 1.0, 0.0)
-
-                if isinstance(detail, coin.SoLineDetail):
-                    pt1_idx = detail.getPoint0Index()
-                    pt2_idx = detail.getPoint1Index()
-
-                    if pt1_idx < len(pts) and pt2_idx < len(pts):
-                        pt1 = pts[pt1_idx]
-                        pt2 = pts[pt2_idx]
-
-                        mid_point = ((pt1[0] + pt2[0]) / 2.0,
-                                     (pt1[1] + pt2[1]) / 2.0,
-                                     (pt1[2] + pt2[2]) / 2.0)
-                        self.direction_translation.translation.setValue(mid_point[0], mid_point[1], mid_point[2])
-
-                        # orienter le cône dans la direction de la ligne
-                        direction = (pt2[0] - pt1[0], pt2[1] - pt1[1], pt2[2] - pt1[2])
-                        length = (direction[0]**2 + direction[1]**2 + direction[2]**2) ** 0.5
-                        if length > 1e-9:
-                            dir_norm = (direction[0]/length, direction[1]/length, direction[2]/length)
-                            rot = coin.SbRotation(coin.SbVec3f(0, 0, 1), coin.SbVec3f(*dir_norm))
-                            self.direction_rotation.rotation.setValue(rot)
-
-                            # agrandir le cône pour qu'on le voie bien et adapter le rayon
-                            h = max(length * 0.6, 2.0)
-                            r = max(h * 0.25, 0.2)
-                            try:
-                                self.direction_cone.height = h
-                                self.direction_cone.bottomRadius = r
-                            except:
-                                pass
-
-                            # couleur
-                            self.direction_color.rgb.setValues(0, 1, [color])
-
-                            # afficher le cône
-                            self.direction_switch.whichChild = 0
-                            return
-
-            # cacher si aucune ligne trouvée
+        picked = picking.getPickedPoint()
+        if picked is None:
             self.direction_switch.whichChild = coin.SO_SWITCH_NONE
+            return
+
+        App.Console.PrintMessage(f'mouse event cb 01\n')
+        detail = picked.getDetail()
+        if not isinstance(detail, coin.SoLineDetail):
+            self.direction_switch.whichChild = coin.SO_SWITCH_NONE
+            return
+
+        App.Console.PrintMessage(f'mouse event cb 1\n')
+
+        path = picked.getPath()
+        kind = None
+        if path is not None:
+            line_set_kind = getattr(self, "line_set_kind", {})
+            for i in range(path.getLength() - 1, -1, -1):
+                node = path.getNode(i)
+                kind = line_set_kind.get(node)
+                if kind is not None:
+                    break
+
+        if kind is None or kind not in self.segment_metadata:
+            self.direction_switch.whichChild = coin.SO_SWITCH_NONE
+            return
+        App.Console.PrintMessage(f'mouse event cb 2\n')
+
+
+        line_index = detail.getLineIndex()
+        segments = self.segment_metadata.get(kind, [])
+        if not (0 <= line_index < len(segments)):
+            self.direction_switch.whichChild = coin.SO_SWITCH_NONE
+            return
+
+        pt1, pt2 = segments[line_index]
+        App.Console.PrintMessage(f'mouse event cb 3\n')
+
+        default_color = (1.0, 0.0, 0.0) if kind == "rapid" else (0.0, 1.0, 0.0)
+        view_obj = getattr(self.Object, "ViewObject", None)
+        prop_color = None
+        if view_obj is not None:
+            prop_color = getattr(view_obj, kind.capitalize(), None)
+        if prop_color is None:
+            prop_color = getattr(self.Object, kind.capitalize(), default_color)
+        if hasattr(prop_color, "x"):
+            color = (prop_color.x, prop_color.y, prop_color.z)
+        else:
+            color = tuple(prop_color)
+
+        mid_point = (
+            (pt1[0] + pt2[0]) / 2.0,
+            (pt1[1] + pt2[1]) / 2.0,
+            (pt1[2] + pt2[2]) / 2.0,
+        )
+        self.direction_translation.translation.setValue(*mid_point)
+
+        direction = (pt2[0] - pt1[0], pt2[1] - pt1[1], pt2[2] - pt1[2])
+        length = (direction[0] ** 2 + direction[1] ** 2 + direction[2] ** 2) ** 0.5
+        if length <= 1e-9:
+            self.direction_switch.whichChild = coin.SO_SWITCH_NONE
+            return
+
+        dir_norm = (direction[0] / length, direction[1] / length, direction[2] / length)
+        rot = coin.SbRotation(coin.SbVec3f(0, 0, 1), coin.SbVec3f(*dir_norm))
+        self.direction_rotation.rotation.setValue(rot)
+
+        h = max(length * 0.6, 2.0)
+        r = max(h * 0.25, 0.2)
+        try:
+            self.direction_cone.height = h
+            self.direction_cone.bottomRadius = r
+        except AttributeError:
+            pass
+
+        self.direction_color.rgb.setValues(0, 1, [color])
+        self.direction_switch.whichChild = 0
 
     def updateData(self, fp, prop):
 
@@ -280,6 +303,7 @@ class baseOpViewProviderProxy:
         self.cur = (0.0, 0.0, 0.0)
 
         self.ordered_segments = []
+        self.segment_metadata = {"rapid": [], "feed": []}
 
         self.comp_mode = comp.G40  # default cutter compensation off
         self.absinc_mode = absinc.G90  # default absolute mode
@@ -337,7 +361,9 @@ class baseOpViewProviderProxy:
             coords_list.append(a)
             coords_list.append(b)
             idx_list.extend([i, i+1, -1])
-            self.ordered_segments.append(("rapid" if coords_list is rapid_coords else "feed", a, b))
+            group = "rapid" if coords_list is rapid_coords else "feed"
+            self.ordered_segments.append((group, a, b))
+            self.segment_metadata[group].append((a, b))
 
         def executeCycle():
             new = self.cur

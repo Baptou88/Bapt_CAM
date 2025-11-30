@@ -1,8 +1,10 @@
 import os
+import FreeCAD
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
 import BaptUtilities
+translate = FreeCAD.Qt.translate
 
 class BaptPreferences:
     ''' Exemple d'utilisation:
@@ -17,6 +19,8 @@ class BaptPreferences:
         self.GCodeFolderPath = None
         self.AutoChildUpdate = None
         self.ModeAjout= None
+        self.DefaultRapidColor = (1.0, 0.0, 0.0)
+        self.DefaultFeedColor = (0.0, 1.0, 0.0)
         
         # Load settings
         self.preferences = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Bapt")
@@ -37,6 +41,19 @@ class BaptPreferences:
         self.preferences.SetString("GCodeFolderPath", self.GCodeFolderPath)
         self.preferences.SetBool("AutoChildUpdate", self.AutoChildUpdate)
         self.preferences.SetInt("ModeAjout", self.ModeAjout)
+        # tuple to unsigned int
+        r = int(self.DefaultRapidColor[0] * 255) & 0xFF
+        g = int(self.DefaultRapidColor[1] * 255) & 0xFF
+        b = int(self.DefaultRapidColor[2] * 255) & 0xFF
+        rapid_color_unsigned = (r << 16) | (g << 8) | b
+        self.preferences.SetUnsigned("DefaultRapidColor", rapid_color_unsigned)
+        # tuple to unsigned int
+        r = int(self.DefaultFeedColor[0] * 255) & 0xFF
+        g = int(self.DefaultFeedColor[1] * 255) & 0xFF
+        b = int(self.DefaultFeedColor[2] * 255) & 0xFF
+        feed_color_unsigned = (r << 16) | (g << 8) | b
+        self.preferences.SetUnsigned("DefaultFeedColor", feed_color_unsigned)
+
 
         self.Dirty = False
         
@@ -46,6 +63,23 @@ class BaptPreferences:
         self.GCodeFolderPath = self.preferences.GetString("GCodeFolderPath", "")
         self.AutoChildUpdate = self.preferences.GetBool("AutoChildUpdate", False)
         self.ModeAjout = self.preferences.GetInt("ModeAjout", 0)
+        DefaultRapidColor = self.preferences.GetUnsigned("DefaultRapidColor", 16711680)  # Default to red
+
+        #unsigned int to tuple
+        r = (DefaultRapidColor >> 16) & 0xFF
+        g = (DefaultRapidColor >> 8) & 0xFF
+        b = DefaultRapidColor & 0xFF
+        self.DefaultRapidColor = (r / 255.0, g / 255.0, b / 255.0)
+
+
+        DefaultFeedColor = self.preferences.GetUnsigned("DefaultFeedColor", 65280)  # Default to green
+
+        #unsigned int to tuple
+        r = (DefaultFeedColor >> 16) & 0xFF
+        g = (DefaultFeedColor >> 8) & 0xFF
+        b = DefaultFeedColor & 0xFF
+        self.DefaultFeedColor = (r / 255.0, g / 255.0, b / 255.0)
+
         
         
     def getToolsDbPath(self) -> str:
@@ -70,7 +104,7 @@ class BaptPreferences:
         return self.ModeAjout
     
 class BaptPreferencesPage(QtGui.QWidget):
-    name = "Bapt CAM Pref"
+    name = translate("Preferences", "Bapt CAM Pref")
     def __init__(self, parent=None):
         #super(BaptPreferencesPage, self).__init__(parent)
         super().__init__(parent)
@@ -81,12 +115,14 @@ class BaptPreferencesPage(QtGui.QWidget):
         layout = QtGui.QVBoxLayout(self.form)
         
         # Groupe pour les paramètres de la base de données d'outils
-        tools_db_group = QtGui.QGroupBox("Base de données d'outils")
+        tools_db_group = QtGui.QGroupBox(translate("Preferences", "Tools Database"))
         tools_db_layout = QtGui.QVBoxLayout()
         
+        from PySide.QtCore import QT_TRANSLATE_NOOP
+
         # Explication
-        info_label = QtGui.QLabel("Configurez l'emplacement de la base de données d'outils. Si aucun chemin n'est spécifié, "
-                                  "une base de données par défaut sera créée dans le dossier utilisateur de FreeCAD.")
+        info_label = QtGui.QLabel(QT_TRANSLATE_NOOP("Preferences", "Configurez l'emplacement de la base de données d'outils. Si aucun chemin n'est spécifié, "
+                                  "une base de données par défaut sera créée dans le dossier utilisateur de FreeCAD."))
         info_label.setWordWrap(True)
         tools_db_layout.addWidget(info_label)
         
@@ -150,6 +186,31 @@ class BaptPreferencesPage(QtGui.QWidget):
         layout.addWidget(tools_db_group)
 
         layout.addWidget(gcode_group)
+
+        color_group = QtGui.QGroupBox("Couleurs par défaut des mouvements G-code")
+        color_layout = QtGui.QVBoxLayout()
+        # Couleur des mouvements rapides
+        rapid_color_layout = QtGui.QHBoxLayout()
+        rapid_color_label = QtGui.QLabel("Couleur des mouvements rapides:")
+        self.rapidColorButton = QtGui.QPushButton()
+        self.rapidColorButton.setAutoFillBackground(True)
+        self.rapidColorButton.clicked.connect(self.chooseRapidColor)
+        rapid_color_layout.addWidget(rapid_color_label)
+        rapid_color_layout.addWidget(self.rapidColorButton)
+        color_layout.addLayout(rapid_color_layout)
+        
+        #Couleur des mouvements d'avance
+        feed_color_layout = QtGui.QHBoxLayout()
+        feed_color_label = QtGui.QLabel("Couleur des mouvements d'avance:")
+        self.feedColorButton = QtGui.QPushButton()
+        self.feedColorButton.setAutoFillBackground(True)
+        self.feedColorButton.clicked.connect(self.chooseFeedColor)
+        feed_color_layout.addWidget(feed_color_label)        
+        feed_color_layout.addWidget(self.feedColorButton)
+        color_layout.addLayout(feed_color_layout)
+        
+        color_group.setLayout(color_layout)
+        layout.addWidget(color_group)
         
         # Ajouter un espace extensible en bas
         layout.addStretch()
@@ -167,6 +228,21 @@ class BaptPreferencesPage(QtGui.QWidget):
         self.prefs = BaptPreferences()
         self.loadSettings()
         
+    def chooseRapidColor(self):
+        color = QtGui.QColorDialog.getColor()
+        if color.isValid():
+            self.rapidColorButton.setStyleSheet(f"background-color: {color.name()}")
+            # Convertir la couleur en tuple (r, g, b) avec des valeurs entre 0 et 1
+            r, g, b = color.red() / 255.0, color.green() / 255.0, color.blue() / 255.0
+            self.rapidColor = (r, g, b)
+    
+    def chooseFeedColor(self):
+        color = QtGui.QColorDialog.getColor()
+        if color.isValid():
+            self.feedColorButton.setStyleSheet(f"background-color: {color.name()}")
+            # Convertir la couleur en tuple (r, g, b) avec des valeurs entre 0 et 1
+            r, g, b = color.red() / 255.0, color.green() / 255.0, color.blue() / 255.0
+            self.feedColor = (r, g, b)
         
     def saveSettings(self):
         """Enregistrer les paramètres"""
@@ -175,6 +251,8 @@ class BaptPreferencesPage(QtGui.QWidget):
         self.prefs.GCodeFolderPath = self.gcodeFolderPath.text()
         self.prefs.AutoChildUpdate = self.auto_child_update_checkbox.isChecked()
         self.prefs.ModeAjout = self.mode_ajout_combo.currentIndex()
+        self.prefs.DefaultRapidColor = self.rapidColor
+        self.prefs.DefaultFeedColor = self.feedColor
 
         self.prefs.saveSettings()
         
@@ -185,6 +263,13 @@ class BaptPreferencesPage(QtGui.QWidget):
         self.gcodeFolderPath.setText(self.prefs.GCodeFolderPath)
         self.auto_child_update_checkbox.setChecked(self.prefs.AutoChildUpdate)
         self.mode_ajout_combo.setCurrentIndex(self.prefs.getModeAjout())
+        
+        self.rapidColor = self.prefs.DefaultRapidColor
+        self.feedColor = self.prefs.DefaultFeedColor
+
+        self.rapidColorButton.setStyleSheet(f"background-color: rgb({int(self.rapidColor[0]*255)}, {int(self.rapidColor[1]*255)}, {int(self.rapidColor[2]*255)})")
+        self.feedColorButton.setStyleSheet(f"background-color: rgb({int(self.feedColor[0]*255)}, {int(self.feedColor[1]*255)}, {int(self.feedColor[2]*255)})")
+
 
     def chooseExistingDb(self):
         """Sélectionner une base de données existante"""

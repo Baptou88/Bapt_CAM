@@ -188,8 +188,12 @@ class ContournageCycle(baseOp):
                     
                     if offset_shape_result.Wires:
                         offset_toolpath_wire = offset_shape_result.Wires[0]
-                        if obj.Compensation == "Machine":
-                            offset_shape_result = offset_shape_result.reversed()
+                        offset_toolpath_edges = offset_toolpath_wire.Edges
+                        if obj.Compensation == "Machine" :
+                            #offset_shape_result = offset_shape_result.reversed()
+                            offset_toolpath_edges.reverse()
+     
+                            pass
 
                     elif offset_shape_result.Edges:
                         offset_toolpath_wire = Part.Wire(offset_shape_result.Edges)
@@ -203,6 +207,26 @@ class ContournageCycle(baseOp):
                 line_number = exc_traceback.tb_lineno
                 App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
                 continue
+            
+            # 2.b if is closed, remove the first half of the first edge and place it at the end
+            if is_contour_closed:
+                import FreeCAD
+                translate = FreeCAD.Qt.translate
+                
+                App.Console.PrintMessage(translate("op_Contournage", "Closed contour detected, adjusting first edge for continuity.") + "\n")
+                first_edge = offset_toolpath_edges[0]
+                mid_param = (first_edge.FirstParameter + first_edge.LastParameter) / 2.0
+                # Trim the underlying curve and convert back to edges
+                first_trimmed_curve = first_edge.Curve.trim(first_edge.FirstParameter, mid_param)
+                second_trimmed_curve = first_edge.Curve.trim(mid_param, first_edge.LastParameter)
+                first_half_edge = first_trimmed_curve.toShape()
+                second_half_edge = second_trimmed_curve.toShape()
+
+                new_edges = [second_half_edge] + offset_toolpath_wire.Edges[1:] + [first_half_edge]
+                #offset_toolpath_wire = Part.Wire(new_edges)
+                #offset_toolpath_edges = offset_toolpath_wire.Edges
+                offset_toolpath_edges = new_edges
+
 
             # 3. Generate Approach and Retract for offset_toolpath_wire
 
@@ -210,15 +234,15 @@ class ContournageCycle(baseOp):
 
             # if offset_toolpath_wire.Orientation == "Forward":
             if True: #is_offset_inward:
-                indexOfFirstPoint = Contour.getFirstPoint(offset_toolpath_wire)
-                indexOfLastPoint =  Contour.getLastPoint(offset_toolpath_wire)
-                first_toolpath_edge = offset_toolpath_wire.Edges[0]
-                last_toolpath_edge = offset_toolpath_wire.Edges[-1]
+                indexOfFirstPoint = Contour.getFirstPoint(offset_toolpath_edges)
+                indexOfLastPoint =  Contour.getLastPoint(offset_toolpath_edges)
+                first_toolpath_edge = offset_toolpath_edges[0]
+                last_toolpath_edge = offset_toolpath_edges[-1]
             else:
-                indexOfFirstPoint = Contour.getLastPoint(offset_toolpath_wire)
-                indexOfLastPoint =  Contour.getFirstPoint(offset_toolpath_wire)
-                first_toolpath_edge = offset_toolpath_wire.Edges[-1]
-                last_toolpath_edge = offset_toolpath_wire.Edges[0]
+                indexOfFirstPoint = Contour.getLastPoint(offset_toolpath_edges)
+                indexOfLastPoint =  Contour.getFirstPoint(offset_toolpath_edges)
+                first_toolpath_edge = offset_toolpath_edges[-1]
+                last_toolpath_edge = offset_toolpath_edges[0]
 
             core_toolpath_start_pt = first_toolpath_edge.Vertexes[indexOfFirstPoint].Point
             core_toolpath_end_pt = last_toolpath_edge.Vertexes[indexOfLastPoint].Point
@@ -259,11 +283,11 @@ class ContournageCycle(baseOp):
             # TODO: Add Helicoidal approach if needed, ensuring Z movement relative to pass_z
             
             current_edge = None
-            for i, edge in enumerate(offset_toolpath_wire.Edges ):
+            for i, edge in enumerate(offset_toolpath_edges): 
                 current_edge = edge
                 bon_sens = None
-                if i < len(offset_toolpath_wire.Edges)-1:
-                    next_edge = offset_toolpath_wire.Edges[i+1]
+                if i < len(offset_toolpath_edges)-1:
+                    next_edge = offset_toolpath_edges[i+1]
                     if current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[0].Point) <  1e-6 :
                         bon_sens = True
                         
@@ -279,7 +303,7 @@ class ContournageCycle(baseOp):
                     else:
                         pass
                 else:
-                    prev_edge = offset_toolpath_wire.Edges[i-1]
+                    prev_edge = offset_toolpath_edges[i-1]
                     
                     if prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[0].Point) <  1e-6 :
                         bon_sens = True
@@ -338,7 +362,9 @@ class ContournageCycle(baseOp):
                 link_p4 = current_pass_trajectory_start_point
 
                 all_pass_shapes_collected.append(Part.makeLine(link_p1, link_p2)) # Retract to rapid_traverse_z
-                all_pass_shapes_collected.append(Part.makeLine(link_p2, link_p3)) # Traverse at rapid_traverse_z
+                if link_p2.distanceToPoint(link_p3) > 1e-6:
+
+                    all_pass_shapes_collected.append(Part.makeLine(link_p2, link_p3)) # Traverse at rapid_traverse_z
                 all_pass_shapes_collected.append(Part.makeLine(link_p3, link_p4)) # Plunge to current pass start
 
             # Add current pass's trajectory segments (approach, core path, retract)

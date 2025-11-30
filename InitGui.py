@@ -9,7 +9,8 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from FreeCADGui import Workbench
 import os
-import BaptUtilities
+
+
 
 class BaptWorkbench (Workbench):
     def __init__(self):
@@ -25,6 +26,20 @@ class BaptWorkbench (Workbench):
         import BaptTools
 
         self.addExamplePath()
+
+        translate = App.Qt.translate
+        import BaptUtilities
+        App.Console.PrintMessage(f'Activing tr {os.path.join(BaptUtilities.getResourcesPath(), "translations")}\n')
+        Gui.addLanguagePath(r"C:\\Users\\Baptou88\\AppData\\Roaming\\FreeCAD\\Mod\\Bapt\\resources\\translations")
+        Gui.addLanguagePath("C:/Users/Baptou88/AppData/Roaming/FreeCAD/Mod/Bapt/resources/translations")
+        Gui.addLanguagePath("C:/Users/Baptou88/AppData/Roaming/FreeCAD/Mod/Bapt/resources/translations/")
+
+        from PySide.QtCore import QT_TRANSLATE_NOOP
+        
+        # Register preferences
+        from BaptPreferences import BaptPreferencesPage
+        Gui.addPreferencePage(BaptPreferencesPage, QT_TRANSLATE_NOOP("QObject","Bapt"))
+        Gui.addIconPath(os.path.join(BaptUtilities.getResourcesPath(), "icons"))
 
         self.list = ["Bapt_CreateCamProject", "Bapt_CreateSurfacage", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateContourEditableGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreatePocketOperation", "Bapt_CreateOrigin", "Bapt_CreateHotReload", "ImportMpf", "Bapt_PostProcessGCode", "Bapt_CreateProbeFace", "Bapt_TestPath", "Bapt_HighlightCollisions"]  # Ajout des commandes d'opération, poche et origine
         self.appendToolbar("Bapt Tools", self.list)
@@ -114,7 +129,3 @@ class BaptWorkbench (Workbench):
 
 Gui.addWorkbench(BaptWorkbench())
 
-# Register preferences
-from BaptPreferences import BaptPreferencesPage
-Gui.addPreferencePage(BaptPreferencesPage, "Bapt")
-Gui.addIconPath(os.path.join(BaptUtilities.getResourcesPath(), "icons"))
