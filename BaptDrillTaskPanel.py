@@ -167,7 +167,7 @@ class DrillGeometryTaskPanel:
 
     def itemChanged(self, item):
         """Mise à jour des positions lorsqu'un élément de la table est modifié"""
-        print(f"Item at ({item.row()}, {item.column()}) changed to: {item.text()}")
+        #print(f"Item at ({item.row()}, {item.column()}) changed to: {item.text()}")
         #self.updateDrillPositions()
 
     def addSelectedFace(self):

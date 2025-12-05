@@ -12,7 +12,7 @@ import BaptDrillGeometry
 from BaptHighlight import CreateHighlightCommand
 import BaptMpfReader
 import BaptPath
-import BaptPocketOperation
+import Op.BaptPocketOp as BaptPocketOp
 import BaptPostProcess
 import BaptPreferences
 import BaptTools
@@ -60,7 +60,7 @@ class CreatePocketOperationCommand:
         doc = App.ActiveDocument
         doc.openTransaction('Create Pocket Operation')
         contour_geometry = Gui.Selection.getSelection()[0]
-        obj = BaptPocketOperation.createPocketOperation(contour=contour_geometry)
+        obj = BaptPocketOp.createPocketOperation(contour=contour_geometry)
         # if obj.ViewObject:
         #     BaptPocketOperation.ViewProviderPocketOperation(obj.ViewObject)
         #     obj.ViewObject.Proxy.setEdit(obj.ViewObject)
@@ -541,6 +541,8 @@ class CreateHotReloadCommand:
             reload(BaptHoleRecognition)
             import BaptHoleRecognitionTaskPanel
             reload(BaptHoleRecognitionTaskPanel)
+            import Op.BaptPocketOp as BaptPocketOp
+            reload(BaptPocketOp)
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 

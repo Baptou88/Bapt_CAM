@@ -69,6 +69,12 @@ class HoleRecognition:
                        "Axe de perçage (perpendiculaire au plan de travail)")
         obj.DrillAxis = ["Z", "X", "Y"]
         obj.DrillAxis = "Z"
+
+        # Propriété pour l'axe de perçage
+        obj.addProperty("App::PropertyVector", "Axis", "Detection",
+                       "Axe de perçage (perpendiculaire au plan de travail)")
+        obj.Axis = App.Vector(0,0,-1)
+
         
         # Propriété pour la tolérance de diamètre
         obj.addProperty("App::PropertyFloat", "DiameterTolerance", "Detection",

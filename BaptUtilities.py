@@ -17,6 +17,12 @@ def getResourcesPath():
     '''
     return os.path.join(get_module_path(), "resources")
 
+def getPanel(panel):
+    '''
+    Returns the panel path.
+    '''
+    return os.path.join(getResourcesPath(), "panels", panel)
+
 def getIconPath(icon: str):
     '''
     Returns the icon path.
