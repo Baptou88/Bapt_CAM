@@ -15,10 +15,10 @@ class BaptPreferences:
      '''
     def __init__(self):
         
-        self.ToolsDbPath = None
-        self.GCodeFolderPath = None
-        self.AutoChildUpdate = None
-        self.ModeAjout= None
+        self.ToolsDbPath :str= None
+        self.GCodeFolderPath :str= None
+        self.AutoChildUpdate :bool= None
+        self.ModeAjout:int= None
         self.DefaultRapidColor = (1.0, 0.0, 0.0)
         self.DefaultFeedColor = (0.0, 1.0, 0.0)
         
@@ -35,8 +35,9 @@ class BaptPreferences:
         return self.AutoChildUpdate
 
     
-    def saveSettings(self):
+    def saveSettings(self)-> bool:
         """Enregistrer les paramètres"""
+
         self.preferences.SetString("ToolsDbPath", self.ToolsDbPath)
         self.preferences.SetString("GCodeFolderPath", self.GCodeFolderPath)
         self.preferences.SetBool("AutoChildUpdate", self.AutoChildUpdate)
@@ -56,8 +57,10 @@ class BaptPreferences:
 
 
         self.Dirty = False
+
+        return True
         
-    def loadSettings(self):
+    def loadSettings(self)-> bool:
         """Charger les paramètres"""
         self.ToolsDbPath = self.preferences.GetString("ToolsDbPath", "")
         self.GCodeFolderPath = self.preferences.GetString("GCodeFolderPath", "")
@@ -79,7 +82,7 @@ class BaptPreferences:
         g = (DefaultFeedColor >> 8) & 0xFF
         b = DefaultFeedColor & 0xFF
         self.DefaultFeedColor = (r / 255.0, g / 255.0, b / 255.0)
-
+        return True
         
         
     def getToolsDbPath(self) -> str:

@@ -5,6 +5,7 @@ import FreeCADGui as Gui
 import PySide.QtGui as QtGui
 import PySide.QtCore as QtCore
 
+DEBUG = False
 class BQuantitySpinBox(QtCore.QObject):
     def __init__(self,obj,prop, widget=None):
         super().__init__()
@@ -15,7 +16,10 @@ class BQuantitySpinBox(QtCore.QObject):
             self.widget = widget
         else:
             self.widget = Gui.UiLoader().createWidget("Gui::QuantitySpinBox")
-        
+        self.attach(obj, prop)
+
+    def attach(self, obj, prop):
+        # App.Console.PrintMessage(f'Attach\n')
         #self.widget.setProperty("unit", "mm")
         attr = self.getProperty(obj, prop) # getattr(obj, prop) semble etre equivalent
         if attr is not None:
@@ -26,10 +30,13 @@ class BQuantitySpinBox(QtCore.QObject):
             else:
                 self.widget.setProperty("rawValue", attr)
         # self.widget.setProperty("Value", a)
-            if widget is  not None:
+            # if widget is  not None:
+            if True:
                 self.widget.setProperty("binding","%s.%s" % (obj.Name, prop))
             else:
                 Gui.ExpressionBinding(self.widget).bind(obj, prop)
+        else:
+            App.Console.PrintMessage(f'attr is none\n')
         # self.widget.setProperty("exprSet", "true")
         # self.widget.style().unpolish(self.widget)
         # self.widget.ensurePolished()
@@ -100,9 +107,10 @@ class BQuantitySpinBox(QtCore.QObject):
         value = self.widget.property("rawValue")
         o, attr, name = self._getProperty(self.obj, self.prop)
         attrValue = attr.Value if hasattr(attr,"Value") else attr
-
-        App.Console.PrintMessage(f'update Value current {attrValue} new {value}\n') 
-        App.Console.PrintMessage(f'update Value o {o} attr {attr} name {name}\n') 
+        
+        if DEBUG:
+            App.Console.PrintMessage(f'update Value current {attrValue} new {value}\n') 
+            App.Console.PrintMessage(f'update Value o {o} attr {attr} name {name}\n') 
         
         if attrValue != value:
             self.updateProperty()

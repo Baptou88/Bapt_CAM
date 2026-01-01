@@ -14,7 +14,7 @@ try:
 except ImportError:
     App.Console.PrintError("Impossible d'importer le module coin. La mise en surbrillance des arêtes ne fonctionnera pas correctement.\n")
 
-
+DEBUG = False
 class ContourGeometry:
     """Classe pour gérer les contours d'usinage"""
 
@@ -124,7 +124,8 @@ class ContourGeometry:
                 obj_ref = sub[0]  # L'objet référencé
                 sub_names = sub[1]  # Les noms des sous-éléments (arêtes)
                 shape_type = getattr(obj_ref.Shape, "ShapeType", "Inconnu")
-                App.Console.PrintMessage(f"Traitement de l'objet {obj_ref.Name} avec les sous-éléments {sub_names}, type:{shape_type}\n")
+                if DEBUG:
+                    App.Console.PrintMessage(f"Traitement de l'objet {obj_ref.Name} avec les sous-éléments {sub_names}, type:{shape_type}\n")
                 
                 if shape_type == "Face":
                     # Si l'objet est une face, prendre toutes ses arêtes
@@ -176,7 +177,8 @@ class ContourGeometry:
             if obj.Direction == "Anti-horaire":
                 sorted_edges.reverse()
 
-            self.debugEdges(sorted_edges, "Sorted Edges")
+            if DEBUG:
+                self.debugEdges(sorted_edges, "Sorted Edges")
 
 
             if not sorted_edges:
@@ -231,7 +233,8 @@ class ContourGeometry:
                         #App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n") 
                         pass                   
 
-                self.debugEdge(edge,i,"")
+                if DEBUG:
+                    self.debugEdge(edge,i,"")
 
                 # Créer une flèche pour indiquer la direction de l'arête
                 arrow = self._create_direction_arrow(obj, edge, size=2.0,invert_direction=not bon_sens)
