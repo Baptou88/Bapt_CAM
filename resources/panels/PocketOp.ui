@@ -69,8 +69,8 @@
        </item>
        <item row="3" column="1">
         <widget class="Gui::QuantitySpinBox" name="nbGenSpin" native="true">
-         <property name="toolTip">
-          <string>Start Depth of the operation. The highest point in Z-axis the operation needs to process.</string>
+         <property name="statusTip">
+          <string>Nombre de boucle</string>
          </property>
          <property name="minimum" stdset="0">
           <double>-999999999.000000000000000</double>
@@ -85,9 +85,6 @@
        </item>
        <item row="4" column="1">
         <widget class="Gui::QuantitySpinBox" name="depthSpin" native="true">
-         <property name="toolTip">
-          <string>Start Depth of the operation. The highest point in Z-axis the operation needs to process.</string>
-         </property>
          <property name="minimum" stdset="0">
           <double>-999999999.000000000000000</double>
          </property>
@@ -99,7 +96,7 @@
        <item row="0" column="1">
         <widget class="Gui::QuantitySpinBox" name="overlapSpin" native="true">
          <property name="toolTip">
-          <string>Start Depth of the operation. The highest point in Z-axis the operation needs to process.</string>
+          <string>pourcentage du diametre de la friase</string>
          </property>
          <property name="minimum" stdset="0">
           <double>-999999999.000000000000000</double>
@@ -111,8 +108,8 @@
        </item>
        <item row="1" column="1">
         <widget class="Gui::QuantitySpinBox" name="toolSpin" native="true">
-         <property name="toolTip">
-          <string>Start Depth of the operation. The highest point in Z-axis the operation needs to process.</string>
+         <property name="statusTip">
+          <string>Diamètre</string>
          </property>
          <property name="minimum" stdset="0">
           <double>-999999999.000000000000000</double>
@@ -125,17 +122,32 @@
       </layout>
      </widget>
      <widget class="QWidget" name="page_2">
+      <property name="enabled">
+       <bool>true</bool>
+      </property>
       <property name="geometry">
        <rect>
         <x>0</x>
         <y>0</y>
-        <width>311</width>
-        <height>493</height>
+        <width>317</width>
+        <height>505</height>
        </rect>
       </property>
       <attribute name="label">
        <string>Page 2</string>
       </attribute>
+      <layout class="QGridLayout" name="gridLayout_3">
+       <item row="0" column="0">
+        <widget class="QCheckBox" name="useMiddleofFirstEdge">
+         <property name="enabled">
+          <bool>true</bool>
+         </property>
+         <property name="text">
+          <string>Use middle of firste Edge</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
      </widget>
     </widget>
    </item>
@@ -148,6 +160,9 @@
    <header>Gui/QuantitySpinBox.h</header>
   </customwidget>
  </customwidgets>
+ <tabstops>
+  <tabstop>modeCombo</tabstop>
+ </tabstops>
  <resources/>
  <connections/>
 </ui>

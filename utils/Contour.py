@@ -1,5 +1,6 @@
 import math
 import FreeCAD as App
+import Part
 
 def getFirstPoint(edges):
     """
@@ -172,3 +173,67 @@ def edgeToGcode(edge, bonSens=True, current_z=0.0, rapid=False, feed_rate=1000,i
     else:
         raise NotImplementedError(f"Edge type {edge.Curve.TypeId} not implemented in G-code generation.")
     return gcode
+
+def shiftWire(wire: Part.Wire, new_start_point: App.Vector) -> Part.Wire:
+        """
+        Reconstruct a wire starting from a specified point.
+        This function takes a wire and a new starting point, then rebuilds the wire
+        by reordering its edges so that the wire begins at the specified point.
+        If the starting point lies on an edge (not at a vertex), that edge is split
+        at the point, with the portion after the point becoming the first edge.
+        Args:
+            wire (Part.Wire): The wire to be shifted/reordered.
+            new_start_point (App.Vector): The point where the reconstructed wire should start.
+                                           Must be on or very close to the wire (tolerance: 1e-6).
+        Returns:
+            Part.Wire: A new wire with edges reordered to start from new_start_point.
+                       If new_start_point lies on an edge, that edge is trimmed accordingly.
+        Raises:
+            Logs critical errors to console if edge operations fail, but continues processing
+            with the original edge.
+        Note:
+            - Tolerance for point matching: 1e-6 units
+            - If new_start_point is not found on the wire, the original wire is returned unchanged
+            - The function handles edge orientation based on connectivity with the next edge
+        """
+        """reconstruit le wire en commençant par new_start_point"""
+        first_edge = []
+        next_edges = []
+        
+        i=0
+        for i, e in enumerate(wire.Edges):
+            # if edge.isSame(e):
+            try:
+                if e.distToShape(Part.Vertex(new_start_point))[0] < 1e-6:
+                #parameter = edge.parameterAt(Part.Vertex(new_start_point)) #FIXME
+                    parameter = e.Curve.parameter(new_start_point) #FIXME
+                    App.Console.PrintMessage(f'parameter: {parameter}\n')
+                    next_edge = wire.Edges[(i + 1) % len(wire.Edges)]
+                    if e.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[0].Point) < 1e-6 or \
+                       e.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[-1].Point) < 1e-6:
+                        
+                        first = e.Curve.trim(e.FirstParameter, parameter).toShape()
+                        second = e.Curve.trim(parameter, e.LastParameter).toShape()
+                    else:
+                        first = e.Curve.trim(parameter, e.LastParameter).toShape()
+                        second = e.Curve.trim(e.FirstParameter, parameter).toShape()
+                    first_edge.append(first)
+                    next_edges.append(second)
+                    break
+                else:
+                    first_edge.append(e)
+            except Exception as e:
+                App.Console.PrintCritical(f"shiftWire: {e}\n")
+                first_edge.append(e)
+                continue
+            
+        
+        for j in range(i+1, len(wire.Edges)):
+            next_edges.append(wire.Edges[j])
+        # App.Console.PrintMessage(f'shiftWire: found start at edge {i}\n')
+        # App.Console.PrintMessage(f'{len(next_edges)} {len(first_edge)}\n')
+        wires = next_edges + first_edge
+        for  i, edge in enumerate(wires):
+            print(f"Edge {i}: {edge.Vertexes[0].Point} to {edge.Vertexes[-1].Point}")
+
+        return   Part.Wire(wires) 

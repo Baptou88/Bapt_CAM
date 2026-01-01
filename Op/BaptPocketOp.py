@@ -1,22 +1,44 @@
+import math
+import BaptPreferences
 import FreeCAD as App, FreeCADGui as Gui
+from Op.PocketNode import noeud
 import Part
 from PySide import QtGui, QtCore
 import sys
 import traceback
 import BaptUtilities
 from utils import BQuantitySpinBox
+from utils import Log as Log
+from utils.Contour import getFirstPoint, getLastPoint, shiftWire
 
-pocketFillMode = ["offset","zigzag","spirale"]
+if True:
+    Log.setLevel(Log.Level.DEBUG, Log.thisModule())
+else:
+    Log.setLevel(Log.Level.INFO, Log.thisModule())
+
+pocketFillMode = ["offset", "offset2", "zigzag","spirale"]
 
 class PocketOperation:
     """
     Opération d'usinage de poche basée sur ContourGeometry.
     Génère un chemin d'usinage à partir du centre avec un facteur de recouvrement.
     """
+    initialized = False
     def __init__(self, obj):
         self.Type = "PocketOperation"
         self.initProperties(obj)
         obj.Proxy = self
+        self.initialized = True
+        Log.baptDebug("PocketOperation initialized.")
+
+        Log.baptDebug(f"{isinstance(obj.Proxy, PocketOperation)}\n")
+
+        # try:
+        #     a = 1/0
+        # except Exception as e:
+        #     Log.baptDebug(f"PocketOperation init error: {e}\n")
+        #     # exc_type, exc_obj, exc_tb = sys.exc_info()
+        #     # Log.baptDebug(f'Line {exc_tb.tb_lineno}\n')
 
     def initProperties(self, obj):
         obj.addProperty("App::PropertyLink", "Contour", "Pocket", "ContourGeometry de la poche")
@@ -26,21 +48,25 @@ class PocketOperation:
         obj.addProperty("App::PropertyFloat", "FinalDepth", "Pocket", "Profondeur finale (mm)").FinalDepth = -10.0
         
         obj.addProperty("App::PropertyEnumeration", "FillMode", "Pocket", "Mode de remplissage").FillMode = pocketFillMode
-        obj.FillMode = pocketFillMode[0]
+        obj.FillMode = pocketFillMode[1]
 
         obj.addProperty("Part::PropertyPartShape", "Path", "Pocket", "Chemin d'usinage généré")
 
         obj.addProperty("App::PropertyInteger", "maxGeneration", "Pocket", "Nombre maximum de générations d'offset").maxGeneration = 2
 
+        obj.addProperty("App::PropertyBool", "useMiddleofFirstEdge", "Pocket", "Utiliser le milieu de la première arête").useMiddleofFirstEdge = False
+        obj.addProperty("App::PropertyBool", "debugMode", "General", "Activer le mode debug").debugMode = False
+
         if not hasattr(obj, "desactivated"):
             obj.addProperty("App::PropertyBool", "desactivated", "General", "Désactiver le cycle")
             obj.desactivated = False
 
-    def onChanged(self, vobj, prop):
-        if prop in ["Overlap", "ToolDiameter", "StepDown", "FinalDepth", "FillMode", "Contour", "maxGeneration"]:
-            self.execute(vobj)
+    def onChanged(self, obj, prop):
+        Log.baptDebug(f"{prop}")
+        if prop in ["Overlap", "ToolDiameter", "StepDown", "FinalDepth", "FillMode", "Contour", "maxGeneration", "useMiddleofFirstEdge"]:
+            self.execute(obj)
 
-    def is_shape_valid(self, shape):
+    def is_shape_valid(self, shape:Part.Shape):
         # Vérifie que la shape est utilisable pour le pocketing
         if not shape:
             return False
@@ -54,7 +80,7 @@ class PocketOperation:
             return False
         return False
 
-    def collectEdges(self,obj):
+    def collectEdges(self,obj)->list[Part.Edge]:
         # Collecter toutes les arêtes sélectionnées
         edges = []
         for sub in obj.Edges:
@@ -71,11 +97,15 @@ class PocketOperation:
                         App.Console.PrintError(f"Execute : Erreur lors de la récupération de l'arête {sub_name}: {str(e)}\n")
                         exc_type, exc_obj, exc_tb = sys.exc_info()
                         App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
-        App.Console.PrintMessage(f'nb collecté {len(edges)}\n')
+        #App.Console.PrintMessage(f'nb collecté {len(edges)}\n')
         return edges
             
     def execute(self, obj):
         # Chercher le parent ContourGeometry dans l'arborescence
+        if not self.initialized:
+            Log.baptDebug("execute ignored")
+            return
+        Log.baptDebug("execute")
         try:
             # parent = None
             # for p in obj.InList:
@@ -115,23 +145,79 @@ class PocketOperation:
             elif hasattr(obj, 'FillMode') and obj.FillMode == "offset":
                 edges = self.collectEdges(obj.Contour)
 
-                path = self.generate_offset_path(edges, tool_diam, overlap, obj.maxGeneration)
+                path = self.generate_offset_path(edges, tool_diam, overlap, obj.maxGeneration)        
 
-                
+                if obj.debugMode:
+                    for i in range(len(path)):
+                        for j in range(len(path[i].Wires)):
+                            edge = path[i].Wires[j].Edges[0]
+                            #recupere le premier point
+                            start_point = edge.Vertexes[0].Point
+                            end_point = edge.Vertexes[-1].Point
+                            u1,v1 = edge.ParameterRange
+                            mid_param = (u1 + v1)/2
+                            mid_point = edge.valueAt(mid_param)
+                            #ajoute une sphere au millieu
+                            #App.Console.PrintMessage(f"start {start_point}, end {end_point} mid {mid_point}\n")
+                            sphere = Part.makeSphere(tool_diam/4, mid_point)
+                            spheres.append(sphere)
 
+            elif hasattr(obj, 'FillMode') and obj.FillMode == "offset2":
+                edges = self.collectEdges(obj.Contour)
+
+                path = []
+                nodes = self.generate_offset_path2(edges, tool_diam, overlap, obj.maxGeneration)
                 
-                for i in range(len(path)):
-                    edge = path[i].Wires[0].Edges[0]
-                    #recupere le premier point
+                parent, depth, levels = buildParentDepthLevel(nodes[0])
+                App.Console.PrintMessage(f'max {max(levels.keys())}\n')
+                leafs = levels[max(levels.keys())]
+                leaf :noeud = leafs[0]
+                if obj.useMiddleofFirstEdge:
+                    edge = leaf.wires.Edges[0]
                     start_point = edge.Vertexes[0].Point
                     end_point = edge.Vertexes[-1].Point
                     u1,v1 = edge.ParameterRange
                     mid_param = (u1 + v1)/2
                     mid_point = edge.valueAt(mid_param)
-                    #ajoute une sphere au millieu
-                    App.Console.PrintMessage(f"start {start_point}, end {end_point} mid {mid_point}\n")
-                    sphere = Part.makeSphere(tool_diam/4, mid_point)
-                    spheres.append(sphere)
+                    new_start_point = mid_point
+                    Log.baptDebug(f'Using middle of first edge as start point: {new_start_point}\n')
+                    leaf.shiftWire(new_start_point)
+                App.Console.PrintMessage(f'leaf {leaf} len {len(leaf.wires.Edges)}\n')
+                generation = 0
+                while True and generation < obj.maxGeneration:
+                    generation = generation + 1
+                    def findParent(node)-> noeud:
+                        if node in parent:
+                            return parent[node]
+                        return None
+                    p = findParent(leaf)
+                    path.append(leaf.wires)
+                    if p is not None:
+
+                        self.makeTransitionToParent(obj, leaf, p)
+
+                    else:
+                        break
+                    leaf = p
+
+                # for n in nodes:
+                #     wires = n.getWires()
+                #     path.extend(wires)
+                if obj.debugMode:    
+                    for i in range(len(path)):
+                        for j in range(len(path[i].Wires)):
+                            edge = path[i].Wires[j].Edges[0]
+                            #recupere le premier point
+                            start_point = edge.Vertexes[0].Point
+                            end_point = edge.Vertexes[-1].Point
+                            u1,v1 = edge.ParameterRange
+                            # mid_param = (u1 + v1)/2
+                            mid_param = u1 + (v1 - u1)/4
+                            mid_point = edge.valueAt(mid_param)
+                            #ajoute une sphere au millieu
+                            #App.Console.PrintMessage(f"start {start_point}, end {end_point} mid {mid_point}\n")
+                            sphere = Part.makeSphere(tool_diam/4, mid_point)
+                            spheres.append(sphere)
             else:
                 path = self.generate_spiral_path(shape, tool_diam, overlap)
             # obj.Path = path if path else None
@@ -180,6 +266,67 @@ class PocketOperation:
             return Part.Wire(lines)
         return None
 
+    def offsetting(self, wires, offset_dist, maxGen, parentNode=None, generation=0):
+        """Fonction récursive pour générer les offsets et construire l'arbre des offsets"""
+        node : list[noeud] = [] 
+        for wire in wires.Wires:
+            try:
+                o = wire.makeOffset2D(-offset_dist, join=0, fill=False, openResult=False)
+                for j,w in enumerate(o.Wires):
+                    n = noeud(generation,j, w)
+                    node.append(n)
+                    if parentNode is not None:
+                        parentNode.addChild(n)
+                    self.offsetting(w, offset_dist, maxGen, n, generation+1)
+            except Exception as e:
+                print(f"Offsetting generation {generation} échouée: {e}\n")
+                pass
+        
+
+        return node
+
+    def generate_offset_path2(self, shape: Part.Shape, tool_diam:float, overlap:float, maxGen:int):
+        # Génère un offset intérieur de la forme
+        path_edges = []
+        try:
+            current = Part.Wire(shape)
+            
+            offset_dist = tool_diam * (1 - overlap)
+            generation = 0
+            
+            nodes = self.offsetting(current, offset_dist, maxGen)
+
+            #print de l'arbre
+            for n in nodes:
+                n.printTree()
+
+            if False:
+                deepest_nodes = findDeepestNodes(nodes)
+                App.Console.PrintMessage(f"Deepest nodes: {len(deepest_nodes)}\n")
+                App.Console.PrintMessage(f'Deepest {deepest_nodes[0]}\n')
+                
+                arbore_nodes = arbore(nodes)
+                App.Console.PrintMessage(f"Arbore nodes: {len(arbore_nodes)}\n")
+                for n in arbore_nodes:
+                        App.Console.PrintMessage(f'Arbore {n}\n')
+            
+            
+                    
+            # for n in nodes:
+            #     wires = n.getWires()
+            #     # for w in wires:
+            #     path_edges.append(wires)
+
+            #App.Console.PrintMessage(f"Offset généré: nb {len(path_edges)}\n")
+            return  nodes
+
+        except Exception as e:
+            App.Console.PrintError(f"Erreur offset gen: {generation}: {e}\n")
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            line_number = exc_traceback.tb_lineno
+            App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
+            return path_edges
+        
     def generate_offset_path(self,shape, tool_diam, overlap, maxGen):
         # Génère un offset intérieur de la forme
         path_edges = []
@@ -206,7 +353,7 @@ class PocketOperation:
                     return None
 
                 path_edges.append(offset)
-                
+
                 if generation >= maxGen: break
                 
             App.Console.PrintMessage(f"Offset généré: nb {len(path_edges)}\n")
@@ -277,6 +424,104 @@ class PocketOperation:
             line_number = exc_traceback.tb_lineno
             App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
             return None
+    
+    def makeTransitionToParent(self, obj, childNode: noeud, parentNode: noeud):
+        """
+        Docstring for makeTransitionToParent
+        
+        :param self: Description
+        :param obj: Description
+        :param childNode: Description
+        :type childNode: noeud
+        :param parentNode: Description
+        :type parentNode: noeud
+        :return: Description
+        :rtype: str
+        """
+
+        offset_dist = obj.ToolDiameter * (1 - obj.Overlap)
+
+        childWire = childNode.wires
+        parentWire = parentNode.wires
+        try:
+            is_ccw = childNode.isCCW() #TODO: à implémenter le sens de fraisage
+
+            edge  = childWire.Edges[0]
+            indice_start_point = getFirstPoint(childWire.Edges)
+            u1,u2 = edge.ParameterRange
+            if is_ccw :
+                
+                start_point:App.Vector = edge.Vertexes[indice_start_point].Point
+                end_point:App.Vector = edge.Vertexes[-1 if indice_start_point==0 else 0].Point
+                Log.baptDebug(f'start_point: {start_point} is ccw: {is_ccw}\n')
+                # for i,e in enumerate(childWire.Edges):
+                #     Log.baptDebug(f'Edge {i}: {e.Vertexes[0].Point} to {e.Vertexes[-1].Point}\n')
+               
+            
+            
+            else:
+                Log.baptDebug("Inverse le sens de l'arête pour CCW")
+                # Inverse le sens de l'arête
+                start_point:App.Vector = edge.Vertexes[-1 if indice_start_point==0 else 0].Point
+                end_point:App.Vector = edge.Vertexes[0 if indice_start_point ==0 else -1].Point
+                utemp = u1
+                u1 = u2
+                u2 = utemp
+
+            Log.baptDebug(f'start_point: {start_point}, end_point: {end_point}, is_ccw: {is_ccw}\n')
+            # perpendiculaire à l'arête de début du childWire
+            if edge.Curve.TypeId == 'Part::GeomLine':
+                edge_normal = edge.tangentAt(u1).cross(App.Vector(0,0,1))
+            elif edge.Curve.TypeId == 'Part::GeomCircle':
+                
+                if is_ccw:
+                    edge_normal = edge.tangentAt(edge.Curve.parameter(start_point)).cross(App.Vector(0,0,1))
+                else:
+                    #start_point = childWire.Edges[0].Vertexes[-1].Point
+                    edge_normal = edge.tangentAt(edge.Curve.parameter(start_point)).cross(App.Vector(0,0,1))
+
+            edge_normal.normalize()
+            candidates = []
+            ray : Part.Line = Part.Line(start_point, start_point + edge_normal*100 if is_ccw else start_point - edge_normal*100)
+            
+            # Trouve le point le plus proche sur le parentWire
+            for i, e in enumerate(parentWire.Edges):
+                # calul le point d'intersection entre la droite perpendiculaire et l'arête
+                
+                #inter = ray.distToShape(e)
+                inter: list[Part.Point] = ray.intersect(e.Curve)
+
+                def pointToVector(p: Part.Point)->App.Vector:
+                    return App.Vector(p.X, p.Y, p.Z)
+                
+                new_start: App.Vector = None
+                for i, p in enumerate(inter):
+                    #Part.show(Part.makeSphere(0.5, pointToVector(p)))
+                    d = (pointToVector(p) - start_point).Length
+                    if math.fabs(d - offset_dist) < 1e-6 :
+                        #candidates.append((inter[1][0][1], i))
+                        if obj.debugMode:
+                            Part.show(Part.makeSphere(0.5, pointToVector(p)))
+                        new_start = pointToVector(p)
+                        if obj.debugMode:
+                            Part.show(Part.makeLine(start_point, new_start))
+                        #parentNode = shiftWire(parentWire, new_start)
+                        parentNode.shiftWire(new_start)
+                        childNode.wires.add(Part.makeLine(start_point, new_start))
+                        break
+            
+            
+            App.Console.PrintMessage(f'{start_point} {edge_normal}\n')
+
+            return parentWire
+        
+        except Exception as e:
+            line_nr = traceback.extract_tb(sys.exc_info()[2])[-1][1]
+            App.Console.PrintError(f"makeTransitionToParent : {e} at line {line_nr}\n")
+            return parentWire
+        
+     
+
 
 class PocketOperationTaskPanel():
     def __init__(self, obj):
@@ -289,6 +534,8 @@ class PocketOperationTaskPanel():
         self.depthSpin = BQuantitySpinBox.BQuantitySpinBox(obj=obj, prop="FinalDepth", widget=self.form.depthSpin)
         self.nbGenSpin = BQuantitySpinBox.BQuantitySpinBox(obj=obj, prop="maxGeneration", widget=self.form.nbGenSpin)
 
+        self.form.useMiddleofFirstEdge.setChecked(obj.useMiddleofFirstEdge if hasattr(obj, 'useMiddleofFirstEdge') else False)
+        self.form.useMiddleofFirstEdge.stateChanged.connect(self.updateObj)
         
         for i,mode in enumerate(pocketFillMode):
             self.form.modeCombo.addItem(mode)
@@ -300,6 +547,7 @@ class PocketOperationTaskPanel():
     def updateObj(self):
 
         self.obj.FillMode = self.form.modeCombo.currentText()
+        self.obj.useMiddleofFirstEdge = self.form.useMiddleofFirstEdge.isChecked()
         self.obj.touch()
         App.ActiveDocument.recompute()
 
@@ -307,6 +555,7 @@ class ViewProviderPocketOperation:
     def __init__(self, vobj):
         vobj.Proxy = self
         self.Object = vobj.Object
+        vobj.Transparency = 90 # Définit la transparence pour mieux voir le chemin 
 
     def getIcon(self):
         """Retourne l'icône"""
@@ -371,7 +620,7 @@ class ViewProviderPocketOperation:
         self.setEdit(vobj)
         return True
 
-def createPocketOperation(contour=None):
+def createPocketOperation(contour=None)->Part.Feature:
     doc = App.ActiveDocument
     obj = doc.addObject("Part::FeaturePython", "PocketOperation")
 
@@ -381,11 +630,95 @@ def createPocketOperation(contour=None):
     if contour:
         obj.Contour = contour
         # Ajoute PocketOperation comme enfant de ContourGeometry dans l'arborescence
-        if hasattr(contour, "addObject"):
+        # if hasattr(contour, "addObject"):
+        #     contour.addObject(obj)
+        # if hasattr(contour, "Group") and obj not in contour.Group:
+        #     contour.Group.append(obj)
+
+        pref = BaptPreferences.BaptPreferences()
+        modeAjout = pref.getModeAjout()
+        
+        # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
+        # 1 = ajouter à la géométrie comme enfant (pas conseillé)
+        # 2 = ajouter au groupe opérations du projet CAM
+        
+        if modeAjout == 1 or modeAjout == 0:
+
+            # Ajouter le contournage comme enfant de la géométrie du contour
             contour.addObject(obj)
-        if hasattr(contour, "Group") and obj not in contour.Group:
             contour.Group.append(obj)
+
+        if modeAjout == 2 or modeAjout == 0:
+            camProject = BaptUtilities.find_cam_project(contour)
+            if camProject:
+                operations_group = camProject.Proxy.getOperationsGroup(camProject)
+                if modeAjout == 2:
+                    operations_group.addObject(obj)
+                    operations_group.Group.append(obj)
+                elif modeAjout == 0:
+                    link = doc.addObject('App::Link', f'Link_{obj.Label}')
+                    link.setLink(obj)
+                    operations_group.addObject(link)
+                    operations_group.Group.append(link)
+
     
     if hasattr(obj, "ViewObject"):
         obj.ViewObject.Proxy.setEdit(obj.ViewObject)
     return obj
+
+
+import Part
+from collections import deque   
+    
+def findDeepestNodes(rootNodes: list[noeud]):
+    deepest_nodes = []
+    max_depth = -1
+
+    queue = deque()
+    for root in rootNodes:
+        queue.append((root, 0))  # (node, depth)
+
+    while queue:
+        node, depth = queue.popleft()
+
+        if depth > max_depth:
+            max_depth = depth
+            deepest_nodes = [node]
+        elif depth == max_depth:
+            deepest_nodes.append(node)
+
+        for child in node.children:
+            queue.append((child, depth + 1))
+
+    return deepest_nodes
+    
+def arbore(rootNodes):
+    result = []
+    def visite(n):
+        result.append(n)
+        for c in n.children:
+            visite(c)
+    for r in rootNodes:
+        visite(r)
+    return result
+
+def buildParentDepthLevel(node):
+    """
+    Docstring for buildParentDepthLevel
+    
+    :param node: node of the tree to start from
+    :return: parent, depth, levels
+    """
+    parent = {node: None}
+    depth = {node:0}
+    levels = {}
+    q = deque([node])
+    while q:
+        current = q.popleft()
+        d = depth[current]
+        levels.setdefault(d, []).append(current)
+        for child in current.children:
+            parent[child] = current
+            depth[child] = d + 1
+            q.append(child)
+    return parent, depth, levels

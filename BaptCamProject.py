@@ -1,8 +1,6 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
-from FreeCAD import Base
-import os
 import BaptUtilities
 from PySide import QtWidgets
 import PySide.QtCore as QtCore
@@ -120,38 +118,39 @@ class Stock:
         # if obj.Length <= 0 or obj.Width <= 0 or obj.Height <= 0:
         #     App.Console.PrintMessage(f'updateShape {obj.Placement.Base}\n')
         #     return
-        #App.Console.PrintMessage(f'avant placement \n')
-        #placement = obj.Placement
+        #App.Console.PrintMessage(f'avant placement {obj.Placement}\n')
+        placement = obj.Placement
         #App.Console.PrintMessage(f'APRES placement \n')
         obj.Shape = Part.Shape()
         modelBbox = None
         model = self.getParent(obj).Model
         if model is not None:
             modelBbox = model.Shape.BoundBox
-        if modelBbox is None:
+        # if modelBbox is None:
             
-            App.Console.PrintMessage("No object selected for Model.\n")
-            # delete property xneg...
-            for prop in ["XNeg", "YNeg", "ZNeg", "XPos", "YPos", "ZPos"]:
-                if hasattr(obj, prop):
-                    obj.removeProperty(prop)
+        #     App.Console.PrintMessage("No object selected for Model.\n")
+        #     # delete property xneg...
+        #     for prop in ["XNeg", "YNeg", "ZNeg", "XPos", "YPos", "ZPos"]:
+        #         if hasattr(obj, prop):
+        #             obj.removeProperty(prop)
             
-            for prop in ["Length", "Width", "Height"]:
-                if not hasattr(obj, "Length"):
-                    obj.addProperty("App::PropertyLength", "Length", "Stock", "Longueur du brut")
-                    #obj.Length = parent.Model.Shape.BoundBox.XLength if parent and hasattr(parent, "Model") and hasattr(parent.Model, "Shape") else 200.0
-                    obj.Length = 100.0
+        #     for prop in ["Length", "Width", "Height"]:
+        #         if not hasattr(obj, "Length"):
+        #             obj.addProperty("App::PropertyLength", "Length", "Stock", "Longueur du brut")
+        #             #obj.Length = parent.Model.Shape.BoundBox.XLength if parent and hasattr(parent, "Model") and hasattr(parent.Model, "Shape") else 200.0
+        #             obj.Length = 100.0
 
-                if not hasattr(obj, "Width"):
-                    obj.addProperty("App::PropertyLength", "Width", "Stock", "Largeur du brut")
-                    obj.Width = 100.0
+        #         if not hasattr(obj, "Width"):
+        #             obj.addProperty("App::PropertyLength", "Width", "Stock", "Largeur du brut")
+        #             obj.Width = 100.0
                 
-                if not hasattr(obj, "Height"):
-                    obj.addProperty("App::PropertyLength", "Height", "Stock", "Hauteur du brut")
-                    obj.Height = 50.0
+        #         if not hasattr(obj, "Height"):
+        #             obj.addProperty("App::PropertyLength", "Height", "Stock", "Hauteur du brut")
+        #             obj.Height = 50.0
 
         if hasattr(obj, "Length") and hasattr(obj, "Width") and hasattr(obj, "Height"):
             # Créer la boîte en fonction du plan de travail
+            #App.Console.PrintMessage(f'plac 1 {obj.Placement}\n')
             if obj.WorkPlane == "XY":
                 box = Part.makeBox(obj.Length, obj.Width, obj.Height)
             elif obj.WorkPlane == "XZ":
@@ -161,8 +160,9 @@ class Stock:
             
             # Assigner la forme
             obj.Shape = box
-            #obj.Placement = placement
-        else:
+            #App.Console.PrintMessage(f'plac 2 {obj.Placement}\n')
+            obj.Placement = placement
+        elif hasattr(obj, "XNeg") and hasattr(obj, "YNeg") and hasattr(obj, "ZNeg") and hasattr(obj, "XPos") and hasattr(obj, "YPos") and hasattr(obj, "ZPos"):
             # Créer la boîte centrée sur le modèle avec les extensions
             xMin = modelBbox.XMin - obj.XNeg
             yMin = modelBbox.YMin - obj.YNeg
@@ -180,8 +180,8 @@ class Stock:
         """Gérer les changements de propriétés"""
         if App.ActiveDocument.Restoring:
             return
-        #App.Console.PrintMessage(f'Stock property changed: {prop}\n')
-        if prop in ["Length", "Width", "Height", "WorkPlane","Placement"]:
+        # App.Console.PrintMessage(f'Stock property changed: {prop}\n')
+        if prop in ["Length", "Width", "Height", "WorkPlane"]:
             self.updateShape(obj)
         elif prop in ["XNeg", "YNeg", "ZNeg", "XPos", "YPos", "ZPos"]:
             self.updateShape(obj)
@@ -238,8 +238,9 @@ class ViewProviderStock:
 class ObjSelector(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        # self.objectsToShow = {}
         self.setWindowTitle("Sélection d'objet")
-        self.resize(350, 200)
+        self.resize(350, 250)
         layout = QtWidgets.QVBoxLayout(self)
         
         # Liste des objets du document actif
@@ -248,9 +249,14 @@ class ObjSelector(QtWidgets.QDialog):
         doc = App.ActiveDocument
         if doc:
             for obj in doc.Objects:
-                if hasattr(obj, "Shape"):
+                if hasattr(obj, "Shape") and obj.isDerivedFrom("Part::Feature"):
                     self.objects.append(obj)
-                    self.listWidget.addItem(f"{obj.Label} ({obj.Name})")
+                    # self.listWidget.addItem(f"{obj.Label} ({obj.Name})")
+                    item = QtWidgets.QListWidgetItem(f"{obj.Label} ({obj.Name})")
+                    # Ajouter l'icône si disponible
+                    if hasattr(obj, "ViewObject") and obj.ViewObject:
+                        item.setIcon(QtGui.QIcon(obj.ViewObject.Icon))
+                    self.listWidget.addItem(item)
         layout.addWidget(self.listWidget)
         
         # Bouton OK
@@ -269,7 +275,12 @@ class ObjSelector(QtWidgets.QDialog):
         if row < 0 or row >= len(self.objects):
             self.resultLabel.setText("")
             return
+        # for obj, visibility in self.objectsToShow.items():
+        #     obj.ViewObject.BoundingBox = visibility
+        # self.objectsToShow={}
         obj = self.objects[row]
+        # self.objectsToShow[obj] = obj.ViewObject.BoundingBox
+        # obj.ViewObject.BoundingBox = True
         self.resultLabel.setText(obj.Label)
     
     def getSelectedObject(self):
@@ -570,13 +581,18 @@ class CamProject:
     def __setstate__(self, state):
         """Désérialisation"""
         return None
-
+    
+    def onDelete(self, obj, subelements):
+            """Appelé lors de la suppression de l'objet"""
+            App.Console.PrintMessage(f'onDelete obj {subelements}\n')
+            return True
 
 class ViewProviderCamProject:
     def __init__(self, vobj):
         """Initialise le ViewProvider"""
         vobj.Proxy = self
         self.Object = vobj.Object
+        self.deleteOnReject = True
     
     def getIcon(self):
         """Retourne l'icône"""
@@ -632,11 +648,28 @@ class ViewProviderCamProject:
         self.setEdit(vobj)
         return True
 
+    def deleteObjectsOnReject(self):
+        """Indique si l'objet doit être supprimé si l'édition est annulée"""
+        return self.deleteOnReject
+    
+    def onDelete(self, vobj, subelements):
+        """Appelé lors de la suppression de l'objet"""
+        App.Console.PrintMessage(f'onDelete vobj {subelements}\n')
+        def deleteSubelements(subelements):
+            for sub in subelements:
+                if hasattr(sub, "Group"):
+                    deleteSubelements(sub.Group)
+                App.Console.PrintMessage(f'Deleting subelement: {sub.Name}\n')
+                App.ActiveDocument.removeObject(sub.Name)
+        deleteSubelements(vobj.Object.Group)
+        return True
+
     def setEdit(self, vobj, mode=0):
         """Appelé lorsque l'objet est édité"""
-        import BaptTaskPanel
-        taskd = BaptTaskPanel.CamProjectTaskPanel(vobj.Object)
+        import CamProjectTaskPanel
+        taskd = CamProjectTaskPanel.CamProjectTaskPanel(vobj.Object,self.deleteObjectsOnReject())
         Gui.Control.showDialog(taskd)
+        self.deleteOnReject = False
         return True
     
     def unsetEdit(self, vobj, mode=0):

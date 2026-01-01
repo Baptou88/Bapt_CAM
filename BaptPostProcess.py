@@ -6,7 +6,7 @@ Génère un programme G-code à partir des opérations du projet CAM
 import importlib
 import os
 from BaptPreferences import BaptPreferences
-from BaptTaskPanel import PostProcessorTaskPanel
+from CamProjectTaskPanel import PostProcessorTaskPanel
 from BasePostPro import BasePostPro
 import FreeCAD as App # type: ignore
 from PySide import QtGui, QtCore # type: ignore

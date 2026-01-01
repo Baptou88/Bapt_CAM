@@ -328,30 +328,17 @@ class CreateCamProjectCommand:
         project = BaptCamProject.CamProject(obj)
         
         # Ajouter le ViewProvider
-        if obj.ViewObject:
+        if obj.ViewObject and App.GuiUp:
             BaptCamProject.ViewProviderCamProject(obj.ViewObject)
         
-        # from BaptCamProject import ObjSelector
-        # dlg = ObjSelector()
-        # if dlg.exec_():
-        #     model = dlg.getSelectedObject()
-        #     if model:
-        #         model.ViewObject.Visibility = False
-        #         import Draft
-        #         clone = Draft.clone(model)
-        #         clone.Label = f"Clone_{model.Label}"
-        #         clone.ViewObject.Visibility = True
-        #         clone.ViewObject.Transparency = 50
+        
+            Gui.activeView().setActiveObject("camproject",obj)
 
-        #         obj.Model = clone
-        #         obj.addObject(clone)
         # Recomputer
-        Gui.activeView().setActiveObject("camproject",obj)
-
         doc.recompute()
         
         # Ouvrir l'éditeur
-        if obj.ViewObject:
+        if obj.ViewObject and App.GuiUp:
             obj.ViewObject.Proxy.setEdit(obj.ViewObject)
             
         # Message de confirmation
@@ -501,7 +488,7 @@ class CreateContourEditableGeometryCommand:
 
 class CreateHotReloadCommand:
     def GetResources(self):
-        return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("hotreload.svg"),
                 'MenuText': "Hot Reload",
                 'ToolTip': "Recharge les modules Bapt"}
     def IsActive(self):
@@ -543,6 +530,17 @@ class CreateHotReloadCommand:
             reload(BaptHoleRecognitionTaskPanel)
             import Op.BaptPocketOp as BaptPocketOp
             reload(BaptPocketOp)
+
+            # dossier = BaptUtilities.get_module_path()
+
+            # modules = [
+            #     f[:-3] for f in os.listdir(dossier)
+            #     if f.endswith(".py") and f != "__init__.py"
+            # ]
+
+            # print(modules)
+            # for module_name in modules:
+            #     reload(__import__(module_name))
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 
