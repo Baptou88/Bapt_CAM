@@ -14,7 +14,7 @@ try:
 except ImportError:
     App.Console.PrintError("Impossible d'importer le module coin. La mise en surbrillance des arêtes ne fonctionnera pas correctement.\n")
 
-
+DEBUG = False
 class ContourGeometry:
     """Classe pour gérer les contours d'usinage"""
 
@@ -75,16 +75,9 @@ class ContourGeometry:
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
-        #return
-        # App.Console.PrintMessage('Restoring ContourGeometry\n')
-        # children = []
-        # if hasattr(obj, "Group"):
-        #     App.Console.PrintMessage(f"ContourGeometry {obj.Name} a un groupe\n")
-        #     for child in obj.Group:
-        #         App.Console.PrintMessage(f"Enfant: {child.Name}\n")
-        #         children.append(child)
+
         self.__init__(obj)
-        # obj.Group = children
+
 
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
@@ -96,9 +89,9 @@ class ContourGeometry:
             self.execute(obj)
         elif prop in ["Edges", "Zref", "Direction", "depth", "debugArrow"]:
             self.execute(obj)
-        elif prop == "SelectedEdgeIndex":
-            # Mettre à jour les couleurs des arêtes lorsque la sélection change
-            self.updateEdgeColors(obj)
+        # elif prop == "SelectedEdgeIndex":
+        #     # Mettre à jour les couleurs des arêtes lorsque la sélection change
+        #     self.updateEdgeColors(obj)
 
     def debugEdges(self,edges, name =""):
         # Diagnostic avant création du wire
@@ -113,24 +106,9 @@ class ContourGeometry:
         start = App.Vector(round(start.x, 3), round(start.y, 3), round(start.z, 3))
         end = edge.Vertexes[-1].Point
         end = App.Vector(round(end.x, 3), round(end.y, 3), round(end.z, 3))
-        App.Console.PrintMessage(f"[DEBUG] Edge {i}: start={start}, orientation={edge.Orientation} end={end}, firstParam={round(edge.FirstParameter,3)}, lastParam={round(edge.LastParameter,3)}\n")
+        App.Console.PrintMessage(f"[DEBUG] Edge {i}: orientation={edge.Orientation}, start={start}, end={end}, firstParam={round(edge.FirstParameter,3)}, lastParam={round(edge.LastParameter,3)}\n")
 
         
-    def projeter_edges_sur_plan(self,edgess,plan):
-        """Fonction pour projeter une liste d'arêtes sur un plan"""
-        try:
-            projections = []
-            for edge in edgess:
-                # Projection de l'arête sur le plan
-                projection = edge.makeParallelProjection(plan,App.Vector(0, 0, 1))
-                projections.append(projection)
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de la projection des arêtes: {str(e)}\n")
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            App.Console.PrintMessage(f'Erreur à la ligne {exc_tb.tb_lineno}\n')
-            return []
-        return projections
-
     def execute(self, obj):
         """Mettre à jour la représentation visuelle du contour"""
         if App.ActiveDocument.Restoring:
@@ -146,7 +124,8 @@ class ContourGeometry:
                 obj_ref = sub[0]  # L'objet référencé
                 sub_names = sub[1]  # Les noms des sous-éléments (arêtes)
                 shape_type = getattr(obj_ref.Shape, "ShapeType", "Inconnu")
-                App.Console.PrintMessage(f"Traitement de l'objet {obj_ref.Name} avec les sous-éléments {sub_names}, type:{shape_type}\n")
+                if DEBUG:
+                    App.Console.PrintMessage(f"Traitement de l'objet {obj_ref.Name} avec les sous-éléments {sub_names}, type:{shape_type}\n")
                 
                 if shape_type == "Face":
                     # Si l'objet est une face, prendre toutes ses arêtes
@@ -177,18 +156,9 @@ class ContourGeometry:
             if hasattr(obj, "SelectedEdgeIndex"):
                 selected_index = obj.SelectedEdgeIndex
 
-            #planZRef = Part.Plane(Base.Vector(0, 0, obj.Zref), Base.Vector(0, 0, 1))  # Plan à Zref
-            # planZFinal = Part.Plane(Base.Vector(0, 0, (obj.Zref + obj.depth) if obj.DepthMode == "Relatif" else obj.depth), Base.Vector(0, 0, 1))  # Plan à
-
             # Créer des arêtes ajustées à la hauteur Zref et à depth
             adjusted_edges_zref = []
             adjusted_edges_depth = []
-
-            # App.Console.PrintMessage(f"edges avant projection: {len(edges)}\n")
-            # App.Console.PrintMessage(f"planZRef: {planZRef}\n")
-
-            # adjusted_edges_zref = self.projeter_edges_sur_plan(edges,planZRef)
-            # adjusted_edges_depth = self.projeter_edges_sur_plan(edges,planZFinal)
 
             # Créer des flèches pour indiquer la direction
             direction_arrows = []
@@ -203,12 +173,12 @@ class ContourGeometry:
             #sorted_edges = Part.getSortedClusters(list(edges))[0]
             #sorted_edges = edges.copy()  # Faire une copie des arêtes pour le tri
             #sorted_edges = edges
-            a = None
+            
             if obj.Direction == "Anti-horaire":
-                a = sorted_edges.copy()
                 sorted_edges.reverse()
 
-            self.debugEdges(sorted_edges, "Sorted Edges")
+            if DEBUG:
+                self.debugEdges(sorted_edges, "Sorted Edges")
 
 
             if not sorted_edges:
@@ -263,20 +233,16 @@ class ContourGeometry:
                         #App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n") 
                         pass                   
 
-                self.debugEdge(edge,i,"")
+                if DEBUG:
+                    self.debugEdge(edge,i,"")
 
                 # Créer une flèche pour indiquer la direction de l'arête
                 arrow = self._create_direction_arrow(obj, edge, size=2.0,invert_direction=not bon_sens)
                 if arrow:
                     direction_arrows.append(arrow)
 
-                #edge_zref = self._create_adjusted_edge(edge, obj.Zref, selected= (i == selected_index))
                 edge_zref = edge.copy().translate(App.Vector(0,0, obj.Zref - edge.Vertexes[0].Z))
 
-                # if obj.DepthMode == "Relatif":
-                #     edge_zfinal = self._create_adjusted_edge(edge, obj.Zref + obj.depth, selected=(i == selected_index))
-                # else:
-                #     edge_zfinal = self._create_adjusted_edge(edge, obj.depth, selected=(i == selected_index))
                 edge_zfinal = edge.copy().translate(App.Vector(0,0, obj.Zref - edge.Vertexes[0].Z + obj.depth if obj.DepthMode == "Relatif" else obj.depth - edge.Vertexes[0].Z))
                 adjusted_edges_zref.append(edge_zref)
                 adjusted_edges_depth.append(edge_zfinal)
@@ -631,16 +597,6 @@ class ContourGeometry:
         except Exception as e:
             App.Console.PrintWarning(f"Erreur lors de la création de la flèche: {str(e)}\n")
             return None
-        
-
-    def getOutList(self, obj):
-        """Retourne la liste des objets référencés par cet objet"""
-        outlist = []
-        if hasattr(obj, "Edges") and obj.Edges:
-            for sub in obj.Edges:
-                if sub[0] not in outlist:
-                    outlist.append(sub[0])
-        return outlist
 
     def __getstate__(self):
         """Sérialisation"""
@@ -817,24 +773,42 @@ class ViewProviderContourGeometry:
         """Appelé lors de l'attachement du ViewProvider"""
         self.Object = vobj.Object
 
-        # # Définir la couleur rouge pour le contour
-        # vobj.LineColor = (1.0, 0.0, 0.0)  # Rouge
-        # vobj.PointColor = (1.0, 0.0, 0.0)  # Rouge
-        # vobj.LineWidth = 4.0  # Largeur de ligne plus grande
-        # vobj.PointSize = 6.0  # Taille des points plus grande
-
-        # # Ajouter une propriété pour la couleur des arêtes sélectionnées
-        # if not hasattr(vobj, "SelectedEdgeColor"):
-        #     vobj.addProperty("App::PropertyColor", "SelectedEdgeColor", "Display", "Color of selected edges")
-        #     vobj.SelectedEdgeColor = (0.0, 1.0, 1.0)  # Cyan par défaut
+        # # Créer un switch pour activer/désactiver la surbrillance
+        # self.coin_switch = coin.SoSwitch()
+        # self.coin_switch.whichChild = coin.SO_SWITCH_NONE  # Désactivé par défaut
+        
+        # # Sépérateur pour la surbrillance
+        # sep = coin.SoSeparator()
+        
+        # # Style de ligne pour la surbrillance
+        # drawstyle = coin.SoDrawStyle()
+        # drawstyle.lineWidth = 8.0  # Plus épais que normal
+        # sep.addChild(drawstyle)
+        
+        # # Couleur de surbrillance (cyan)
+        # mat = coin.SoMaterial()
+        # mat.diffuseColor = (0.0, 1.0, 1.0)
+        # mat.emissiveColor = (0.0, 0.5, 0.5)
+        # sep.addChild(mat)
+        
+        # # Coordonnées (vides au départ, seront remplies par updateHighlight)
+        # self.coin_coords = coin.SoCoordinate3()
+        # sep.addChild(self.coin_coords)
+        
+        # # LineSet pour dessiner les lignes
+        # self.coin_lineset = coin.SoLineSet()
+        # sep.addChild(self.coin_lineset)
+        
+        # self.coin_switch.addChild(sep)
+        # vobj.RootNode.addChild(self.coin_switch)
 
     def updateData(self, obj, prop):
         """Appelé lorsqu'une propriété de l'objet est modifiée"""
         # Mettre à jour l'affichage si une propriété pertinente change
         if prop == "SelectedEdgeIndex":
-            # Forcer une recomputation pour mettre à jour l'affichage
-            if obj.Document:
-                obj.Document.recompute()
+            pass
+
+    
 
     def onChanged(self, vobj, prop):
         """Appelé lorsqu'une propriété du ViewProvider est modifiée"""
@@ -875,6 +849,7 @@ class ViewProviderContourGeometry:
 
     def getDefaultDisplayMode(self):
         """Retourne le mode d'affichage par défaut"""
+        return "Path"
         return "Flat Lines"
 
     def setDisplayMode(self, mode):

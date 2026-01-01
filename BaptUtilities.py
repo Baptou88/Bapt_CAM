@@ -17,6 +17,12 @@ def getResourcesPath():
     '''
     return os.path.join(get_module_path(), "resources")
 
+def getPanel(panel):
+    '''
+    Returns the panel path.
+    '''
+    return os.path.join(getResourcesPath(), "panels", panel)
+
 def getIconPath(icon: str):
     '''
     Returns the icon path.
@@ -59,4 +65,30 @@ def find_cam_project(o):
             return parent
         if hasattr(parent, "InList"):   
             queue.extend(parent.InList)
+    return None
+
+def getActiveCamProject():
+    """Retourne le projet CAM actif dans l'arborescence. \
+       1. Vérifie d'abord la sélection courante. \
+       2. Puis vérifie l'objet actif  \
+       3. puis parcourt tous les objets du document actif."""
+
+    sel = FreeCADGui.Selection.getSelection()
+    if sel and len(sel) <= 1:
+        if hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject":
+            return sel[0]
+        
+    obj = FreeCADGui.activeView().getActiveObject("camproject")
+    if obj:
+        return obj
+    
+    cam_projects = []
+    for obj in App.ActiveDocument.Objects:
+        proxy = getattr(obj, "Proxy", None)
+        if proxy is not None and hasattr(proxy, "Type") and proxy.Type == "CamProject":
+            cam_projects.append(obj)
+    if len(cam_projects) == 1:
+        return cam_projects[0]
+    
+    
     return None

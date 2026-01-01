@@ -6,7 +6,7 @@ Génère un programme G-code à partir des opérations du projet CAM
 import importlib
 import os
 from BaptPreferences import BaptPreferences
-from BaptTaskPanel import PostProcessorTaskPanel
+from CamProjectTaskPanel import PostProcessorTaskPanel
 from BasePostPro import BasePostPro
 import FreeCAD as App # type: ignore
 from PySide import QtGui, QtCore # type: ignore
@@ -86,16 +86,17 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
         # --- Surfacage ---
         if obj.Proxy.Type == 'Surfacage' and hasattr(obj, 'Shape'):
             
-            gcode_lines.append(f"(Surfacage: {obj.Label})")
+            gcode_lines.append(Postpro.writeComment(f"Surfacage: {obj.Label}"))
 
             gcode_lines.append(obj.Gcode)
 
         # --- Contournage ---
         if obj.Proxy.Type == 'ContournageCycle' and hasattr(obj, 'Shape'):
-           
+            transformed = Postpro.transformGCode(obj.Gcode)
             gcode_lines.append(Postpro.writeComment(f"Contournage operation: {obj.Label}"))
 
-            gcode_lines.append(obj.Gcode)
+            gcode_lines.append(transformed)
+            #gcode_lines.append(obj.Gcode)
 
         # --- Perçage ---
         elif obj.Proxy.Type == 'DrillOperation':

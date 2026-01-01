@@ -5,9 +5,9 @@
 
   <description>Bapt workbench provide functionality to prepare job and generate Gcode for 4 or 5 axis (2 axis in first time will be nice :)) cnc .</description>
 
-  <version>0.0.3</version>
+  <version>0.1.0</version>
 
-  <date>2025-11-24</date>
+  <date>2026-01-01</date>
 
   <maintainer email="Baptou_88@gmail.com"> Baptou88</maintainer>
 

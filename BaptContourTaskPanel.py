@@ -468,7 +468,7 @@ class ContourTaskPanel:
             Gui.Selection.removeSelectionGate()
         if self.deleteOnReject:
             App.ActiveDocument.removeObject(self.obj.Name)
-        if self._clickObserver:
+        if hasattr(self, "_clickObserver") and self._clickObserver:
             self._clickObserver.disable()
             self._clickObserver = None
             self.clickObserverActive = False

@@ -37,12 +37,15 @@ Therefore, I wanted to develop software that would meet my needs, and I found Fr
 
 ## Commands
 
-- `Bapt_CreateCamProject`: Create a new CAM project.
-- `Bapt_CreateDrillGeometry`: Create a new drill geometry.
-- `Bapt_CreateDrillCycle`: Create a new drill cycle.
-- `Bapt_CreateContournageGeometry`: Create a new contournage geometry.
-- `Bapt_CreateContournageCycle`: Create a new contournage cycle.
-- `Bapt_CreateSurfacageCycle`: Create a new surfacage cycle.
+- ![](/resources/icons/BaptWorkbench.svg) `Bapt_CreateCamProject`: Create a new CAM project.
+- ![](/resources/icons/Tree_HoleRecognition.svg) `Bapt_HoleRecognition`
+- ![](/resources/icons/Tree_Drilling.svg)`Bapt_CreateDrillGeometry`: Create a new drill geometry.
+- ![](/resources/icons/Tree_Drilling.svg)`Bapt_CreateDrillCycle`: Create a new drill cycle.
+- ![](/resources/icons/Tree_Contour.svg)`Bapt_CreateContournageGeometry`: Create a new contournage geometry.
+- ![](/resources/icons/Contournage.svg)`Bapt_CreateContournageCycle`: Create a new contournage cycle.
+- ![](/resources/icons/Surfacage.svg)`Bapt_CreateSurfacageCycle`: Create a new surfacage cycle.
+- ![](/resources/icons/PostProcess.svg)`Bapt_PostProcess`: PostProcess
+- ![](/resources/icons/ProbeSurface.svg)`Bapt_ProbeSurface`: Probe
 - `Bapt_CreateHotReload`: Hot reload the workbench.
 
 ## License

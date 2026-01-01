@@ -12,7 +12,7 @@ import BaptDrillGeometry
 from BaptHighlight import CreateHighlightCommand
 import BaptMpfReader
 import BaptPath
-import BaptPocketOperation
+import Op.BaptPocketOp as BaptPocketOp
 import BaptPostProcess
 import BaptPreferences
 import BaptTools
@@ -60,7 +60,7 @@ class CreatePocketOperationCommand:
         doc = App.ActiveDocument
         doc.openTransaction('Create Pocket Operation')
         contour_geometry = Gui.Selection.getSelection()[0]
-        obj = BaptPocketOperation.createPocketOperation(contour=contour_geometry)
+        obj = BaptPocketOp.createPocketOperation(contour=contour_geometry)
         # if obj.ViewObject:
         #     BaptPocketOperation.ViewProviderPocketOperation(obj.ViewObject)
         #     obj.ViewObject.Proxy.setEdit(obj.ViewObject)
@@ -328,30 +328,17 @@ class CreateCamProjectCommand:
         project = BaptCamProject.CamProject(obj)
         
         # Ajouter le ViewProvider
-        if obj.ViewObject:
+        if obj.ViewObject and App.GuiUp:
             BaptCamProject.ViewProviderCamProject(obj.ViewObject)
         
-        # from BaptCamProject import ObjSelector
-        # dlg = ObjSelector()
-        # if dlg.exec_():
-        #     model = dlg.getSelectedObject()
-        #     if model:
-        #         model.ViewObject.Visibility = False
-        #         import Draft
-        #         clone = Draft.clone(model)
-        #         clone.Label = f"Clone_{model.Label}"
-        #         clone.ViewObject.Visibility = True
-        #         clone.ViewObject.Transparency = 50
+        
+            Gui.activeView().setActiveObject("camproject",obj)
 
-        #         obj.Model = clone
-        #         obj.addObject(clone)
         # Recomputer
-        Gui.activeView().setActiveObject("camproject",obj)
-
         doc.recompute()
         
         # Ouvrir l'éditeur
-        if obj.ViewObject:
+        if obj.ViewObject and App.GuiUp:
             obj.ViewObject.Proxy.setEdit(obj.ViewObject)
             
         # Message de confirmation
@@ -501,7 +488,7 @@ class CreateContourEditableGeometryCommand:
 
 class CreateHotReloadCommand:
     def GetResources(self):
-        return {'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("hotreload.svg"),
                 'MenuText': "Hot Reload",
                 'ToolTip': "Recharge les modules Bapt"}
     def IsActive(self):
@@ -537,6 +524,23 @@ class CreateHotReloadCommand:
             reload(BQuantitySpinBox)
             import Tool.ToolTaskPannel as ToolTaskPannel
             reload(ToolTaskPannel)
+            import BaptHoleRecognition
+            reload(BaptHoleRecognition)
+            import BaptHoleRecognitionTaskPanel
+            reload(BaptHoleRecognitionTaskPanel)
+            import Op.BaptPocketOp as BaptPocketOp
+            reload(BaptPocketOp)
+
+            # dossier = BaptUtilities.get_module_path()
+
+            # modules = [
+            #     f[:-3] for f in os.listdir(dossier)
+            #     if f.endswith(".py") and f != "__init__.py"
+            # ]
+
+            # print(modules)
+            # for module_name in modules:
+            #     reload(__import__(module_name))
             # Message de confirmation
             App.Console.PrintMessage("hot Reload avec Succes!\n")
 
@@ -725,6 +729,47 @@ class TestPathCommand:
 
         doc.recompute()
 
+
+class HoleRecognitionCommand:
+    """Commande pour la reconnaissance automatique de trous"""
+    def GetResources(self):
+        return {
+            'Pixmap': BaptUtilities.getIconPath("Tree_HoleRecognition.svg"),
+            'MenuText': "Reconnaissance de trous",
+            'ToolTip': "Détecter automatiquement les trous cylindriques perpendiculaires au plan de travail"
+        }
+    
+    def IsActive(self):
+        """La commande est active si un document est ouvert"""
+        doc = App.ActiveDocument
+        if doc is None:
+            return False
+        cam_project = BaptUtilities.getActiveCamProject()
+        
+        return cam_project is not None
+    
+    def Activated(self):
+        """Créer un nouvel objet de reconnaissance de trous"""
+        import BaptHoleRecognition
+        
+        doc = App.ActiveDocument
+
+        cam_project = BaptUtilities.getActiveCamProject()
+        if cam_project is None:
+            App.Console.PrintError("Aucun projet CAM actif. Veuillez sélectionner ou activer un projet CAM.\n")
+            return
+        
+        doc.openTransaction('Create Hole Recognition')
+        obj = BaptHoleRecognition.createHoleRecognition()
+        cam_project.Proxy.getGeometryGroup(cam_project).addObject(obj)
+        # Ouvrir le TaskPanel
+        if obj.ViewObject:
+            obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+        
+        doc.commitTransaction()
+        App.Console.PrintMessage("Objet de reconnaissance de trous créé.\n")
+
+
 # Enregistrer les commandes
 Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
 Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
@@ -743,3 +788,4 @@ Gui.addCommand('Bapt_CreateSurfacage', CreateSurfacageCommand())
 Gui.addCommand('Bapt_CreateProbeFace', ProbeFaceCommand())
 Gui.addCommand('Bapt_TestPath', TestPathCommand())
 Gui.addCommand('Bapt_HighlightCollisions', CreateHighlightCommand())
+Gui.addCommand('Bapt_HoleRecognition', HoleRecognitionCommand())

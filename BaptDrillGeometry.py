@@ -19,7 +19,7 @@ class DrillGeometry:
             obj.addProperty("App::PropertyLinkSubList", "DrillFaces", "Drill", "Selected drill faces")
 
         # Liste des positions de perçage
-        if not hasattr(obj, "DrillPositions"):
+        if not hasattr(obj, "DrillPositions"): #TODO Renamer en HolePositions
             obj.addProperty("App::PropertyVectorList", "DrillPositions", "Drill", "Drill positions")
 
         # Diamètre des perçages (détecté automatiquement)
@@ -96,7 +96,7 @@ class DrillGeometry:
 
                     # Récupérer le diamètre
                     diameters.add(face.Surface.Radius * 2)
-                    App.Console.PrintMessage(f'diam detected {face.Surface.Radius * 2}\n')
+                    #App.Console.PrintMessage(f'diam detected {face.Surface.Radius * 2}\n')
                     # Calculer la profondeur en trouvant la face plane associée
                     # TODO: Implémenter la détection de profondeur
                     depths.add(10.0)  # valeur temporaire

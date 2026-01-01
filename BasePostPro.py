@@ -20,6 +20,9 @@ class BasePostPro:
         h.append("G17 (XY plane selection)")
         return '\n'.join(h)
     
+    def transformGCode(self, gcode):
+        return gcode
+
     def writeFooter(self):
         f = []
         f.append("M30 ")

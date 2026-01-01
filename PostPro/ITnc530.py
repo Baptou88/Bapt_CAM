@@ -30,11 +30,47 @@ class PostPro(BasePostPro):
         blk += f"BLK FORM 02 X{bb.XMax:.3f} Y{bb.YMax:.3f} Z{bb.ZMax:.3f}\n"
         return blk
 
+    def transformGCode(self, gcode):
+
+        lines = gcode.split('\n')
+        retour = []
+        for i in range(len(lines)):
+            if lines[i].startswith('(') and lines[i].endswith(')'):
+                lines[i] = lines[i][1:-1]  # Remove parentheses
+                lines[i]  = self.writeComment(lines[i])
+            elif lines[i].startswith('G0'):
+                lines[i] = lines[i].replace('G0', 'L ')
+                lines[i] += ' FMAX'
+            elif lines[i].startswith('G1'):
+                lines[i] = lines[i].replace('G1', 'L ')
+                feed = None
+                if 'F' in lines[i]:
+                    parts = lines[i].split('F')
+                    #remove feed from line
+                    lines[i] = parts[0]
+                    feed =  parts[1]
+                if 'G40' in lines[i]:
+                    lines[i] = lines[i].replace('G40', '')
+                    lines[i] += ' R0'
+                if 'G41' in lines[i]:
+                    # parts = lines[i].split('F')
+                    # lines[i] = parts[0] + ' F' + parts[1]
+                    lines[i] = lines[i].replace('G41', '')
+                    lines[i] += ' RL'
+                if 'G42' in lines[i]:
+                    lines[i] = lines[i].replace('G42', '')
+                    lines[i] += ' RR'
+                if feed is not None:
+                    lines[i] += f' F{feed}'
+
+            retour.append(lines[i])
+        return '\n'.join(retour)
+
     def toolChange(self, tool, cam_project):
         tool_id = getattr(tool, 'Id', None)
         tool_name = getattr(tool, 'Label', None)
-        spindle = getattr(tool, 'Speed', None)
-        Feed = getattr(tool, 'Feed', None)
+        spindle = getattr(tool, 'Speed', None).Value
+        Feed = getattr(tool, 'Feed', None).Value
         return f"TOOL CALL {tool_id} Z S{spindle} DL+0 DR+0\nL R0 F{Feed} M3\n"
 
 
