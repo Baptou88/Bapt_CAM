@@ -6,6 +6,7 @@ from PySide import QtCore, QtGui
 import BaptUtilities
 translate = FreeCAD.Qt.translate
 
+
 class BaptPreferences:
     ''' Exemple d'utilisation:
      from BaptPreferences import BaptPreferences
@@ -13,29 +14,27 @@ class BaptPreferences:
      db_path = prefs.getToolsDbPath()
      dossier_gcode = prefs.getGCodeFolderPath()
      '''
+
     def __init__(self):
-        
-        self.ToolsDbPath :str= None
-        self.GCodeFolderPath :str= None
-        self.AutoChildUpdate :bool= None
-        self.ModeAjout:int= None
+
+        self.ToolsDbPath: str = None
+        self.GCodeFolderPath: str = None
+        self.AutoChildUpdate: bool = None
+        self.ModeAjout: int = None
         self.DefaultRapidColor = (1.0, 0.0, 0.0)
         self.DefaultFeedColor = (0.0, 1.0, 0.0)
-        
+
         # Load settings
         self.preferences = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Bapt")
         self.loadSettings()
 
-    
         self.Dirty = False
-    
 
     def getAutoChildUpdate(self) -> bool:
         """Obtenir l'état de la mise à jour automatique des enfants"""
         return self.AutoChildUpdate
 
-    
-    def saveSettings(self)-> bool:
+    def saveSettings(self) -> bool:
         """Enregistrer les paramètres"""
 
         self.preferences.SetString("ToolsDbPath", self.ToolsDbPath)
@@ -55,12 +54,11 @@ class BaptPreferences:
         feed_color_unsigned = (r << 16) | (g << 8) | b
         self.preferences.SetUnsigned("DefaultFeedColor", feed_color_unsigned)
 
-
         self.Dirty = False
 
         return True
-        
-    def loadSettings(self)-> bool:
+
+    def loadSettings(self) -> bool:
         """Charger les paramètres"""
         self.ToolsDbPath = self.preferences.GetString("ToolsDbPath", "")
         self.GCodeFolderPath = self.preferences.GetString("GCodeFolderPath", "")
@@ -68,23 +66,21 @@ class BaptPreferences:
         self.ModeAjout = self.preferences.GetInt("ModeAjout", 0)
         DefaultRapidColor = self.preferences.GetUnsigned("DefaultRapidColor", 16711680)  # Default to red
 
-        #unsigned int to tuple
+        # unsigned int to tuple
         r = (DefaultRapidColor >> 16) & 0xFF
         g = (DefaultRapidColor >> 8) & 0xFF
         b = DefaultRapidColor & 0xFF
         self.DefaultRapidColor = (r / 255.0, g / 255.0, b / 255.0)
 
-
         DefaultFeedColor = self.preferences.GetUnsigned("DefaultFeedColor", 65280)  # Default to green
 
-        #unsigned int to tuple
+        # unsigned int to tuple
         r = (DefaultFeedColor >> 16) & 0xFF
         g = (DefaultFeedColor >> 8) & 0xFF
         b = DefaultFeedColor & 0xFF
         self.DefaultFeedColor = (r / 255.0, g / 255.0, b / 255.0)
         return True
-        
-        
+
     def getToolsDbPath(self) -> str:
         """Obtenir le chemin de la base de données d'outils"""
         path = self.ToolsDbPath
@@ -94,33 +90,33 @@ class BaptPreferences:
             os.makedirs(os.path.dirname(path), exist_ok=True)
         return path
 
-    def getGCodeFolderPath(self) -> str :
+    def getGCodeFolderPath(self) -> str:
         """Obtenir le dossier par défaut des programmes G-code"""
         return self.GCodeFolderPath
-
-    
 
     def getModeAjout(self) -> int:
         """Obtenir le mode d'ajout des opérations"""
         # preferences = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Bapt")
         # return preferences.GetInt("ModeAjout", 0)  # Valeur par défaut 0
         return self.ModeAjout
-    
+
+
 class BaptPreferencesPage(QtGui.QWidget):
     name = translate("Preferences", "Bapt CAM Pref")
+
     def __init__(self, parent=None):
-        #super(BaptPreferencesPage, self).__init__(parent)
+        # super(BaptPreferencesPage, self).__init__(parent)
         super().__init__(parent)
         self.form = QtGui.QWidget()
         self.form.setWindowTitle(self.name)
-        
+
         # Create layout
         layout = QtGui.QVBoxLayout(self.form)
-        
+
         # Groupe pour les paramètres de la base de données d'outils
         tools_db_group = QtGui.QGroupBox(translate("Preferences", "Tools Database"))
         tools_db_layout = QtGui.QVBoxLayout()
-        
+
         from PySide.QtCore import QT_TRANSLATE_NOOP
 
         # Explication
@@ -128,49 +124,47 @@ class BaptPreferencesPage(QtGui.QWidget):
                                   "une base de données par défaut sera créée dans le dossier utilisateur de FreeCAD."))
         info_label.setWordWrap(True)
         tools_db_layout.addWidget(info_label)
-        
+
         # Chemin de la base de données
         path_layout = QtGui.QHBoxLayout()
         path_label = QtGui.QLabel("Chemin de la base de données:")
         self.toolsDbPath = QtGui.QLineEdit()
         self.toolsDbPath.setReadOnly(True)  # Rendre le champ en lecture seule pour éviter les erreurs
         self.toolsDbPathButton = QtGui.QPushButton("Parcourir...")
-        
+
         path_layout.addWidget(path_label)
         path_layout.addWidget(self.toolsDbPath)
         path_layout.addWidget(self.toolsDbPathButton)
         tools_db_layout.addLayout(path_layout)
-        
+
         # Boutons pour créer une nouvelle base de données ou utiliser celle par défaut
         buttons_layout = QtGui.QHBoxLayout()
-        
+
         self.createNewDbButton = QtGui.QPushButton("Créer une nouvelle base de données...")
         self.useDefaultDbButton = QtGui.QPushButton("Utiliser la base de données par défaut")
-        
+
         buttons_layout.addWidget(self.createNewDbButton)
         buttons_layout.addWidget(self.useDefaultDbButton)
         tools_db_layout.addLayout(buttons_layout)
-        
+
         tools_db_group.setLayout(tools_db_layout)
 
-        #toggle auto child update
+        # toggle auto child update
         self.auto_child_update_checkbox = QtGui.QCheckBox("Mise à jour automatique des enfants")
         self.auto_child_update_checkbox.setToolTip("Si activé, les objets enfants seront mis à jour automatiquement lorsque l'objet parent est modifié.")
         layout.addWidget(self.auto_child_update_checkbox)
-        #self.auto_child_update_checkbox.setChecked(BaptUtilities.getAutoChildUpdate())
-        #self.auto_child_update_checkbox.stateChanged.connect(self.onAutoChildUpdateChanged)
+        # self.auto_child_update_checkbox.setChecked(BaptUtilities.getAutoChildUpdate())
+        # self.auto_child_update_checkbox.stateChanged.connect(self.onAutoChildUpdateChanged)
 
         mode_ajout_label = QtGui.QLabel("Mode d'ajout des opérations:")
         mode_ajout_label.setToolTip("Sélectionnez comment les opérations doivent être ajoutées aux projets CAM.")
         layout.addWidget(mode_ajout_label)
-        
+
         self.mode_ajout_combo = QtGui.QComboBox()
         self.mode_ajout_combo.addItem("Ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien (default)")
         self.mode_ajout_combo.addItem("Ajouter à la géométrie comme enfant (pas conseillé)")
         self.mode_ajout_combo.addItem("Ajouter uniquement au groupe opérations du projet CAM comme lien")
-        
 
-                
         # Chemin du dossier G-code
         gcode_group = QtGui.QGroupBox("Dossier G-code par défaut")
         gcode_folder_layout = QtGui.QHBoxLayout()
@@ -178,7 +172,7 @@ class BaptPreferencesPage(QtGui.QWidget):
         self.gcodeFolderPath = QtGui.QLineEdit()
         self.gcodeFolderPath.setReadOnly(True)  # Rendre le champ en lecture seule pour éviter les erreurs
         self.gcodeFolderPathButton = QtGui.QPushButton("Parcourir...")
-        
+
         gcode_folder_layout.addWidget(gcode_folder_label)
         gcode_folder_layout.addWidget(self.gcodeFolderPath)
         gcode_folder_layout.addWidget(self.gcodeFolderPathButton)
@@ -201,36 +195,34 @@ class BaptPreferencesPage(QtGui.QWidget):
         rapid_color_layout.addWidget(rapid_color_label)
         rapid_color_layout.addWidget(self.rapidColorButton)
         color_layout.addLayout(rapid_color_layout)
-        
-        #Couleur des mouvements d'avance
+
+        # Couleur des mouvements d'avance
         feed_color_layout = QtGui.QHBoxLayout()
         feed_color_label = QtGui.QLabel("Couleur des mouvements d'avance:")
         self.feedColorButton = QtGui.QPushButton()
         self.feedColorButton.setAutoFillBackground(True)
         self.feedColorButton.clicked.connect(self.chooseFeedColor)
-        feed_color_layout.addWidget(feed_color_label)        
+        feed_color_layout.addWidget(feed_color_label)
         feed_color_layout.addWidget(self.feedColorButton)
         color_layout.addLayout(feed_color_layout)
-        
+
         color_group.setLayout(color_layout)
         layout.addWidget(color_group)
-        
+
         # Ajouter un espace extensible en bas
         layout.addStretch()
-        
+
         # Connect signals
         self.toolsDbPathButton.clicked.connect(self.chooseExistingDb)
         self.createNewDbButton.clicked.connect(self.createNewDb)
         self.useDefaultDbButton.clicked.connect(self.useDefaultDb)
         self.gcodeFolderPathButton.clicked.connect(self.chooseGCodeFolder)
         self.mode_ajout_combo.currentIndexChanged.connect(self.onModeAjoutChanged)
-        
-        
-        
+
         # Create BaptPreferences instance
         self.prefs = BaptPreferences()
         self.loadSettings()
-        
+
     def chooseRapidColor(self):
         color = QtGui.QColorDialog.getColor()
         if color.isValid():
@@ -238,7 +230,7 @@ class BaptPreferencesPage(QtGui.QWidget):
             # Convertir la couleur en tuple (r, g, b) avec des valeurs entre 0 et 1
             r, g, b = color.red() / 255.0, color.green() / 255.0, color.blue() / 255.0
             self.rapidColor = (r, g, b)
-    
+
     def chooseFeedColor(self):
         color = QtGui.QColorDialog.getColor()
         if color.isValid():
@@ -246,7 +238,7 @@ class BaptPreferencesPage(QtGui.QWidget):
             # Convertir la couleur en tuple (r, g, b) avec des valeurs entre 0 et 1
             r, g, b = color.red() / 255.0, color.green() / 255.0, color.blue() / 255.0
             self.feedColor = (r, g, b)
-        
+
     def saveSettings(self):
         """Enregistrer les paramètres"""
         App.Console.PrintMessage(f'saveSettings !\n')
@@ -258,7 +250,7 @@ class BaptPreferencesPage(QtGui.QWidget):
         self.prefs.DefaultFeedColor = self.feedColor
 
         self.prefs.saveSettings()
-        
+
     def loadSettings(self):
         """Charger les paramètres"""
 
@@ -266,13 +258,12 @@ class BaptPreferencesPage(QtGui.QWidget):
         self.gcodeFolderPath.setText(self.prefs.GCodeFolderPath)
         self.auto_child_update_checkbox.setChecked(self.prefs.AutoChildUpdate)
         self.mode_ajout_combo.setCurrentIndex(self.prefs.getModeAjout())
-        
+
         self.rapidColor = self.prefs.DefaultRapidColor
         self.feedColor = self.prefs.DefaultFeedColor
 
         self.rapidColorButton.setStyleSheet(f"background-color: rgb({int(self.rapidColor[0]*255)}, {int(self.rapidColor[1]*255)}, {int(self.rapidColor[2]*255)})")
         self.feedColorButton.setStyleSheet(f"background-color: rgb({int(self.feedColor[0]*255)}, {int(self.feedColor[1]*255)}, {int(self.feedColor[2]*255)})")
-
 
     def chooseExistingDb(self):
         """Sélectionner une base de données existante"""
@@ -282,11 +273,11 @@ class BaptPreferencesPage(QtGui.QWidget):
             os.path.dirname(self.toolsDbPath.text()) if self.toolsDbPath.text() else App.getUserAppDataDir(),
             "Fichiers SQLite (*.db);;Tous les fichiers (*.*)"
         )[0]
-        
+
         if path:
             self.toolsDbPath.setText(path)
             self.saveSettings()
-            
+
             # Afficher un message de confirmation
             QtGui.QMessageBox.information(
                 self.form,
@@ -302,15 +293,15 @@ class BaptPreferencesPage(QtGui.QWidget):
             os.path.dirname(self.toolsDbPath.text()) if self.toolsDbPath.text() else App.getUserAppDataDir(),
             "Fichiers SQLite (*.db)"
         )[0]
-        
+
         if path:
             # S'assurer que le fichier a l'extension .db
             if not path.lower().endswith('.db'):
                 path += '.db'
-            
+
             self.toolsDbPath.setText(path)
             self.saveSettings()
-            
+
             # Afficher un message de confirmation
             QtGui.QMessageBox.information(
                 self.form,
@@ -325,7 +316,7 @@ class BaptPreferencesPage(QtGui.QWidget):
         if folder:
             self.gcodeFolderPath.setText(folder)
             self.saveSettings()
-            
+
             # Afficher un message de confirmation
             QtGui.QMessageBox.information(
                 self.form,
@@ -335,7 +326,7 @@ class BaptPreferencesPage(QtGui.QWidget):
 
     def onModeAjoutChanged(self, index):
         """Gérer le changement du mode d'ajout des opérations"""
-        pass  
+        pass
 
     def onAutoChildUpdateChanged(self, state):
         """Gérer le changement de l'option de mise à jour automatique des enfants"""
@@ -345,9 +336,9 @@ class BaptPreferencesPage(QtGui.QWidget):
         """Utiliser la base de données par défaut"""
         self.toolsDbPath.clear()
         self.saveSettings()
-        
+
         default_path = BaptUtilities.getDefaultToolsDbPath()
-        
+
         # Afficher un message de confirmation
         QtGui.QMessageBox.information(
             self.form,

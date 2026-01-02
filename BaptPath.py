@@ -7,10 +7,11 @@ import FreeCAD as App
 import FreeCADGui
 
 
-from pivy import coin
-from enum import Enum 
-from PySide import QtGui,QtCore
-import Mesh,MeshPart
+from pivy import coin  # type: ignore
+from enum import Enum
+from PySide import QtGui, QtCore
+import Mesh
+import MeshPart
 
 
 """
@@ -36,20 +37,21 @@ LABEL  |LBL         | Label declaration
 REPEAT |CALL        | Repeat block
 """
 
+
 class comp(Enum):
     G40 = 0
     G41 = 1
     G42 = 2
+
 
 class absinc(Enum):
     G90 = 0
     G91 = 1
 
 
-        
 class memory():
     def __init__(self):
-        #labels tableau de string et int
+        # labels tableau de string et int
         self.labels = {}
         self.queue = deque()
         self.variables = {}
@@ -57,7 +59,8 @@ class memory():
         self.absincMode = absinc.G90
 
     def addLabel(self, key, value):
-        self.labels[key]= value
+        self.labels[key] = value
+
 
 class GcodeEditorTaskPanel:
     def __init__(self, obj):
@@ -84,12 +87,11 @@ class GcodeEditorTaskPanel:
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
-        return (QtGui.QDialogButtonBox.Ok |
-                   QtGui.QDialogButtonBox.Apply |
-                  QtGui.QDialogButtonBox.Cancel)
-    
+        return (QtGui.QDialogButtonBox.Ok
+                | QtGui.QDialogButtonBox.Apply
+                | QtGui.QDialogButtonBox.Cancel)
 
-    
+
 class GcodeAnimator:
     """
     Simule le parcours d'usinage en déplaçant un marqueur (sphere) le long des segments
@@ -102,6 +104,7 @@ class GcodeAnimator:
       anim.stop()
       anim.step()                            # avance d'un pas de timer
     """
+
     def __init__(self, view_provider):
         from PySide import QtCore
         self.vp = view_provider
@@ -116,7 +119,7 @@ class GcodeAnimator:
         self.stock = None
 
         self.stockMesh = None
-        
+
         # Récupérer le projet CAM actif
         project = find_cam_project(self.vp.Object)
         if project:
@@ -128,8 +131,6 @@ class GcodeAnimator:
                 self.toolMesh = App.activeDocument().addObject("Mesh::Feature", "toolMesh")
                 self.toolMesh.Mesh = MeshPart.meshFromShape(Shape=self.tool.Shape, MaxLength=5)
 
-        
-            
         self.frequence_cut = 20
         self.indice_frequence_cut = 0
 
@@ -155,7 +156,7 @@ class GcodeAnimator:
         self.marker_sphere.radius = 1.0
 
         # default color yellow
-        self.marker_color.rgb.setValues(0,1,[(1.0,1.0,0.0)])
+        self.marker_color.rgb.setValues(0, 1, [(1.0, 1.0, 0.0)])
 
         self.marker_sep.addChild(self.marker_trans)
         self.marker_sep.addChild(self.marker_color)
@@ -251,14 +252,14 @@ class GcodeAnimator:
         try:
             self.marker_trans.translation.setValue(point[0], point[1], point[2])
             if self.tool is not None:
-                self.tool.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0,0,0,1))
+                self.tool.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0, 0, 0, 1))
             if self.toolMesh is not None:
-                self.toolMesh.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0,0,0,1))
+                self.toolMesh.Placement = App.Placement(App.Vector(point[0], point[1], point[2]), App.Rotation(0, 0, 0, 1))
             self.tool.recompute()
             self.indice_frequence_cut += 1
             if self.frequence_cut != 0 and self.indice_frequence_cut % self.frequence_cut == 0:
                 self.stock.Shape = self.stock.Shape.cut(self.tool.Shape)
-            #☺self.updateMesh(App.Vector(point[0],point[1],point[2]))
+            # ☺self.updateMesh(App.Vector(point[0],point[1],point[2]))
         except Exception as e:
             App.Console.PrintError(f" {str(e)}\n")
             exc_type, exc_obj, exc_tb = sys.exc_info()
@@ -277,9 +278,9 @@ class GcodeAnimator:
             inside_count = 0
             for p in f.Points:
                 global_p = App.Vector(p)
-                if self.toolMesh.isInside(global_p,tolerance,True):
+                if self.toolMesh.isInside(global_p, tolerance, True):
                     inside_count += 1
-                    if inside_count < 2 :
+                    if inside_count < 2:
                         new_facets.append(f)
 
         newMesh = Mesh.Mesh(new_facets)
@@ -315,7 +316,7 @@ class GcodeAnimator:
                 y = p0[1] + (p1[1]-p0[1]) * t
                 z = p0[2] + (p1[2]-p0[2]) * t
                 self.seg_pos += distance
-                self._set_marker_position((x,y,z))
+                self._set_marker_position((x, y, z))
                 distance = 0
             else:
                 # jump to end of segment
@@ -332,10 +333,12 @@ class GcodeAnimator:
     def is_running(self):
         return self.running
 
+
 class GcodeAnimationControl():
     """Interface graphique pour contrôler GcodeAnimator"""
+
     def __init__(self, animator, parent=None):
-        #super(GcodeAnimationControl, self).__init__(parent)
+        # super(GcodeAnimationControl, self).__init__(parent)
         self.animator = animator
 
         self.ui1 = QtGui.QWidget()
@@ -343,39 +346,39 @@ class GcodeAnimationControl():
 
         self.ui2 = QtGui.QWidget()
         self.ui2.setWindowTitle("Tool Position")
-        
-        self.form = [self.ui1,self.ui2]
+
+        self.form = [self.ui1, self.ui2]
 
         # Layout principal vertical
         layout = QtGui.QVBoxLayout(self.ui1)
-        
+
         # Boutons de contrôle dans un layout horizontal
         btnLayout = QtGui.QHBoxLayout()
-        
+
         # Bouton Play
         self.playBtn = QtGui.QPushButton()
         self.playBtn.setIcon(QtGui.QIcon(":/icons/media-playback-start.svg"))
         self.playBtn.setToolTip("Play")
         self.playBtn.clicked.connect(self.play)
-        
+
         # Bouton Pause
         self.pauseBtn = QtGui.QPushButton()
         self.pauseBtn.setIcon(QtGui.QIcon(":/icons/media-playback-pause.svg"))
         self.pauseBtn.setToolTip("Pause")
         self.pauseBtn.clicked.connect(self.pause)
-        
+
         # Bouton Stop
         self.stopBtn = QtGui.QPushButton()
         self.stopBtn.setIcon(QtGui.QIcon(":/icons/media-playback-stop.svg"))
         self.stopBtn.setToolTip("Stop")
         self.stopBtn.clicked.connect(self.stop)
-        
+
         # Bouton Step
         self.stepBtn = QtGui.QPushButton()
         self.stepBtn.setIcon(QtGui.QIcon(":/icons/media-skip-forward.svg"))
         self.stepBtn.setToolTip("Single Step")
         self.stepBtn.clicked.connect(self.step)
-        
+
         # Contrôle de vitesse
         speedLayout = QtGui.QHBoxLayout()
         speedLayout.addWidget(QtGui.QLabel("Speed:"))
@@ -385,7 +388,7 @@ class GcodeAnimationControl():
         self.speedSpinBox.setSuffix(" mm/s")
         self.speedSpinBox.valueChanged.connect(self.speedChanged)
         speedLayout.addWidget(self.speedSpinBox)
-        
+
         # Contrôle de frequence
         frequenceLayout = QtGui.QHBoxLayout()
         frequenceLayout.addWidget(QtGui.QLabel("Frequence:"))
@@ -394,18 +397,18 @@ class GcodeAnimationControl():
         self.frequenceSpinBox.setValue(self.animator.frequence_cut)
         self.frequenceSpinBox.valueChanged.connect(self.frequenceChanged)
         frequenceLayout.addWidget(self.frequenceSpinBox)
-        
+
         # Include Rapid moves checkbox
         self.rapidCheckBox = QtGui.QCheckBox("Include Rapid Moves")
         self.rapidCheckBox.setChecked(self.animator.include_rapid)
         self.rapidCheckBox.stateChanged.connect(self.rapidChanged)
-        
+
         # Ajouter les widgets aux layouts
         btnLayout.addWidget(self.playBtn)
         btnLayout.addWidget(self.pauseBtn)
         btnLayout.addWidget(self.stopBtn)
         btnLayout.addWidget(self.stepBtn)
-        
+
         layout.addLayout(btnLayout)
         layout.addLayout(speedLayout)
         layout.addLayout(frequenceLayout)
@@ -419,43 +422,43 @@ class GcodeAnimationControl():
         layoutToolPos.addWidget(self.toolPosXLabel)
         layoutToolPos.addWidget(self.toolPosYLabel)
         layoutToolPos.addWidget(self.toolPosZLabel)
-        
+
         # Timer pour mettre à jour l'état des boutons
         self.updateTimer = QtCore.QTimer()
         self.updateTimer.timeout.connect(self.updateButtons)
         self.updateTimer.start(100)  # 10 Hz
-        
+
         self.updateButtons()
 
         if self.animator.tool is not None:
             self.animator.tool.Visibility = True
-    
+
     def play(self):
         """Démarre ou reprend l'animation"""
         if not self.animator.is_running():
             self.animator.start(self.speedSpinBox.value())
         self.updateButtons()
-    
+
     def pause(self):
         """Met en pause l'animation"""
         self.animator.pause()
         self.updateButtons()
-    
+
     def stop(self):
         """Arrête l'animation"""
         self.animator.stop()
         self.updateButtons()
-    
+
     def step(self):
         """Avance d'un pas"""
         self.animator.step()
         self.updateButtons()
-    
+
     def speedChanged(self, value):
         """Appelé quand la vitesse change"""
         self.animator.set_speed(value)
-    
-    def frequenceChanged(self,value):
+
+    def frequenceChanged(self, value):
         self.animator.frequence_cut = value
 
     def rapidChanged(self, state):
@@ -463,7 +466,7 @@ class GcodeAnimationControl():
         include_rapid = (state == QtCore.Qt.Checked)
         self.animator.include_rapid = include_rapid
         self.animator.load_paths(include_rapid)
-        
+
     def updateButtons(self):
         """Met à jour l'état des boutons selon l'état de l'animation"""
         running = self.animator.is_running()
@@ -476,7 +479,7 @@ class GcodeAnimationControl():
             self.toolPosXLabel.setText(f"X: {self.animator.marker_trans.translation.getValue()[0]:.3f}")
             self.toolPosYLabel.setText(f"Y: {self.animator.marker_trans.translation.getValue()[1]:.3f}")
             self.toolPosZLabel.setText(f"Z: {self.animator.marker_trans.translation.getValue()[2]:.3f}")
-    
+
     def closeEvent(self, event):
         """Arrête l'animation quand on ferme la fenêtre"""
         self.animator.stop()
@@ -489,19 +492,16 @@ class GcodeAnimationControl():
         if self.animator.toolMesh is not None:
             App.activeDocument().removeObject(self.animator.toolMesh.Name)
             self.animator.toolMesh = None
-        #super(GcodeAnimationControl, self).closeEvent(event)
+        # super(GcodeAnimationControl, self).closeEvent(event)
 
     def accept(self):
         self.stop()
         self.closeEvent(None)
         FreeCADGui.Control.closeDialog()
         return True
-    
+
     def reject(self):
         self.stop()
         self.closeEvent(None)
         FreeCADGui.Control.closeDialog()
         return False
-    
-
-

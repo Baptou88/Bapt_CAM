@@ -1,20 +1,22 @@
 from BaptPreferences import BaptPreferences
-import FreeCAD as App 
-import FreeCADGui as Gui 
-import Part 
+import FreeCAD as App
+import FreeCADGui as Gui
+import Part
 import os
 
-from PySide import QtCore, QtGui  
+from PySide import QtCore, QtGui
 import math
 import sys
 import BaptUtilities
 
 try:
-    from pivy import coin # type: ignore
+    from pivy import coin  # type: ignore
 except ImportError:
     App.Console.PrintError("Impossible d'importer le module coin. La mise en surbrillance des arêtes ne fonctionnera pas correctement.\n")
 
 DEBUG = False
+
+
 class ContourGeometry:
     """Classe pour gérer les contours d'usinage"""
 
@@ -24,14 +26,14 @@ class ContourGeometry:
         self.Type = "ContourGeometry"
 
         # Transformer l'objet en groupe
-        #obj.addExtension("App::GroupExtensionPython", None)
+        # obj.addExtension("App::GroupExtensionPython", None)
         # obj.addExtension("App::GroupExtensionPython")
-        #DocumentObjectGroupPython
+        # DocumentObjectGroupPython
 
         # Permettre les références à des objets en dehors du groupe
-        #obj.addExtension("App::LinkExtensionPython", None)
-        #obj.addExtension("App::LinkExtensionPython")
-        #obj.addProperty("App::PropertyLinkList", "Group", "Base", "Groupe d'objets géométriques")
+        # obj.addExtension("App::LinkExtensionPython", None)
+        # obj.addExtension("App::LinkExtensionPython")
+        # obj.addProperty("App::PropertyLinkList", "Group", "Base", "Groupe d'objets géométriques")
 
         # Propriétés pour stocker les arêtes sélectionnées
         if not hasattr(obj, "Edges"):
@@ -55,7 +57,7 @@ class ContourGeometry:
             obj.Direction = ["Horaire", "Anti-horaire"]
             obj.Direction = "Horaire"
 
-        #proprité read only pour savoir si un contour est fermé
+        # proprité read only pour savoir si un contour est fermé
         if not hasattr(obj, "IsClosed"):
             obj.addProperty("App::PropertyBool", "IsClosed", "Contour", "Indique si le contour est fermé")
             obj.IsClosed = False
@@ -63,11 +65,10 @@ class ContourGeometry:
         if not hasattr(obj, "testShape"):
             obj.addProperty("Part::PropertyPartShape", "testShape", "Subsection", "Description for tooltip")
             obj.testShape = Part.Shape()
-        
+
         if not hasattr(obj, "debugArrow"):
             obj.addProperty("App::PropertyBool", "debugArrow", "debug", "Description for tooltip")
             obj.debugArrow = True
-
 
         obj.Shape = obj.testShape
 
@@ -77,7 +78,6 @@ class ContourGeometry:
         """Appelé lors de la restauration du document"""
 
         self.__init__(obj)
-
 
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
@@ -93,14 +93,14 @@ class ContourGeometry:
         #     # Mettre à jour les couleurs des arêtes lorsque la sélection change
         #     self.updateEdgeColors(obj)
 
-    def debugEdges(self,edges, name =""):
+    def debugEdges(self, edges, name=""):
         # Diagnostic avant création du wire
         App.Console.PrintMessage(f"[DEBUG] Nombre d'arêtes pour {name}: {len(edges)}\n")
         for i, e in enumerate(edges):
-               self.debugEdge(e,i, name)             
+            self.debugEdge(e, i, name)
         App.Console.PrintMessage(f"[DEBUG] Fin du diagnostic pour {name}\n")
 
-    def debugEdge(self,edge, i=0, name = ""):
+    def debugEdge(self, edge, i=0, name=""):
         start = edge.Vertexes[0].Point
         # Arrondir à 3 chiffres après la virgule
         start = App.Vector(round(start.x, 3), round(start.y, 3), round(start.z, 3))
@@ -108,14 +108,13 @@ class ContourGeometry:
         end = App.Vector(round(end.x, 3), round(end.y, 3), round(end.z, 3))
         App.Console.PrintMessage(f"[DEBUG] Edge {i}: orientation={edge.Orientation}, start={start}, end={end}, firstParam={round(edge.FirstParameter,3)}, lastParam={round(edge.LastParameter,3)}\n")
 
-        
     def execute(self, obj):
         """Mettre à jour la représentation visuelle du contour"""
         if App.ActiveDocument.Restoring:
             return
         try:
             if not hasattr(obj, "Edges") or not obj.Edges:
-                #App.Console.PrintMessage("Aucune arête sélectionnée pour le contour.\n")
+                # App.Console.PrintMessage("Aucune arête sélectionnée pour le contour.\n")
                 return
 
             # Collecter toutes les arêtes sélectionnées
@@ -126,7 +125,7 @@ class ContourGeometry:
                 shape_type = getattr(obj_ref.Shape, "ShapeType", "Inconnu")
                 if DEBUG:
                     App.Console.PrintMessage(f"Traitement de l'objet {obj_ref.Name} avec les sous-éléments {sub_names}, type:{shape_type}\n")
-                
+
                 if shape_type == "Face":
                     # Si l'objet est une face, prendre toutes ses arêtes
                     face_edges = obj_ref.Shape.Edges
@@ -139,7 +138,7 @@ class ContourGeometry:
                             try:
                                 edge = obj_ref.Shape.getElement(sub_name)
                                 edges.append(edge)
-                                #App.Console.PrintMessage(f"Arête ajoutée: {sub_name} de {obj_ref.Name}\n")
+                                # App.Console.PrintMessage(f"Arête ajoutée: {sub_name} de {obj_ref.Name}\n")
                             except Exception as e:
                                 App.Console.PrintError(f"Execute : Erreur lors de la récupération de l'arête {sub_name}: {str(e)}\n")
                                 exc_type, exc_obj, exc_tb = sys.exc_info()
@@ -149,7 +148,7 @@ class ContourGeometry:
                 App.Console.PrintError("Aucune arête valide trouvée.\n")
                 return
 
-            #App.Console.PrintMessage(f"Nombre d'arêtes collectées: {len(edges)}\n")
+            # App.Console.PrintMessage(f"Nombre d'arêtes collectées: {len(edges)}\n")
 
             # Vérifier si une arête est sélectionnée
             selected_index = -1
@@ -163,23 +162,21 @@ class ContourGeometry:
             # Créer des flèches pour indiquer la direction
             direction_arrows = []
 
-
             if obj.Direction == "Anti-horaire":
                 edges.reverse()
 
-            #sorted_edges = self.order_edges(edges)  # Trier les arêtes par ordre croissant de edges
-            #sorted_edges = Part.__sortEdges__(edges)
-            sorted_edges = Part.sortEdges(list(edges))[0] #https://github.com/FreeCAD/FreeCAD/commit/1031644fa
-            #sorted_edges = Part.getSortedClusters(list(edges))[0]
-            #sorted_edges = edges.copy()  # Faire une copie des arêtes pour le tri
-            #sorted_edges = edges
-            
+            # sorted_edges = self.order_edges(edges)  # Trier les arêtes par ordre croissant de edges
+            # sorted_edges = Part.__sortEdges__(edges)
+            sorted_edges = Part.sortEdges(list(edges))[0]  # https://github.com/FreeCAD/FreeCAD/commit/1031644fa
+            # sorted_edges = Part.getSortedClusters(list(edges))[0]
+            # sorted_edges = edges.copy()  # Faire une copie des arêtes pour le tri
+            # sorted_edges = edges
+
             if obj.Direction == "Anti-horaire":
                 sorted_edges.reverse()
 
             if DEBUG:
                 self.debugEdges(sorted_edges, "Sorted Edges")
-
 
             if not sorted_edges:
                 App.Console.PrintError("Aucune arête valide après le tri.\n")
@@ -191,7 +188,7 @@ class ContourGeometry:
             for i, edge in enumerate(sorted_edges):
                 # Créer des arêtes ajustées avec des couleurs différentes selon la sélection
                 # Pour l'arête sélectionnée, utiliser une couleur différente et une largeur plus grande
-                
+
                 # if edge.Vertexes[0].Orientation == "Reversed":
                 #     App.Console.PrintMessage(f"Edge {i} est inversée, inversion de l'arête pour correspondre au sens.\n")
                 #     edge = edge.reversed()
@@ -199,57 +196,55 @@ class ContourGeometry:
                 bon_sens = None
                 if i < len(sorted_edges)-1:
                     next_edge = sorted_edges[i+1]
-                    if current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[0].Point) <  1e-6 :
+                    if current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[0].Point) < 1e-6:
                         bon_sens = True
-                        #App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
-                    elif current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[-1].Point) <  1e-6 :
+                        # App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
+                    elif current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[-1].Point) < 1e-6:
                         bon_sens = True
-                        #App.Console.PrintMessage(f"Edge {i} Ok ,Edge {i+1} est inversée, inversion de l'arête pour correspondre au sens.\n")
-                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[-1].Point) <  1e-6 :
+                        # App.Console.PrintMessage(f"Edge {i} Ok ,Edge {i+1} est inversée, inversion de l'arête pour correspondre au sens.\n")
+                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[-1].Point) < 1e-6:
                         bon_sens = False
-                        #App.Console.PrintMessage(f"Edge {i} et Edge {i+1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
-                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[0].Point) <  1e-6 :
+                        # App.Console.PrintMessage(f"Edge {i} et Edge {i+1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
+                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[0].Point) < 1e-6:
                         bon_sens = False
-                        #App.Console.PrintMessage(f"Edge {i} est inversée, inversion de l'arête pour correspondre au sens.\n")
+                        # App.Console.PrintMessage(f"Edge {i} est inversée, inversion de l'arête pour correspondre au sens.\n")
                     else:
-                        #App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")  
+                        # App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")
                         pass
                 else:
                     prev_edge = sorted_edges[i-1]
-                    
-                    if prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[0].Point) <  1e-6 :
+
+                    if prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[0].Point) < 1e-6:
                         bon_sens = True
-                        #App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
-                    elif prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[-1].Point) <  1e-6 :
+                        # App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
+                    elif prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[-1].Point) < 1e-6:
                         bon_sens = False
-                        #App.Console.PrintMessage(f"Edge {i} NOk ,Edge {i-1} est inversée, inversion de l'arête pour correspondre au sens.\n")
-                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[-1].Point) <  1e-6 :
+                        # App.Console.PrintMessage(f"Edge {i} NOk ,Edge {i-1} est inversée, inversion de l'arête pour correspondre au sens.\n")
+                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[-1].Point) < 1e-6:
                         bon_sens = False
-                        #App.Console.PrintMessage(f"Edge {i} et Edge {i-1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
-                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[0].Point) <  1e-6 :
+                        # App.Console.PrintMessage(f"Edge {i} et Edge {i-1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
+                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[0].Point) < 1e-6:
                         bon_sens = True
-                        #App.Console.PrintMessage(f"Edge {i} Ok, inversion de l'arête pour correspondre au sens.\n")
+                        # App.Console.PrintMessage(f"Edge {i} Ok, inversion de l'arête pour correspondre au sens.\n")
                     else:
-                        #App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n") 
-                        pass                   
+                        # App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")
+                        pass
 
                 if DEBUG:
-                    self.debugEdge(edge,i,"")
+                    self.debugEdge(edge, i, "")
 
                 # Créer une flèche pour indiquer la direction de l'arête
-                arrow = self._create_direction_arrow(obj, edge, size=2.0,invert_direction=not bon_sens)
+                arrow = self._create_direction_arrow(obj, edge, size=2.0, invert_direction=not bon_sens)
                 if arrow:
                     direction_arrows.append(arrow)
 
-                edge_zref = edge.copy().translate(App.Vector(0,0, obj.Zref - edge.Vertexes[0].Z))
+                edge_zref = edge.copy().translate(App.Vector(0, 0, obj.Zref - edge.Vertexes[0].Z))
 
-                edge_zfinal = edge.copy().translate(App.Vector(0,0, obj.Zref - edge.Vertexes[0].Z + obj.depth if obj.DepthMode == "Relatif" else obj.depth - edge.Vertexes[0].Z))
+                edge_zfinal = edge.copy().translate(App.Vector(0, 0, obj.Zref - edge.Vertexes[0].Z + obj.depth if obj.DepthMode == "Relatif" else obj.depth - edge.Vertexes[0].Z))
                 adjusted_edges_zref.append(edge_zref)
                 adjusted_edges_depth.append(edge_zfinal)
 
-
-
-            #self.debugEdge(adjusted_edges_zref, "Zref")
+            # self.debugEdge(adjusted_edges_zref, "Zref")
 
             try:
                 # Créer le fil à Zref
@@ -271,16 +266,16 @@ class ContourGeometry:
                     App.Console.PrintError("Les listes d'arêtes ajustées n'ont pas la même taille, impossible de créer les faces.\n")
 
                 first_point = wire_zref.Edges[0].Vertexes[0].Point
-                sph = Part.makeSphere(2,first_point)
+                sph = Part.makeSphere(2, first_point)
 
                 # Créer un compound contenant les deux fils, les flèches et les faces
-                shapes = [wire_zref, wire_zfinal,sph]
+                shapes = [wire_zref, wire_zfinal, sph]
                 # shapes = [wire_zref]
 
                 if obj.debugArrow:
                     shapes.extend(direction_arrows)
 
-                shapes.extend(faces) # Ajouter les faces ici
+                shapes.extend(faces)  # Ajouter les faces ici
                 compound = Part.makeCompound(shapes)
                 obj.Shape = compound
                 obj.testShape = compound
@@ -292,7 +287,7 @@ class ContourGeometry:
                     obj.IsClosed = False
 
                 # prefs = BaptPreferences()
-                
+
                 # autoRecomputeChildren = prefs.getAutoChildUpdate()
                 # if autoRecomputeChildren:
                 #     for child in obj.Group:
@@ -311,10 +306,10 @@ class ContourGeometry:
                     compound = Part.makeCompound(all_edges)
                     obj.Shape = compound
                     obj.testShape = compound
-                    #App.Console.PrintMessage("Forme composite créée à la place du fil.\n")
+                    # App.Console.PrintMessage("Forme composite créée à la place du fil.\n")
                     return
                 except Exception as e2:
-                    #App.Console.PrintError(f"Impossible de créer une forme composite: {str(e2)}\n")
+                    # App.Console.PrintError(f"Impossible de créer une forme composite: {str(e2)}\n")
                     return
 
         except Exception as e:
@@ -368,7 +363,7 @@ class ContourGeometry:
                 # Les points sont inversés, il faut inverser la courbe
                 pass
 
-        elif isinstance(edge.Curve,Part.Ellipse):
+        elif isinstance(edge.Curve, Part.Ellipse):
             # Pour une ellipse
             ellipse = edge.Curve
             center = ellipse.Center
@@ -479,7 +474,7 @@ class ContourGeometry:
                 center = circle.Center
                 new_center = App.Vector(center.x, center.y, center.z)
                 # Créer un nouvel axe Z
-                new_axis = circle.Axis #*-1
+                new_axis = circle.Axis  # *-1
                 App.Console.PrintMessage(f"new dir {new_axis}\n")
                 radius = circle.Radius
 
@@ -487,7 +482,7 @@ class ContourGeometry:
                 new_circle = Part.Circle(new_center, new_axis, radius)
                 # return Part.Edge(new_circle, edge.FirstParameter, edge.LastParameter)
                 # return Part.Edge(new_circle, edge.LastParameter, edge.FirstParameter)
-                #convertir les paramètres de l'arc en paramètres de cercle
+                # convertir les paramètres de l'arc en paramètres de cercle
                 arctspt = edge.valueAt(edge.FirstParameter)
                 arcendpt = edge.valueAt(edge.LastParameter)
 
@@ -496,7 +491,7 @@ class ContourGeometry:
                 App.Console.PrintMessage(f"Reversing edge: {edge.FirstParameter}, {edge.LastParameter}, {midParam}\n")
                 App.Console.PrintMessage(f"Arc2 start point: {arctspt}, end point: {arcendpt}, mid point: {arcmidpt}\n")
 
-                #first_param = -math.tau + first_param
+                # first_param = -math.tau + first_param
                 # Si les paramètres sont différents, c'est un arc
                 # if abs(last_param - first_param) < math.tau:  # Moins que 2*pi
                 #     print(f"Arc détecté avec paramètres {first_param} et {last_param}\n")
@@ -504,8 +499,8 @@ class ContourGeometry:
                 # else:
                 #     # Cercle complet
                 #     new_edge = Part.Edge(new_circle)
-                #new_edge = Part.ArcOfCircle(new_circle,arctspt,arcmidpt,arcendpt)
-                new_edge = Part.ArcOfCircle(new_circle,0,1.57).toShape()
+                # new_edge = Part.ArcOfCircle(new_circle,arctspt,arcmidpt,arcendpt)
+                new_edge = Part.ArcOfCircle(new_circle, 0, 1.57).toShape()
                 # new_edge = Part.ArcOfCircle(0,math.pi/2,math.pi).toShape()
                 App.Console.PrintMessage(f"Reversing edge: {new_edge.FirstParameter}, {new_edge.LastParameter}\n")
                 return new_edge
@@ -514,7 +509,7 @@ class ContourGeometry:
             reversed_curve = curve
             # On inverse aussi les paramètres de début et de fin
             return Part.Edge(reversed_curve, edge.ParameterRange[1], edge.ParameterRange[0])
-        except Exception as e :
+        except Exception as e:
             App.Console.PrintError(f"Erreur lors de l'inversion de l'arête: {str(e)}\n")
             exc_type, exc_value, exc_traceback = sys.exc_info()
             line_number = exc_traceback.tb_lineno
@@ -524,7 +519,7 @@ class ContourGeometry:
             new_edge.reverse()
             return new_edge
 
-    def _create_direction_arrow(self, obj, edge, size=2.0,invert_direction=False):
+    def _create_direction_arrow(self, obj, edge, size=2.0, invert_direction=False):
         """Crée une petite flèche au milieu de l'arête pour indiquer la direction
 
         Args:
@@ -535,7 +530,7 @@ class ContourGeometry:
         Returns:
             Shape représentant la flèche
         """
-        #TODO implemente param: invert_direction pour inverser la direction de la flèche
+        # TODO implemente param: invert_direction pour inverser la direction de la flèche
         try:
             # Point milieu paramétrique
             mid_param = (edge.FirstParameter + edge.LastParameter) / 2.0
@@ -549,14 +544,13 @@ class ContourGeometry:
                 tangent = App.Vector(1, 0, 0)
             tangent = tangent.normalize()
 
-            if invert_direction :
+            if invert_direction:
                 tangent = tangent.multiply(-1)
 
             # Projet de la tangente sur XY et normalisation
             tangent_z = App.Vector(tangent.x, tangent.y, 0.0)
 
             tangent_z = tangent_z.normalize()
-
 
             # Normale (perpendiculaire) dans le plan XY
             normal_xy = App.Vector(-tangent_z.y, tangent_z.x, 0.0)
@@ -566,10 +560,9 @@ class ContourGeometry:
 
             # Décalage le long de la normale : proportionnel à la taille, ajustable
             offset_distance = size * 0.6
-            
+
             # if hasattr(obj, "Direction") and obj.Direction == "Anti-horaire" :
             #     offset_distance = -offset_distance
-                
 
             # Point milieu décalé le long de la normale
             shifted_mid = mid_point_z.add(normal_xy.multiply(offset_distance))
@@ -586,7 +579,7 @@ class ContourGeometry:
             arrow_p1 = end_point.sub(tangent_z.multiply(size / 3.0)).add(perp.multiply(size / 4.0))
             arrow_p2 = end_point.sub(tangent_z.multiply(size / 3.0)).sub(perp.multiply(size / 4.0))
 
-            #perp_line = Part.makeLine(mid_point, shifted_mid )
+            # perp_line = Part.makeLine(mid_point, shifted_mid )
 
             arrow_line1 = Part.makeLine(end_point, arrow_p1)
             arrow_line2 = Part.makeLine(end_point, arrow_p2)
@@ -615,7 +608,6 @@ class ContourGeometry:
         """__getstat__(self) ... called when receiver is restored.
         Can safely be overwritten by subclasses."""
         return None
-
 
     def updateEdgeColors(self, obj):
         """Met à jour les couleurs des arêtes en fonction de l'index sélectionné"""
@@ -657,8 +649,6 @@ class ContourGeometry:
                 # Pour l'arête sélectionnée, utiliser une couleur différente et une largeur plus grande
                 edge_zref = self._create_adjusted_edge(edge, obj.Zref, selected=(i == selected_index))
                 edge_depth = self._create_adjusted_edge(edge, obj.depth, selected=(i == selected_index))
-
-
 
                 adjusted_edges_zref.append(edge_zref)
                 adjusted_edges_depth.append(edge_depth)
@@ -742,7 +732,7 @@ class ViewProviderContourGeometry:
         vobj.LineWidth = 4.0  # Largeur de ligne plus grande
         vobj.PointSize = 6.0  # Taille des points plus grande
 
-        vobj.ShapeAppearance[0].DiffuseColor = (255,170,0)
+        vobj.ShapeAppearance[0].DiffuseColor = (255, 170, 0)
         vobj.Transparency = 85
 
         # Ajouter une propriété pour la couleur des arêtes sélectionnées
@@ -759,9 +749,9 @@ class ViewProviderContourGeometry:
         """
 
         return hasattr(self, "deleteOnReject") and self.deleteOnReject
-    
+
     def setDeleteObjectsOnReject(self, state=False):
-        #♦Path.Log.track()
+        # ♦Path.Log.track()
         self.deleteOnReject = state
         return self.deleteOnReject
 
@@ -776,29 +766,29 @@ class ViewProviderContourGeometry:
         # # Créer un switch pour activer/désactiver la surbrillance
         # self.coin_switch = coin.SoSwitch()
         # self.coin_switch.whichChild = coin.SO_SWITCH_NONE  # Désactivé par défaut
-        
+
         # # Sépérateur pour la surbrillance
         # sep = coin.SoSeparator()
-        
+
         # # Style de ligne pour la surbrillance
         # drawstyle = coin.SoDrawStyle()
         # drawstyle.lineWidth = 8.0  # Plus épais que normal
         # sep.addChild(drawstyle)
-        
+
         # # Couleur de surbrillance (cyan)
         # mat = coin.SoMaterial()
         # mat.diffuseColor = (0.0, 1.0, 1.0)
         # mat.emissiveColor = (0.0, 0.5, 0.5)
         # sep.addChild(mat)
-        
+
         # # Coordonnées (vides au départ, seront remplies par updateHighlight)
         # self.coin_coords = coin.SoCoordinate3()
         # sep.addChild(self.coin_coords)
-        
+
         # # LineSet pour dessiner les lignes
         # self.coin_lineset = coin.SoLineSet()
         # sep.addChild(self.coin_lineset)
-        
+
         # self.coin_switch.addChild(sep)
         # vobj.RootNode.addChild(self.coin_switch)
 
@@ -807,8 +797,6 @@ class ViewProviderContourGeometry:
         # Mettre à jour l'affichage si une propriété pertinente change
         if prop == "SelectedEdgeIndex":
             pass
-
-    
 
     def onChanged(self, vobj, prop):
         """Appelé lorsqu'une propriété du ViewProvider est modifiée"""
@@ -871,11 +859,11 @@ class ViewProviderContourGeometry:
 
     def export(self, vobj, mode=0):
         """Exporte l'objet"""
-        sheet = App.activeDocument().addObject('Spreadsheet::Sheet','Spreadsheet')
+        sheet = App.activeDocument().addObject('Spreadsheet::Sheet', 'Spreadsheet')
         Gui.Selection.clearSelection()
-        Gui.Selection.addSelection(App.activeDocument().Name,'Spreadsheet')
+        Gui.Selection.addSelection(App.activeDocument().Name, 'Spreadsheet')
 
-        #recupere les edges de la géométrie
+        # recupere les edges de la géométrie
         edges = vobj.Object.Edges
 
         for i, edge in enumerate(edges):
@@ -905,7 +893,7 @@ class ViewProviderContourGeometry:
             # Recharger le module pour prendre en compte les modifications
             importlib.reload(BaptContourTaskPanel)
             # Créer et afficher le panneau
-            panel = BaptContourTaskPanel.ContourTaskPanel(vobj.Object,self.setDeleteObjectsOnReject())
+            panel = BaptContourTaskPanel.ContourTaskPanel(vobj.Object, self.setDeleteObjectsOnReject())
             Gui.Control.showDialog(panel)
             self.deleteOnReject = False
             return True
@@ -935,8 +923,8 @@ class ViewProviderContourGeometry:
             self.Object = App.ActiveDocument.getObject(state["ObjectName"])
         return None
 
-    def onDelete(self,feature, subelements): # subelements is a tuple of strings
+    def onDelete(self, feature, subelements):  # subelements is a tuple of strings
 
         for child in feature.Object.Group:
             App.ActiveDocument.removeObject(child.Name)
-        return True # If False is returned the object won't be deleted
+        return True  # If False is returned the object won't be deleted

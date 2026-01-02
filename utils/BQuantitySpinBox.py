@@ -6,8 +6,10 @@ import PySide.QtGui as QtGui
 import PySide.QtCore as QtCore
 
 DEBUG = False
+
+
 class BQuantitySpinBox(QtCore.QObject):
-    def __init__(self,obj,prop, widget=None):
+    def __init__(self, obj, prop, widget=None):
         super().__init__()
         # try:
         self.obj = obj
@@ -20,19 +22,19 @@ class BQuantitySpinBox(QtCore.QObject):
 
     def attach(self, obj, prop):
         # App.Console.PrintMessage(f'Attach\n')
-        #self.widget.setProperty("unit", "mm")
-        attr = self.getProperty(obj, prop) # getattr(obj, prop) semble etre equivalent
+        # self.widget.setProperty("unit", "mm")
+        attr = self.getProperty(obj, prop)  # getattr(obj, prop) semble etre equivalent
         if attr is not None:
-            if hasattr(attr,"Value"):
+            if hasattr(attr, "Value"):
                 self.widget.setProperty("unit", attr.getUserPreferred()[2])
-                
+
                 self.widget.setProperty("rawValue", attr.Value)
             else:
                 self.widget.setProperty("rawValue", attr)
         # self.widget.setProperty("Value", a)
             # if widget is  not None:
             if True:
-                self.widget.setProperty("binding","%s.%s" % (obj.Name, prop))
+                self.widget.setProperty("binding", "%s.%s" % (obj.Name, prop))
             else:
                 Gui.ExpressionBinding(self.widget).bind(obj, prop)
         else:
@@ -40,18 +42,18 @@ class BQuantitySpinBox(QtCore.QObject):
         # self.widget.setProperty("exprSet", "true")
         # self.widget.style().unpolish(self.widget)
         # self.widget.ensurePolished()
-        #Gui.ExpressionBinding(self.recouvrement).bind(self.obj,"Recouvrement")
+        # Gui.ExpressionBinding(self.recouvrement).bind(self.obj,"Recouvrement")
         # self.widget.installEventFilter(self)
-        #self.widget.textChanged.connect(lambda: self.onWidgetValueChanged())
+        # self.widget.textChanged.connect(lambda: self.onWidgetValueChanged())
         self.widget.valueChanged.connect(lambda: self.updateValue())
         # except Exception as e:
         #     App.Console.PrintError("BQuantitySpinBox __init__ error: {}\n".format(e))
-            
 
     # def eventFilter(self, obj, event):
     #     if event.type() == QtCore.QEvent.Type.FocusIn:
     #         self.updateWidget()
     #     return False
+
     def getProperty(self, obj, prop):
         """getProperty(obj, prop) ... answer obj's property defined by its canonical name."""
         o, attr, name = self._getProperty(obj, prop)
@@ -72,21 +74,21 @@ class BQuantitySpinBox(QtCore.QObject):
             return (None, None, None)
 
         # Path.Log.debug("found property %s of %s (%s: %s)" % (prop, obj.Label, name, attr))
-        #App.Console.PrintMessage(f'found property {prop} of {obj.Label} ({name}: {attr})\n')
+        # App.Console.PrintMessage(f'found property {prop} of {obj.Label} ({name}: {attr})\n')
         return (o, attr, name)
 
     def updateWidget(self):
         expr = self._hasExpression()
-        attr = self.getProperty(self.obj, self.prop) # getattr(obj, prop) semble etre equivalent
+        attr = self.getProperty(self.obj, self.prop)  # getattr(obj, prop) semble etre equivalent
 
-        #self.widget.setProperty("rawValue", getattr(self.obj, self.prop))
+        # self.widget.setProperty("rawValue", getattr(self.obj, self.prop))
         if attr is not None:
-            if hasattr(attr,"Value"):
+            if hasattr(attr, "Value"):
                 self.widget.setProperty("unit", attr.getUserPreferred()[2])
                 self.widget.setProperty("rawValue", attr.Value)
             else:
                 self.widget.setProperty("rawValue", attr)
-            #self.widget.setProperty("binding","%s.%s" % (self.obj.Name, self.prop))
+            # self.widget.setProperty("binding","%s.%s" % (self.obj.Name, self.prop))
             Gui.ExpressionBinding(self.widget).bind(self.obj, self.prop)
 
         if expr:
@@ -101,17 +103,17 @@ class BQuantitySpinBox(QtCore.QObject):
 
     def getWidget(self):
         return self.widget
-    
+
     def updateValue(self):
         App.Console.PrintMessage(f'update Value\n')
         value = self.widget.property("rawValue")
         o, attr, name = self._getProperty(self.obj, self.prop)
-        attrValue = attr.Value if hasattr(attr,"Value") else attr
-        
+        attrValue = attr.Value if hasattr(attr, "Value") else attr
+
         if DEBUG:
-            App.Console.PrintMessage(f'update Value current {attrValue} new {value}\n') 
-            App.Console.PrintMessage(f'update Value o {o} attr {attr} name {name}\n') 
-        
+            App.Console.PrintMessage(f'update Value current {attrValue} new {value}\n')
+            App.Console.PrintMessage(f'update Value o {o} attr {attr} name {name}\n')
+
         if attrValue != value:
             self.updateProperty()
 
@@ -132,7 +134,7 @@ class BQuantitySpinBox(QtCore.QObject):
             App.Console.PrintMessage(f'Widget Value Changed hasattr\n')
             value = self.widget.property("rawValue")
             setattr(self.obj, self.prop, value)
-        #self.widget.editingFinished.emit()
+        # self.widget.editingFinished.emit()
 
     def updateProperty(self):
         return
@@ -146,7 +148,7 @@ class BQuantitySpinBox(QtCore.QObject):
             if prop == self.prop:
                 return exp
         return None
-    
+
     def setValue(self, value):
         attr = self.getProperty(self.obj, self.prop)
         if hasattr(self.obj, self.prop):

@@ -11,7 +11,6 @@ from FreeCADGui import Workbench
 import os
 
 
-
 class BaptWorkbench (Workbench):
     def __init__(self):
         self.__class__.MenuText = "Bapt"
@@ -35,10 +34,10 @@ class BaptWorkbench (Workbench):
         Gui.addLanguagePath("C:/Users/Baptou88/AppData/Roaming/FreeCAD/Mod/Bapt/resources/translations/")
 
         from PySide.QtCore import QT_TRANSLATE_NOOP
-        
+
         # Register preferences
         from BaptPreferences import BaptPreferencesPage
-        Gui.addPreferencePage(BaptPreferencesPage, QT_TRANSLATE_NOOP("QObject","Bapt"))
+        Gui.addPreferencePage(BaptPreferencesPage, QT_TRANSLATE_NOOP("QObject", "Bapt"))
         Gui.addIconPath(os.path.join(BaptUtilities.getResourcesPath(), "icons"))
 
         self.list = ["Bapt_CreateCamProject", "Bapt_CreateSurfacage", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_HoleRecognition", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateContourEditableGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreatePocketOperation", "Bapt_CreateOrigin", "Bapt_CreateHotReload", "ImportMpf", "Bapt_PostProcessGCode", "Bapt_CreateProbeFace", "Bapt_TestPath", "Bapt_HighlightCollisions"]  # Ajout des commandes d'opération, poche et origine
@@ -63,14 +62,14 @@ class BaptWorkbench (Workbench):
         customFolder = start_prefs.GetString(
             "CustomFolder", ""
         )  # Note: allow multiple locations separated by ";;"
-        
+
         customFolders = [f.strip() for f in customFolder.split(";;") if f.strip()]
         import BaptUtilities
         exPath = BaptUtilities.getExamplesPath()
-        
+
         if exPath not in customFolders:
-            #boite de dialogue pour demander à l'utilisateur s'il veut ajouter le dossier d'exemples
-            
+            # boite de dialogue pour demander à l'utilisateur s'il veut ajouter le dossier d'exemples
+
             from PySide import QtWidgets, QtCore, QtGui
             msgBox = QtWidgets.QMessageBox()
             msgBox.setIcon(QtWidgets.QMessageBox.Question)
@@ -124,8 +123,5 @@ class BaptWorkbench (Workbench):
 
             # form = addExamplePath()
 
-            
-        
 
 Gui.addWorkbench(BaptWorkbench())
-

@@ -4,6 +4,8 @@ import BasePostPro
 Name = "Siemens828D"
 
 Ext = "MPF"
+
+
 class PostPro(BasePostPro.BasePostPro):
     def __init__(self):
         super().__init__()
@@ -20,14 +22,14 @@ class PostPro(BasePostPro.BasePostPro):
             return "7"
         else:
             return "9"  # Default to Off if unknown mode
-        
+
     def transformGCode(self, gcode):
         lines = gcode.split('\n')
         retour = []
         for i in range(len(lines)):
             if lines[i].startswith('(') and lines[i].endswith(')'):
                 lines[i] = lines[i][1:-1]  # Remove parentheses
-                lines[i]  = self.writeComment(lines[i])
+                lines[i] = self.writeComment(lines[i])
             retour.append(lines[i])
         return '\n'.join(retour)
 
@@ -36,13 +38,13 @@ class PostPro(BasePostPro.BasePostPro):
 
     def blockForm(self, stock):
         bb = stock.Shape.BoundBox
-        
+
         return f"WORKPIECE(,\"\",,\"BOX\",112,{bb.ZMax},{bb.ZMin},-80,{bb.XMin},{bb.YMin},{bb.XMax},{bb.YMax})"
 
     def toolChange(self, tool, cam_project):
         tool_id = getattr(tool, 'Id', None)
         tool_name = getattr(tool, 'Name', None)
-        spindle = getattr(tool, 'Speed', None).getValueAs("mm/min") #FIXME Speed
+        spindle = getattr(tool, 'Speed', None).getValueAs("mm/min")  # FIXME Speed
         return f"\nT=\"{tool_name}\" D1\nM6\nS{spindle} M3\n"
 
     def G81(self, obj):
@@ -58,7 +60,7 @@ class PostPro(BasePostPro.BasePostPro):
         planDeRetrait = safe_z
         DistSecurite = safe_z
         z0 = None
-        Speed = getattr(obj, 'SpindleSpeed', None).getValueAs("mm/min") #FIXME Speed
+        Speed = getattr(obj, 'SpindleSpeed', None).getValueAs("mm/min")  # FIXME Speed
         Feed = getattr(obj, 'FeedRate', None).getValueAs("mm/min")
         gcode_lines = f"S{Speed}\n"
         gcode_lines += f"F{Feed}\n"
@@ -66,7 +68,7 @@ class PostPro(BasePostPro.BasePostPro):
         for pt in points:
             if z0 is None or z0 != pt.z:
                 z0 = pt.z
-                gcode_lines +=(f"CYCLE81({z0 + planDeRetrait},{z0},{DistSecurite},{final_z},,{dwell},0,1,12)\n")
+                gcode_lines += (f"CYCLE81({z0 + planDeRetrait},{z0},{DistSecurite},{final_z},,{dwell},0,1,12)\n")
             gcode_lines += (f"G0 X{pt.x:.3f} Y{pt.y:.3f} \n")
         gcode_lines += "MCALL\n"
         return gcode_lines

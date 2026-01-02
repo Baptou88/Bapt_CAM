@@ -5,44 +5,46 @@ import FreeCADGui as Gui
 
 from Op.utils import CoolantMode
 from PySide import QtCore, QtGui
-from pivy import coin
+from pivy import coin  # type: ignore
 import math
 
+
 class baseOp:
-    
-    def __init__(self,obj):
+
+    def __init__(self, obj):
         # App.Console.PrintMessage("Initializing baseOp object proxy for: {}\n".format(__class__.__name__))
         if not hasattr(obj, "Gcode"):
             obj.addProperty("App::PropertyString", "Gcode", "Gcode", "Gcode").Gcode = ""
-            #obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
-        if not hasattr(obj,"Active"):
-            obj.addProperty("App::PropertyBool","Active","Gcode","Active")
+            # obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
+        if not hasattr(obj, "Active"):
+            obj.addProperty("App::PropertyBool", "Active", "Gcode", "Active")
             obj.Active = True
-            
+
         if not hasattr(obj, "FeedRate"):
             obj.addProperty("App::PropertySpeed", "FeedRate", "Feeds", "Feed rate")
             obj.FeedRate = "100.0 mm/min"  # mm/min par défaut
-        
+
         if not hasattr(obj, "SpindleSpeed"):
-            obj.addProperty("App::PropertySpeed", "SpindleSpeed", "Feeds", "Spindle speed") #TODO  Speed changer en PropertyRotationalSpeed
+            obj.addProperty("App::PropertySpeed", "SpindleSpeed", "Feeds", "Spindle speed")  # TODO  Speed changer en PropertyRotationalSpeed
             obj.SpindleSpeed = "1000.0 mm/min"  # tr/min par défaut
-        
+
         if not hasattr(obj, "CoolantMode"):
             obj.addProperty("App::PropertyEnumeration", "CoolantMode", "Coolant", "Coolant mode")
             obj.CoolantMode = CoolantMode
             obj.CoolantMode = "Flood"  # Valeur par défaut
-            
+
         # obj.Proxy = self
-        
+
     def onChanged(self, fp, prop):
         self.execute(fp)
 
-    def execute(self,obj):
+    def execute(self, obj):
         pass
+
     def __getstate__(self):
         """Sérialisation"""
         return None
-    
+
     def __setstate__(self, state):
         """Désérialisation"""
         return None
@@ -66,10 +68,8 @@ class baseOpViewProviderProxy:
             obj.addProperty("App::PropertyColor", "Feed", "Gcode", "Color for feed moves")
             obj.Feed = BaptPref.DefaultFeedColor
 
-
         # self.Object = obj.Object
         # obj.Proxy = self
-
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
@@ -77,7 +77,7 @@ class baseOpViewProviderProxy:
 
     def onChanged(self, vp, prop):
         ''' Print the name of the property that has changed '''
-        #App.Console.PrintMessage("Change property: " + str(prop) + "\n")
+        # App.Console.PrintMessage("Change property: " + str(prop) + "\n")
 
     def __getstate__(self):
         ''' When saving the document this object gets stored using Python's cPickle module.
@@ -86,7 +86,7 @@ class baseOpViewProviderProxy:
         '''
         return None
 
-    def __setstate__(self,state):
+    def __setstate__(self, state):
         ''' When restoring the pickled object from document we have the chance to set some
         internals here. Since no data were pickled nothing needs to be done here.
         '''
@@ -145,9 +145,9 @@ class baseOpViewProviderProxy:
 
         # Ajouter les événements de souris
         self.mouse_cb = coin.SoEventCallback()
-        #self.mouse_cb.setCallback(self.mouse_event_cb)
+        # self.mouse_cb.setCallback(self.mouse_event_cb)
 
-        #self.mouse_cb.addEventCallback(coin.SoLocation2Event.getClassTypeId(), self.mouse_event_cb)
+        # self.mouse_cb.addEventCallback(coin.SoLocation2Event.getClassTypeId(), self.mouse_event_cb)
 
         self.Path.addChild(self.rapid_group)
         self.Path.addChild(self.feed_group)
@@ -212,7 +212,6 @@ class baseOpViewProviderProxy:
             return
         App.Console.PrintMessage(f'mouse event cb 2\n')
 
-
         line_index = detail.getLineIndex()
         segments = self.segment_metadata.get(kind, [])
         if not (0 <= line_index < len(segments)):
@@ -271,7 +270,7 @@ class baseOpViewProviderProxy:
         gcode_text = str(self.Object.Gcode or "")
         self.lines = [l.strip() for l in gcode_text.splitlines() if l.strip()]
 
-        def parse_xyz(line, prev,absinc_mode=absinc.G90):
+        def parse_xyz(line, prev, absinc_mode=absinc.G90):
             """helper to parse coords in a G-code line (X Y Z)"""
             x, y, z = prev
 
@@ -374,12 +373,12 @@ class baseOpViewProviderProxy:
                 a.append(self.mem.current_cycle["Z"])
                 new = tuple(a)
 
-                append_segment(feed_coords,feed_idx,self.cur,new)
+                append_segment(feed_coords, feed_idx, self.cur, new)
                 self.cur = new
                 a = list(new[0:2])
                 a.append(self.mem.current_cycle["R"])
                 new = tuple(a)
-                append_segment(rapid_coords,rapid_idx,self.cur,new)
+                append_segment(rapid_coords, rapid_idx, self.cur, new)
                 self.cur = new
 
             elif self.mem.current_cycle["type"] == 83:
@@ -395,12 +394,12 @@ class baseOpViewProviderProxy:
                     a.append(done)
                     new = tuple(a)
 
-                    append_segment(feed_coords,feed_idx,self.cur,new)
+                    append_segment(feed_coords, feed_idx, self.cur, new)
                     self.cur = new
                     a = list(new[0:2])
                     a.append(self.mem.current_cycle["R"])
                     new = tuple(a)
-                    append_segment(rapid_coords,rapid_idx,self.cur,new)
+                    append_segment(rapid_coords, rapid_idx, self.cur, new)
                     self.cur = new
 
             else:
@@ -410,13 +409,13 @@ class baseOpViewProviderProxy:
             while self.line < len(self.lines):
 
                 if len(self.mem.queue) > 0:
-                    #App.Console.PrintMessage("Checking memory queue for line {}\n".format(self.line))
-                    if self.line == self.mem.queue[0] :
+                    # App.Console.PrintMessage("Checking memory queue for line {}\n".format(self.line))
+                    if self.line == self.mem.queue[0]:
                         self.mem.queue.popleft()
                         break
 
                 ln = self.lines[self.line]
-                #App.Console.PrintMessage("Processing line {}: {}\n".format(self.line, ln))
+                # App.Console.PrintMessage("Processing line {}: {}\n".format(self.line, ln))
                 self.line += 1
                 up = ln.upper()
                 # consider only movement commands G0/G00 and G1/G01
@@ -436,7 +435,7 @@ class baseOpViewProviderProxy:
                 elif up.startswith("G2") or up.startswith("G3"):
                     # Circular interpolation. Prefer I/J (center offsets). If only R given, compute center(s).
                     is_ccw = up.startswith("G3")
-                    end = parse_xyz(ln, self.cur,self.absinc_mode)
+                    end = parse_xyz(ln, self.cur, self.absinc_mode)
                     I, J, R = parse_ijr(ln)
 
                     # if no XY endpoint given, skip (cannot handle)
@@ -466,6 +465,7 @@ class baseOpViewProviderProxy:
                         # choose center that yields correct direction (G2 cw => negative sweep)
                         c1, c2 = cs
                         # compute sweeps for both centers
+
                         def compute_sweep(c):
                             sx = math.atan2(self.cur[1]-c[1], self.cur[0]-c[0])
                             ex = math.atan2(end[1]-c[1], end[0]-c[0])
@@ -474,6 +474,7 @@ class baseOpViewProviderProxy:
                         s1, s1s, s1e = compute_sweep(c1)
                         s2, s2s, s2e = compute_sweep(c2)
                         # normalize sweeps
+
                         def norm_sweep(s):
                             if is_ccw:
                                 if s <= 0:
@@ -553,14 +554,14 @@ class baseOpViewProviderProxy:
                     d = dict()
                     for t in tokens:
                         if t.upper().startswith("X"):
-                            d["X"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                            d["X"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else self.cur + float(t[1:])
                         if t.upper().startswith("Y"):
-                            d["Y"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                            d["Y"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else self.cur + float(t[1:])
                         if t.upper().startswith("Z"):
-                            d["Z"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                            d["Z"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else self.cur + float(t[1:])
                         if t.upper().startswith("R"):
                             d["R"] = float(t[1:])
-                    self.mem.current_cycle = {"type":81,"Z":d["Z"],"R":d["R"]}
+                    self.mem.current_cycle = {"type": 81, "Z": d["Z"], "R": d["R"]}
                     executeCycle()
 
                 elif up.startswith("G83"):
@@ -569,29 +570,28 @@ class baseOpViewProviderProxy:
                     d = dict()
                     for t in tokens:
                         if t.upper().startswith("X"):
-                            d["X"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                            d["X"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else self.cur + float(t[1:])
                         if t.upper().startswith("Y"):
-                            d["Y"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                            d["Y"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else self.cur + float(t[1:])
                         if t.upper().startswith("Z"):
-                            d["Z"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else  self.cur + float(t[1:])
+                            d["Z"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else self.cur + float(t[1:])
                         if t.upper().startswith("R"):
                             d["R"] = float(t[1:])
                         if t.upper().startswith("Q"):
                             d["Q"] = float(t[1:])
-                            if d["Q"] <= 0: raise ValueError()
-                    self.mem.current_cycle = {"type":83,"Z":d["Z"],"R":d["R"],"Q":d["Q"]}
+                            if d["Q"] <= 0:
+                                raise ValueError()
+                    self.mem.current_cycle = {"type": 83, "Z": d["Z"], "R": d["R"], "Q": d["Q"]}
                     executeCycle()
 
-                elif up.startswith("G90") :
+                elif up.startswith("G90"):
                     self.absinc_mode = absinc.G90
-                elif up.startswith("G91") :
+                elif up.startswith("G91"):
                     self.absinc_mode = absinc.G91
 
                 elif up.startswith("M30"):
                     # program end
                     break
-
-
 
                 elif up[0].isalpha() and up.endswith(":"):
                     # label declaration
@@ -606,10 +606,10 @@ class baseOpViewProviderProxy:
                     n_times = 1
                     label_end = None
 
-                    if len(parts) == 2: #REPEAT Start
+                    if len(parts) == 2:  # REPEAT Start
                         label_begin = parts[1] if len(parts) > 1 else None
                         n_times = 1
-                    elif len(parts) == 3: #REPEAT Start P=
+                    elif len(parts) == 3:  # REPEAT Start P=
                         label_begin = parts[1] if len(parts) > 1 else None
 
                         n_times = parts[2].removeprefix("P=")
@@ -621,7 +621,7 @@ class baseOpViewProviderProxy:
                                 n_times = int(self.mem.variables[var_name])
                             else:
                                 raise Exception("Variable {} not defined for REPEAT".format(var_name))
-                    elif len(parts) == 4: #REPEAT Start End P=
+                    elif len(parts) == 4:  # REPEAT Start End P=
                         label_begin = parts[1]
                         label_end = parts[2]
                         n_times = parts[3].removeprefix("P=")
@@ -635,11 +635,11 @@ class baseOpViewProviderProxy:
                                 raise Exception("Variable {} not defined for REPEAT".format(var_name))
                     else:
                         pass
-                    #App.Console.PrintMessage("REPEAT command found: label={} times={}\n".format(label_begin, n_times))
+                    # App.Console.PrintMessage("REPEAT command found: label={} times={}\n".format(label_begin, n_times))
 
                     if label_begin is not None and label_begin in self.mem.labels:
                         start_line = self.mem.labels[label_begin]
-                        #App.Console.PrintMessage("REPEAT label {} found at line {}\n".format(label_begin, start_line))
+                        # App.Console.PrintMessage("REPEAT label {} found at line {}\n".format(label_begin, start_line))
                         for _ in range(n_times):
                             # reset line to start_line and process until we reach the label_end or original line
 
@@ -658,7 +658,7 @@ class baseOpViewProviderProxy:
 
                             processGcode()
                             self.line = restore  # restore original line after repeat
-                            #App.Console.PrintMessage(f'sortie de boucle ligne {self.lines[self.line]}\n')
+                            # App.Console.PrintMessage(f'sortie de boucle ligne {self.lines[self.line]}\n')
                         pass
                     else:
                         App.Console.PrintMessage("REPEAT label {} not found\n".format(label_begin))
@@ -666,14 +666,14 @@ class baseOpViewProviderProxy:
 
                 elif up.startswith("R"):
                     # variable
-                    #up.removeprefix("R")
+                    # up.removeprefix("R")
                     number = int(up[1:up.index("=")])
                     value = float(up[up.index("=")+1:])
                     # if not hasattr(fp, "R{}".format(number)):
                     #     App.Console.PrintMessage("Adding property R{} to object\n".format(number))
                     try:
-                        #fp.addProperty("App::PropertyFloat", "R{}".format(number), "Gcode", "Variable R{}".format(number))
-                        #setattr(fp, "R{}".format(number), value)
+                        # fp.addProperty("App::PropertyFloat", "R{}".format(number), "Gcode", "Variable R{}".format(number))
+                        # setattr(fp, "R{}".format(number), value)
                         self.mem.variables["R{}".format(number)] = value
                     except:
                         pass
@@ -686,14 +686,11 @@ class baseOpViewProviderProxy:
                 else:
                     # other lines may still change position if they contain coords
                     App.Console.PrintMessage("Ignoring line: {}\n".format(ln))
-                    if any(t.upper().startswith(("X","Y","Z")) for t in ln.split()):
+                    if any(t.upper().startswith(("X", "Y", "Z")) for t in ln.split()):
                         new = parse_xyz(ln, self.cur)
                         self.cur = new
                         if self.mem.current_cycle is not None:
                             executeCycle()
-
-
-
 
         processGcode()
 
@@ -708,7 +705,7 @@ class baseOpViewProviderProxy:
             self.rapid_points.point.setValues(0, len(rapid_coords), rapid_coords)
             self.rapid_lines.coordIndex.setValues(0, len(rapid_idx), rapid_idx)
             # set single color for rapid group from object's property
-            color = getattr(self.Object.ViewObject, "Rapid", getattr(self.Object, "Rapid", (1.0,0.0,0.0)))
+            color = getattr(self.Object.ViewObject, "Rapid", getattr(self.Object, "Rapid", (1.0, 0.0, 0.0)))
             self.rapid_color.rgb.setValues(0, 1, [color])
         else:
             # clear
@@ -721,7 +718,7 @@ class baseOpViewProviderProxy:
         if feed_coords:
             self.feed_points.point.setValues(0, len(feed_coords), feed_coords)
             self.feed_lines.coordIndex.setValues(0, len(feed_idx), feed_idx)
-            color = getattr(self.Object.ViewObject, "Feed", getattr(self.Object, "Feed", (0.0,1.0,0.0)))
+            color = getattr(self.Object.ViewObject, "Feed", getattr(self.Object, "Feed", (0.0, 1.0, 0.0)))
             self.feed_color.rgb.setValues(0, 1, [color])
         else:
             self.feed_points.point.setValues(0, 0, [])
@@ -740,7 +737,7 @@ class baseOpViewProviderProxy:
         menu.addAction(action_Toggle)
         return True
 
-    def ToggleOp(self,vobj):
+    def ToggleOp(self, vobj):
         vobj.Object.Active = not vobj.Object.Active
 
     def setDeleteOnReject(self, val):
@@ -749,8 +746,8 @@ class baseOpViewProviderProxy:
 
     def setEdit(self, vobj):
         """Open the editor for the Gcode property"""
-        #must be overrided
-        raise  Exception("Must be Overided")
+        # must be overrided
+        raise Exception("Must be Overided")
         self.deleteOnReject = False
 
     def startSimulation(self, vobj):
@@ -761,7 +758,7 @@ class baseOpViewProviderProxy:
         # vp.animator.start(speed_mm_s=20.0)
 
         control = GcodeAnimationControl(vp.animator)
-        #control.show()
+        # control.show()
         Gui.Control.showDialog(control)
 
     def doubleClicked(self, vobj):

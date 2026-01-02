@@ -8,8 +8,10 @@ import sqlite3
 from BaptPreferences import BaptPreferences
 import BaptUtilities
 
+
 class Tool:
     """Classe représentant un outil d'usinage"""
+
     def __init__(self, id=None, name="", type="", diameter=0.0, length=0.0, flutes=0, material="", comment="",
                  point_angle=118.0, torus_radius=0.0, thread_pitch=0.0, speed=0.0, feed=0.0):
         self.id = id
@@ -20,7 +22,7 @@ class Tool:
         self.flutes = flutes
         self.material = material
         self.comment = comment
-        
+
         # Paramètres spécifiques aux types d'outils
         self.point_angle = point_angle  # Angle de pointe pour les forets (en degrés)
         self.torus_radius = torus_radius  # Rayon du tore pour les fraises toriques (en mm)
@@ -46,7 +48,7 @@ class Tool:
             'speed': self.speed,
             'feed': self.feed
         }
-    
+
     @classmethod
     def from_dict(cls, data):
         """Crée un outil à partir d'un dictionnaire"""
@@ -69,23 +71,24 @@ class Tool:
 
 class ToolDatabase:
     """Classe gérant la base de données d'outils"""
+
     def __init__(self):
         # Récupérer le chemin depuis les préférences
         prefs = BaptPreferences()
         self.db_path = prefs.getToolsDbPath()
-        
+
         # Initialiser la base de données
         self.init_database()
-    
+
     def init_database(self):
         """Initialise la base de données si elle n'existe pas"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         # Vérifier si la table existe déjà
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tools'")
         table_exists = cursor.fetchone()
-        
+
         if not table_exists:
             # Créer la table des outils si elle n'existe pas
             cursor.execute('''
@@ -111,38 +114,38 @@ class ToolDatabase:
                 cursor.execute("SELECT point_angle FROM tools LIMIT 1")
             except sqlite3.OperationalError:
                 cursor.execute("ALTER TABLE tools ADD COLUMN point_angle REAL DEFAULT 118.0")
-            
+
             try:
                 cursor.execute("SELECT torus_radius FROM tools LIMIT 1")
             except sqlite3.OperationalError:
                 cursor.execute("ALTER TABLE tools ADD COLUMN torus_radius REAL DEFAULT 0.0")
-            
+
             try:
                 cursor.execute("SELECT thread_pitch FROM tools LIMIT 1")
             except sqlite3.OperationalError:
                 cursor.execute("ALTER TABLE tools ADD COLUMN thread_pitch REAL DEFAULT 0.0")
-            
+
             try:
                 cursor.execute("SELECT speed FROM tools LIMIT 1")
             except sqlite3.OperationalError:
                 cursor.execute("ALTER TABLE tools ADD COLUMN speed REAL DEFAULT 0.0")
-            
+
             try:
                 cursor.execute("SELECT feed FROM tools LIMIT 1")
             except sqlite3.OperationalError:
                 cursor.execute("ALTER TABLE tools ADD COLUMN feed REAL DEFAULT 0.0")
-        
+
         conn.commit()
         conn.close()
-    
+
     def get_all_tools(self):
         """Récupère tous les outils de la base de données"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch, speed, feed FROM tools")
         rows = cursor.fetchall()
-        
+
         tools = []
         for row in rows:
             tool = Tool(
@@ -161,18 +164,18 @@ class ToolDatabase:
                 feed=row[12]
             )
             tools.append(tool)
-        
+
         conn.close()
         return tools
-    
+
     def get_tool_by_id(self, tool_id):
         """Récupère un outil par son ID"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch, speed, feed FROM tools WHERE id=?", (tool_id,))
         row = cursor.fetchone()
-        
+
         if row:
             tool = Tool(
                 id=row[0],
@@ -194,54 +197,55 @@ class ToolDatabase:
         else:
             conn.close()
             return None
-    
+
     def add_tool(self, tool):
         """Ajoute un outil à la base de données"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         cursor.execute('''
         INSERT INTO tools (name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (tool.name, tool.type, tool.diameter, tool.length, tool.flutes, tool.material, tool.comment, 
+        ''', (tool.name, tool.type, tool.diameter, tool.length, tool.flutes, tool.material, tool.comment,
               tool.point_angle, tool.torus_radius, tool.thread_pitch))
-        
+
         # Récupérer l'ID généré
         tool.id = cursor.lastrowid
-        
+
         conn.commit()
         conn.close()
         return tool
-    
+
     def update_tool(self, tool):
         """Met à jour un outil dans la base de données"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         cursor.execute('''
         UPDATE tools
         SET name=?, type=?, diameter=?, length=?, flutes=?, material=?, comment=?, point_angle=?, torus_radius=?, thread_pitch=?, speed=?, feed=?
         WHERE id=?
         ''', (tool.name, tool.type, tool.diameter, tool.length, tool.flutes, tool.material, tool.comment,
               tool.point_angle, tool.torus_radius, tool.thread_pitch, tool.speed, tool.feed, tool.id))
-        
+
         conn.commit()
         conn.close()
         return tool
-    
+
     def delete_tool(self, tool_id):
         """Supprime un outil de la base de données"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         cursor.execute("DELETE FROM tools WHERE id=?", (tool_id,))
-        
+
         conn.commit()
         conn.close()
 
 
 class ToolsTableModel(QtCore.QAbstractTableModel):
     """Modèle de tableau pour afficher les outils"""
+
     def __init__(self, tools=None):
         super(ToolsTableModel, self).__init__()
         self.tools = tools or []
@@ -249,20 +253,20 @@ class ToolsTableModel(QtCore.QAbstractTableModel):
         self.headers = ["ID", "Nom", "Type", "Diamètre (mm)", "Longueur (mm)", "Nb dents", "Matériau", "Commentaire"]
         self.filter_text = ""  # Texte de filtrage
         self.filter_column = -1  # Colonne de filtrage (-1 = toutes les colonnes)
-    
+
     def rowCount(self, parent=None):
         return len(self.filtered_tools)
-    
+
     def columnCount(self, parent=None):
         return len(self.headers)
-    
+
     def data(self, index, role=QtCore.Qt.DisplayRole):
         if not index.isValid() or not (0 <= index.row() < len(self.filtered_tools)):
             return None
-        
+
         tool = self.filtered_tools[index.row()]
         col = index.column()
-        
+
         if role == QtCore.Qt.DisplayRole:
             if col == 0:
                 return str(tool.id)
@@ -280,38 +284,38 @@ class ToolsTableModel(QtCore.QAbstractTableModel):
                 return tool.material
             elif col == 7:
                 return tool.comment
-        
+
         return None
-    
+
     def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
         if role == QtCore.Qt.DisplayRole and orientation == QtCore.Qt.Horizontal:
             return self.headers[section]
         return None
-    
+
     def setTools(self, tools):
         """Met à jour la liste des outils"""
         self.beginResetModel()
         self.tools = tools
         self.applyFilter()
         self.endResetModel()
-    
+
     def setFilter(self, text, column=-1):
         """Définit le filtre à appliquer"""
         self.filter_text = text.lower()
         self.filter_column = column
         self.applyFilter()
-    
+
     def applyFilter(self):
         """Applique le filtre actuel à la liste des outils"""
         self.beginResetModel()
-        
+
         if not self.filter_text:
             # Pas de filtre, afficher tous les outils
             self.filtered_tools = list(self.tools)
         else:
             # Appliquer le filtre
             self.filtered_tools = []
-            
+
             for tool in self.tools:
                 # Si une colonne spécifique est sélectionnée
                 if self.filter_column >= 0:
@@ -332,7 +336,7 @@ class ToolsTableModel(QtCore.QAbstractTableModel):
                         value = tool.material
                     elif self.filter_column == 7:
                         value = tool.comment
-                    
+
                     if self.filter_text in value.lower():
                         self.filtered_tools.append(tool)
                 else:
@@ -347,68 +351,69 @@ class ToolsTableModel(QtCore.QAbstractTableModel):
                         tool.material,
                         tool.comment
                     ]
-                    
+
                     # Si le texte de filtre est trouvé dans l'une des valeurs
                     if any(self.filter_text in value.lower() for value in values):
                         self.filtered_tools.append(tool)
-        
+
         self.endResetModel()
-    
+
     def sort(self, column, order):
         """Trie les outils selon la colonne et l'ordre spécifiés"""
         self.beginResetModel()
-        
+
         # Définir la clé de tri en fonction de la colonne
         if column == 0:  # ID
-            key = lambda tool: tool.id if tool.id is not None else 0
+            def key(tool): return tool.id if tool.id is not None else 0
         elif column == 1:  # Nom
-            key = lambda tool: tool.name.lower()
+            def key(tool): return tool.name.lower()
         elif column == 2:  # Type
-            key = lambda tool: tool.type.lower()
+            def key(tool): return tool.type.lower()
         elif column == 3:  # Diamètre
-            key = lambda tool: float(tool.diameter)
+            def key(tool): return float(tool.diameter)
         elif column == 4:  # Longueur
-            key = lambda tool: float(tool.length)
+            def key(tool): return float(tool.length)
         elif column == 5:  # Nb dents
-            key = lambda tool: int(tool.flutes)
+            def key(tool): return int(tool.flutes)
         elif column == 6:  # Matériau
-            key = lambda tool: tool.material.lower()
+            def key(tool): return tool.material.lower()
         elif column == 7:  # Commentaire
-            key = lambda tool: tool.comment.lower()
+            def key(tool): return tool.comment.lower()
         else:
             return
-        
+
         # Trier la liste filtrée
         reverse = (order == QtCore.Qt.DescendingOrder)
         self.filtered_tools.sort(key=key, reverse=reverse)
-        
+
         self.endResetModel()
 
 
 class ToolDialog(QtGui.QDialog):
     """Dialogue pour ajouter ou modifier un outil"""
+
     def __init__(self, tool=None, parent=None):
         super(ToolDialog, self).__init__(parent)
         self.tool = tool or Tool()
         self.setup_ui()
-    
+
     def setup_ui(self):
         """Configure l'interface utilisateur"""
         self.setWindowTitle("Éditer un outil" if self.tool.id else "Ajouter un outil")
         self.setMinimumWidth(400)
-        
+
         # Afficher un message de débogage
         App.Console.PrintMessage("Configuration de l'interface utilisateur pour l'outil\n")
-        
+
         layout = QtGui.QVBoxLayout(self)
-        
+
         # Formulaire principal
         form_layout = QtGui.QFormLayout()
-        
+
         # Nom
         self.name_edit = QtGui.QLineEdit(self.tool.name)
         form_layout.addRow("Nom:", self.name_edit)
-        
+
         # Type (combobox)
         self.type_combo = QtGui.QComboBox()
         self.type_combo.addItems(["Fraise", "Fraise torique", "Foret", "Taraud", "Autre"])
@@ -418,7 +423,7 @@ class ToolDialog(QtGui.QDialog):
                 self.type_combo.setCurrentIndex(index)
         self.type_combo.currentIndexChanged.connect(self.update_specific_params)
         form_layout.addRow("Type:", self.type_combo)
-        
+
         # Diamètre
         self.diameter_spin = QtGui.QDoubleSpinBox()
         self.diameter_spin.setRange(0.1, 100.0)
@@ -426,7 +431,7 @@ class ToolDialog(QtGui.QDialog):
         self.diameter_spin.setSuffix(" mm")
         self.diameter_spin.setValue(self.tool.diameter)
         form_layout.addRow("Diamètre:", self.diameter_spin)
-        
+
         # Longueur
         self.length_spin = QtGui.QDoubleSpinBox()
         self.length_spin.setRange(1.0, 300.0)
@@ -434,17 +439,17 @@ class ToolDialog(QtGui.QDialog):
         self.length_spin.setSuffix(" mm")
         self.length_spin.setValue(self.tool.length)
         form_layout.addRow("Longueur:", self.length_spin)
-        
+
         # Nombre de dents
         self.flutes_spin = QtGui.QSpinBox()
         self.flutes_spin.setRange(0, 20)
         self.flutes_spin.setValue(self.tool.flutes)
         form_layout.addRow("Nombre de dents:", self.flutes_spin)
-        
+
         # Matériau
         self.material_edit = QtGui.QLineEdit(self.tool.material)
         form_layout.addRow("Matériau:", self.material_edit)
-        
+
         # Commentaire
         self.comment_edit = QtGui.QTextEdit()
         self.comment_edit.setPlainText(self.tool.comment)
@@ -458,7 +463,7 @@ class ToolDialog(QtGui.QDialog):
         self.speed_spin.setSuffix(" rpm")
         self.speed_spin.setValue(self.tool.speed)
         form_layout.addRow("Vitesse de coupe:", self.speed_spin)
-        
+
         # Avance (mm/min)
         self.feed_spin = QtGui.QDoubleSpinBox()
         self.feed_spin.setRange(0, 10000)
@@ -466,13 +471,13 @@ class ToolDialog(QtGui.QDialog):
         self.feed_spin.setSuffix(" mm/min")
         self.feed_spin.setValue(self.tool.feed)
         form_layout.addRow("Avance:", self.feed_spin)
-        
+
         layout.addLayout(form_layout)
-        
+
         # Groupe pour les paramètres spécifiques au type d'outil
         self.specific_group = QtGui.QGroupBox("Paramètres spécifiques")
         self.specific_layout = QtGui.QVBoxLayout(self.specific_group)
-        
+
         # Créer des sous-layouts pour chaque type d'outil
         # Layout pour les forets
         self.drill_layout = QtGui.QFormLayout()
@@ -485,7 +490,7 @@ class ToolDialog(QtGui.QDialog):
         self.drill_widget = QtGui.QWidget()
         self.drill_widget.setLayout(self.drill_layout)
         self.specific_layout.addWidget(self.drill_widget)
-        
+
         # Layout pour les fraises toriques
         self.torus_layout = QtGui.QFormLayout()
         self.torus_radius_spin = QtGui.QDoubleSpinBox()
@@ -497,7 +502,7 @@ class ToolDialog(QtGui.QDialog):
         self.torus_widget = QtGui.QWidget()
         self.torus_widget.setLayout(self.torus_layout)
         self.specific_layout.addWidget(self.torus_widget)
-        
+
         # Layout pour les tarauds
         self.tap_layout = QtGui.QFormLayout()
         self.thread_pitch_spin = QtGui.QDoubleSpinBox()
@@ -509,9 +514,9 @@ class ToolDialog(QtGui.QDialog):
         self.tap_widget = QtGui.QWidget()
         self.tap_widget.setLayout(self.tap_layout)
         self.specific_layout.addWidget(self.tap_widget)
-        
+
         layout.addWidget(self.specific_group)
-        
+
         # Boutons
         button_box = QtGui.QDialogButtonBox(
             QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel
@@ -519,20 +524,20 @@ class ToolDialog(QtGui.QDialog):
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
-        
+
         # Initialiser l'affichage des paramètres spécifiques
         self.update_specific_params()
-    
+
     def update_specific_params(self):
         """Met à jour l'affichage des paramètres spécifiques en fonction du type d'outil sélectionné"""
         tool_type = self.type_combo.currentText()
         App.Console.PrintMessage(f"Mise à jour des paramètres spécifiques pour le type: {tool_type}\n")
-        
+
         # Masquer tous les widgets spécifiques
         self.drill_widget.setVisible(False)
         self.torus_widget.setVisible(False)
         self.tap_widget.setVisible(False)
-        
+
         # Afficher uniquement le widget pertinent pour le type d'outil sélectionné
         if tool_type == "Foret":
             App.Console.PrintMessage("Affichage des paramètres pour Foret\n")
@@ -549,9 +554,9 @@ class ToolDialog(QtGui.QDialog):
         else:
             # Masquer le groupe entier si aucun paramètre spécifique n'est applicable
             self.specific_group.setVisible(False)
-        
+
         App.Console.PrintMessage(f"Groupe de paramètres spécifiques visible: {self.specific_group.isVisible()}\n")
-    
+
     def accept(self):
         """Valide les modifications"""
         self.tool.name = self.name_edit.text()
@@ -561,7 +566,7 @@ class ToolDialog(QtGui.QDialog):
         self.tool.flutes = self.flutes_spin.value()
         self.tool.material = self.material_edit.text()
         self.tool.comment = self.comment_edit.toPlainText()
-        
+
         # Paramètres spécifiques
         self.tool.point_angle = self.point_angle_spin.value()
         self.tool.torus_radius = self.torus_radius_spin.value()
@@ -570,48 +575,49 @@ class ToolDialog(QtGui.QDialog):
         # Vitesse et avance
         self.tool.speed = self.speed_spin.value()
         self.tool.feed = self.feed_spin.value()
-        
+
         tb = ToolDatabase()
         tool = tb.update_tool(self.tool) if self.tool.id else tb.add_tool(self.tool)
-        status = (tool is not None) 
+        status = (tool is not None)
         App.Console.PrintMessage(f"Outil enregistré {status} avec les paramètres spécifiques: Angle={self.tool.point_angle}, Rayon={self.tool.torus_radius}, Pas={self.tool.thread_pitch}\n")
-        
-        #super(ToolDialog, self).accept()
+
+        # super(ToolDialog, self).accept()
         Gui.Control.closeDialog()
         return True
 
 
 class ToolsManagerPanel:
     """Panneau de gestion des outils"""
+
     def __init__(self):
         # Créer l'interface utilisateur
         self.form = QtGui.QWidget()
         self.form.setWindowTitle("Gestionnaire d'outils")
         self.setup_ui()
-        
+
         # Base de données d'outils
         self.db = ToolDatabase()
-        
+
         # Charger les outils
         self.load_tools()
-    
+
     def setup_ui(self):
         """Configure l'interface utilisateur"""
         layout = QtGui.QVBoxLayout(self.form)
-        
+
         # Zone de filtrage
         filter_layout = QtGui.QHBoxLayout()
-        
+
         # Libellé
         filter_label = QtGui.QLabel("Filtrer:")
         filter_layout.addWidget(filter_label)
-        
+
         # Champ de recherche
         self.filter_edit = QtGui.QLineEdit()
         self.filter_edit.setPlaceholderText("Entrez un texte pour filtrer...")
         self.filter_edit.textChanged.connect(self.filter_changed)
         filter_layout.addWidget(self.filter_edit)
-        
+
         # Sélection de colonne
         self.column_combo = QtGui.QComboBox()
         self.column_combo.addItem("Toutes les colonnes", -1)
@@ -625,14 +631,14 @@ class ToolsManagerPanel:
         self.column_combo.addItem("Commentaire", 7)
         self.column_combo.currentIndexChanged.connect(self.column_changed)
         filter_layout.addWidget(self.column_combo)
-        
+
         # Bouton pour effacer le filtre
         clear_button = QtGui.QPushButton("Effacer")
         clear_button.clicked.connect(self.clear_filter)
         filter_layout.addWidget(clear_button)
-        
+
         layout.addLayout(filter_layout)
-        
+
         # Tableau des outils
         self.table_view = QtGui.QTableView()
         self.table_view.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
@@ -640,29 +646,29 @@ class ToolsManagerPanel:
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setSortingEnabled(True)  # Activer le tri
         self.table_view.horizontalHeader().setStretchLastSection(True)
-        
+
         # Configurer le tri par défaut sur le diamètre (colonne 3)
         self.table_view.horizontalHeader().setSortIndicator(3, QtCore.Qt.AscendingOrder)
-        
+
         layout.addWidget(self.table_view)
-        
+
         # Boutons d'action
         button_layout = QtGui.QHBoxLayout()
-        
+
         self.add_button = QtGui.QPushButton("Ajouter")
         self.add_button.clicked.connect(self.add_tool)
         button_layout.addWidget(self.add_button)
-        
+
         self.edit_button = QtGui.QPushButton("Éditer")
         self.edit_button.clicked.connect(self.edit_tool)
         button_layout.addWidget(self.edit_button)
-        
+
         self.delete_button = QtGui.QPushButton("Supprimer")
         self.delete_button.clicked.connect(self.delete_tool)
         button_layout.addWidget(self.delete_button)
-        
+
         layout.addLayout(button_layout)
-    
+
     def filter_changed(self):
         """Appelé quand le texte du filtre change"""
         if hasattr(self, 'model'):
@@ -670,7 +676,7 @@ class ToolsManagerPanel:
                 self.filter_edit.text(),
                 self.column_combo.itemData(self.column_combo.currentIndex())
             )
-    
+
     def column_changed(self):
         """Appelé quand la colonne de filtrage change"""
         if hasattr(self, 'model'):
@@ -678,76 +684,76 @@ class ToolsManagerPanel:
                 self.filter_edit.text(),
                 self.column_combo.itemData(self.column_combo.currentIndex())
             )
-    
+
     def clear_filter(self):
         """Efface le filtre"""
         self.filter_edit.clear()
         self.column_combo.setCurrentIndex(0)  # "Toutes les colonnes"
-    
+
     def load_tools(self):
         """Charge les outils depuis la base de données"""
         tools = self.db.get_all_tools()
         self.model = ToolsTableModel(tools)
         self.table_view.setModel(self.model)
-        
+
         # Connecter le signal de tri du tableau au modèle
         self.table_view.horizontalHeader().sortIndicatorChanged.connect(self.model.sort)
-        
+
         # Ajuster les colonnes
         self.table_view.resizeColumnsToContents()
-        
+
         # Trier initialement par diamètre (colonne 3) en ordre croissant
         self.model.sort(3, QtCore.Qt.AscendingOrder)
-    
+
     def add_tool(self):
         """Ajoute un nouvel outil"""
         dialog = ToolDialog(parent=self.form)
         if dialog.exec_() == QtGui.QDialog.Accepted:
             # Ajouter l'outil à la base de données
             tool = self.db.add_tool(dialog.tool)
-            
+
             # Mettre à jour le modèle
             tools = self.db.get_all_tools()
             self.model.setTools(tools)
-    
+
     def edit_tool(self):
         """Modifie l'outil sélectionné"""
         selected = self.table_view.selectionModel().selectedRows()
         if not selected:
             return
-        
+
         row = selected[0].row()
         # Correction : utiliser filtered_tools au lieu de tools pour obtenir l'index correct
         tool_index = self.model.filtered_tools[row].id
-        
+
         # Récupérer l'outil complet depuis la base de données
         tools = self.db.get_all_tools()
         tool = next((t for t in tools if t.id == tool_index), None)
-        
+
         if not tool:
             App.Console.PrintError(f"Outil avec ID {tool_index} introuvable\n")
             return
-        
+
         App.Console.PrintMessage(f"Édition de l'outil: {tool.name}, Type: {tool.type}, Paramètres spécifiques: Angle={tool.point_angle}, Rayon={tool.torus_radius}, Pas={tool.thread_pitch}\n")
-        
+
         dialog = ToolDialog(tool, parent=self.form)
         if dialog.exec_() == QtGui.QDialog.Accepted:
             # Mettre à jour l'outil dans la base de données
             self.db.update_tool(tool)
-            
+
             # Mettre à jour le modèle
             tools = self.db.get_all_tools()
             self.model.setTools(tools)
-    
+
     def delete_tool(self):
         """Supprime l'outil sélectionné"""
         selected = self.table_view.selectionModel().selectedRows()
         if not selected:
             return
-        
+
         row = selected[0].row()
         tool = self.model.filtered_tools[row]
-        
+
         # Demander confirmation
         reply = QtGui.QMessageBox.question(
             self.form,
@@ -756,11 +762,11 @@ class ToolsManagerPanel:
             QtGui.QMessageBox.Yes | QtGui.QMessageBox.No,
             QtGui.QMessageBox.No
         )
-        
+
         if reply == QtGui.QMessageBox.Yes:
             # Supprimer l'outil de la base de données
             self.db.delete_tool(tool.id)
-            
+
             # Mettre à jour le modèle
             tools = self.db.get_all_tools()
             self.model.setTools(tools)

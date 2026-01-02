@@ -3,14 +3,15 @@ import FreeCAD as App
 import FreeCADGui as Gui
 import Part
 
-#source: https://github.com/FreeCAD/FreeCAD-macros/blob/master/Utility/HighlightCommon.FCMacro
+# source: https://github.com/FreeCAD/FreeCAD-macros/blob/master/Utility/HighlightCommon.FCMacro
+
 
 class BaptHighlight:
     def __init__(self, obj):
         self.obj = obj
-        
+
         if not hasattr(obj, "ObjectsToEnumerate"):
-            obj.addProperty("App::PropertyLinkList","ObjectsToEnumerate","Highlight","List of objects to highlight")
+            obj.addProperty("App::PropertyLinkList", "ObjectsToEnumerate", "Highlight", "List of objects to highlight")
 
         obj.Proxy = self
 
@@ -18,7 +19,7 @@ class BaptHighlight:
         pass
 
     def execute(self, obj):
-        
+
         # Ensure list of unique objects.
         object_list = []
 
@@ -106,11 +107,12 @@ class BaptHighlight:
             # doc.recompute()
         else:
             # If no collision has been found, just inform the user about it.
-            #doc.abortTransaction()
+            # doc.abortTransaction()
             if len(object_list) >= 2:
                 App.Console.PrintWarning('No collision found between selected objects\n')
             else:
                 App.Console.PrintWarning('No suitable objects selected, select at least two objects\n')
+
 
 class ViewProviderBaptHighlight:
     def __init__(self, obj):
@@ -119,23 +121,25 @@ class ViewProviderBaptHighlight:
     def attach(self, obj):
         self.obj = obj.Object
         obj.ShapeColor = (1.0, 0.0, 0.0, 1.0)
+
     def updateData(self, fp, prop):
         pass
 
-    def getDisplayModes(self,obj):
-        modes=[]
+    def getDisplayModes(self, obj):
+        modes = []
         return modes
 
     def getDefaultDisplayMode(self):
         return "Shaded"
 
-    def setDisplayMode(self,mode):
+    def setDisplayMode(self, mode):
         return mode
-    
+
     def getIcon(self):
         """Retourne l'icône"""
         return BaptUtilities.getIconPath("HighlightCommon.svg")
-    
+
+
 class CreateHighlightCommand:
     """Create Highlight object"""
 
@@ -147,7 +151,7 @@ class CreateHighlightCommand:
         }
 
     def IsActive(self):
-        obj =  Gui.activeView().getActiveObject("camproject")
+        obj = Gui.activeView().getActiveObject("camproject")
         return obj is not None
 
     def Activated(self):
@@ -162,4 +166,4 @@ class CreateHighlightCommand:
             ViewProviderBaptHighlight(obj.ViewObject)
         obj.ObjectsToEnumerate = sel
         doc.recompute()
-        #Gui.ActiveDocument.setEdit(obj.Name)
+        # Gui.ActiveDocument.setEdit(obj.Name)

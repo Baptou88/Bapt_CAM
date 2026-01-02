@@ -8,18 +8,20 @@ import os
 from BaptPreferences import BaptPreferences
 from CamProjectTaskPanel import PostProcessorTaskPanel
 from BasePostPro import BasePostPro
-import FreeCAD as App # type: ignore
-from PySide import QtGui, QtCore # type: ignore
+import FreeCAD as App  # type: ignore
+from PySide import QtGui, QtCore  # type: ignore
 import BaptUtilities as BaptUtils
 
-def isOp(obj)->bool:
+
+def isOp(obj) -> bool:
     """
     Retourne True si obj est une opération d'usinage (ContournageCycle, DrillOperation, etc.).
     """
     if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type in [
-        'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path']:
+            'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path']:
         return True
     return False
+
 
 def list_machining_operations(obj):
     """
@@ -30,16 +32,16 @@ def list_machining_operations(obj):
     ops = []
     if isOp(obj):
         ops.append(obj)
-    elif  hasattr(obj, 'LinkedObject'):
+    elif hasattr(obj, 'LinkedObject'):
         linked_obj = obj.LinkedObject
         if linked_obj and isOp(linked_obj):
-            #ops.extend(list_machining_operations(linked_obj))
+            # ops.extend(list_machining_operations(linked_obj))
             ops.append(obj)
     # Parcours récursif des groupes/enfants
     if hasattr(obj, 'Group') and obj.Group:
         for child in obj.Group:
             ops.extend(list_machining_operations(child))
-    #evite les doublons
+    # evite les doublons
     unique_ops = []
     for op in ops:
         if op not in unique_ops:
@@ -59,7 +61,6 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
     current_spindle = None
     current_feed = None
 
-
     blockForm = Postpro.blockForm(cam_project.Proxy.getStock(cam_project))
     gcode_lines.append(blockForm)
 
@@ -71,7 +72,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
                 obj = linked_obj
         if not (hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type')):
             continue
-        tool = getattr(obj, 'Tool', None)   
+        tool = getattr(obj, 'Tool', None)
         if tool is None:
             App.Console.PrintWarning(f"L'opération {obj.Label} n'a pas d'outil associé !\n")
             gcode_lines.append(Postpro.writeComment(f"Skipping operation {obj.Label} due to missing tool."))
@@ -79,13 +80,12 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
         if current_tool != tool:
             tool_change_code = Postpro.toolChange(tool, cam_project)
             gcode_lines.append(tool_change_code)
-            
 
             current_tool = tool
 
         # --- Surfacage ---
         if obj.Proxy.Type == 'Surfacage' and hasattr(obj, 'Shape'):
-            
+
             gcode_lines.append(Postpro.writeComment(f"Surfacage: {obj.Label}"))
 
             gcode_lines.append(obj.Gcode)
@@ -96,7 +96,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             gcode_lines.append(Postpro.writeComment(f"Contournage operation: {obj.Label}"))
 
             gcode_lines.append(transformed)
-            #gcode_lines.append(obj.Gcode)
+            # gcode_lines.append(obj.Gcode)
 
         # --- Perçage ---
         elif obj.Proxy.Type == 'DrillOperation':
@@ -110,7 +110,6 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             dwell = getattr(obj, 'DwellTime', 0.5)
             peck = getattr(obj, 'PeckDepth', 2.0).Value
             retract = getattr(obj, 'Retract', 1.0).Value
-
 
             gcode_lines.append(Postpro.writeComment(f"Perçage: {obj.Label}"))
             points = []
@@ -156,11 +155,11 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
                 commentaire = Postpro.writeComment(f"Cycle: Contournage personnalisé")
                 gcode_lines.append(commentaire)
                 gcode_lines.append(obj.Gcode)
-     
 
     gcode_lines.append(Postpro.writeFooter())
 
     return '\n'.join(gcode_lines)
+
 
 def postprocess_gcode():
     doc = App.ActiveDocument
@@ -176,7 +175,7 @@ def postprocess_gcode():
     if not cam_project:
         App.Console.PrintError("Aucun projet CAM trouvé !\n")
         return
-    
+
     dlg = PostProcessDialog(cam_project)
     dlg.exec_()
 
@@ -191,8 +190,6 @@ def postprocess_gcode():
     #     with open(filename, 'w') as f:
     #         f.write(gcode)
     #     App.Console.PrintMessage(f"G-code généré et sauvegardé dans : {filename}\n")
-        
-
 
     # except Exception as e:
     #     App.Console.PrintError(f"Erreur lors de la sauvegarde du G-code : {str(e)}\n")
@@ -203,6 +200,7 @@ class PostProcessDialog(QtGui.QDialog):
     Dialog qui liste les opérations, permet checkbox + réordonner (Up/Down),
     et génère le G-code pour la sélection ordonnée.
     """
+
     def __init__(self, cam_project, parent=None):
         super(PostProcessDialog, self).__init__(parent)
         self.setWindowTitle("PostProcess - Sélection des opérations")
@@ -266,7 +264,7 @@ class PostProcessDialog(QtGui.QDialog):
     def populate_list(self):
         self.listWidget.clear()
         groupeOps = self.cam_project.Proxy.getOperationsGroup(self.cam_project)
-        
+
         ops = list_machining_operations(groupeOps)
         for op in ops:
             displayText = f"{op.Label} {self._tool_label(op)}"
@@ -335,17 +333,17 @@ class PostProcessDialog(QtGui.QDialog):
         return QtGui.QIcon()
 
     def updateOrder(self):
-        #reorganise le groupeOperations dans le cam_project
-            groupeOps = self.cam_project.Proxy.getOperationsGroup(self.cam_project)
-            for r in range(self.listWidget.count()):
-                item = self.listWidget.item(r)
-                op = item.data(QtCore.Qt.UserRole)
-                if op in groupeOps.Group:
-                    groupeOps.removeObject(op)
-            for r in range(self.listWidget.count()):
-                item = self.listWidget.item(r)
-                op = item.data(QtCore.Qt.UserRole)
-                groupeOps.addObject(op)
+        # reorganise le groupeOperations dans le cam_project
+        groupeOps = self.cam_project.Proxy.getOperationsGroup(self.cam_project)
+        for r in range(self.listWidget.count()):
+            item = self.listWidget.item(r)
+            op = item.data(QtCore.Qt.UserRole)
+            if op in groupeOps.Group:
+                groupeOps.removeObject(op)
+        for r in range(self.listWidget.count()):
+            item = self.listWidget.item(r)
+            op = item.data(QtCore.Qt.UserRole)
+            groupeOps.addObject(op)
 
     def move_item_up(self):
         row = self.listWidget.currentRow()
@@ -378,7 +376,7 @@ class PostProcessDialog(QtGui.QDialog):
         if not ops:
             QtGui.QMessageBox.warning(self, "Aucune opération", "Veuillez sélectionner au moins une opération.")
             return
-        #load post processing module
+        # load post processing module
         chemin_du_module = f"{BaptUtils.getPostProPath(self.cam_project.PostProcessor[0] + '.py')}"
         nom_du_module = os.path.splitext(os.path.basename(chemin_du_module))[0]
         App.Console.PrintMessage(f'{chemin_du_module}\n')
@@ -392,7 +390,7 @@ class PostProcessDialog(QtGui.QDialog):
             App.Console.PrintError(f"Erreur lors du chargement du module de post-traitement : {e}\n")
             QtGui.QMessageBox.critical(self, "Erreur", f"Impossible de charger le module de post-traitement:\n{e}")
             return
-        gcode = generate_gcode_for_ops(ops,self.cam_project, pp)
+        gcode = generate_gcode_for_ops(ops, self.cam_project, pp)
         prefs = BaptPreferences()
         filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Enregistrer le G-code", prefs.getGCodeFolderPath(), "Fichiers G-code (*.nc *.gcode *.tap);;Tous les fichiers (*)")
         if not filename:
@@ -408,9 +406,8 @@ class PostProcessDialog(QtGui.QDialog):
                     QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(filename))
             except Exception as e:
                 App.Console.PrintWarning(f"Impossible d'ouvrir le fichier dans l'éditeur: {e}\n")
-                
+
             self.accept()
         except Exception as e:
             App.Console.PrintError(f"Erreur lors de la sauvegarde du G-code : {str(e)}\n")
             QtGui.QMessageBox.critical(self, "Erreur", f"Impossible de sauvegarder le G-code:\n{e}")
-

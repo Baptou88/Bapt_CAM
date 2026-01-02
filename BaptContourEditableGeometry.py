@@ -2,16 +2,18 @@ import FreeCAD as App
 import FreeCADGui as Gui
 import Part
 
+
 class ContourEditableGeometry:
     """Contour éditable via Sketcher"""
+
     def __init__(self, obj):
         self.Type = "ContourEditableGeometry"
         obj.addProperty("App::PropertyLink", "Sketch", "Base", "Sketch associé à la géométrie")
-        
+
         if not hasattr(obj, "depth"):
             obj.addProperty("App::PropertyFloat", "depth", "Contour", "Hauteur finale")
             obj.depth = 0.0
-        
+
         if not hasattr(obj, "Direction"):
             obj.addProperty("App::PropertyEnumeration", "Direction", "Contour", "Direction d'usinage")
             obj.Direction = ["Horaire", "Anti-horaire"]
@@ -44,7 +46,7 @@ class ContourEditableGeometry:
 
                 for i, edge in enumerate(shape.Edges):
                     if obj.DepthMode == "Relatif":
-                        z_offset = obj.depth 
+                        z_offset = obj.depth
                         translation = App.Vector(0, 0, z_offset)
                     else:  # Absolu
                         z_value = obj.depth
@@ -55,14 +57,14 @@ class ContourEditableGeometry:
 
                 wire_z_final = Part.Wire(adjusted_edges_depth)
                 # shape = Part.Shape([wire_z_final])
-                shapes = [shape,wire_z_final]
+                shapes = [shape, wire_z_final]
                 coumpound = Part.Compound(shapes)
                 obj.Shape = coumpound
             except Exception as e:
                 App.Console.PrintError(f"Erreur lors de la récupération du shape du sketch : {e}\n")
         else:
             obj.Shape = Part.Shape()
-            
+
     def onChanged(self, obj, prop):
         """Synchronise la forme si le Sketch change"""
         if prop in ["Sketch", "depth", "Direction", "DepthMode"]:
@@ -74,8 +76,10 @@ class ContourEditableGeometry:
     def __setstate__(self, state):
         return None
 
+
 class ViewProviderContourEditableGeometry:
     """Affichage pour ContourEditableGeometry"""
+
     def __init__(self, vobj):
         vobj.Proxy = self
         self.Object = vobj.Object
@@ -98,7 +102,7 @@ class ViewProviderContourEditableGeometry:
 
     def __setstate__(self, state):
         return None
-    
+
     def setupContextMenu(self, vobj, menu):
         """Configuration du menu contextuel"""
         action = menu.addAction("Edit Sketch")

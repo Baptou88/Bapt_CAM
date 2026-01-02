@@ -3,23 +3,23 @@ import FreeCADGui as Gui
 import Part
 import BaptUtilities
 
+
 class DrillGeometry:
     def __init__(self, obj):
         """Ajoute les propriétés"""
 
         self.Type = "DrillGeometry"
 
-        #obj.addExtension("App::GroupExtensionPython")
-        #obj.addExtension("App::DocumentObjectGroupPython")
-        #obj.addExtension("App::LinkExtensionPython")
-
+        # obj.addExtension("App::GroupExtensionPython")
+        # obj.addExtension("App::DocumentObjectGroupPython")
+        # obj.addExtension("App::LinkExtensionPython")
 
         # Référence aux faces sélectionnées
         if not hasattr(obj, "DrillFaces"):
             obj.addProperty("App::PropertyLinkSubList", "DrillFaces", "Drill", "Selected drill faces")
 
         # Liste des positions de perçage
-        if not hasattr(obj, "DrillPositions"): #TODO Renamer en HolePositions
+        if not hasattr(obj, "DrillPositions"):  # TODO Renamer en HolePositions
             obj.addProperty("App::PropertyVectorList", "DrillPositions", "Drill", "Drill positions")
 
         # Diamètre des perçages (détecté automatiquement)
@@ -53,7 +53,7 @@ class DrillGeometry:
             obj.HighlightColor = (1.0, 1.0, 0.0)  # Jaune par défaut
 
         # Créer ou obtenir l'objet de visualisation
-        #self.getOrCreateVisualObject(obj)
+        # self.getOrCreateVisualObject(obj)
 
         obj.Proxy = self
 
@@ -96,7 +96,7 @@ class DrillGeometry:
 
                     # Récupérer le diamètre
                     diameters.add(face.Surface.Radius * 2)
-                    #App.Console.PrintMessage(f'diam detected {face.Surface.Radius * 2}\n')
+                    # App.Console.PrintMessage(f'diam detected {face.Surface.Radius * 2}\n')
                     # Calculer la profondeur en trouvant la face plane associée
                     # TODO: Implémenter la détection de profondeur
                     depths.add(10.0)  # valeur temporaire
@@ -108,7 +108,7 @@ class DrillGeometry:
         if len(diameters) == 1:
             obj.DrillDiameter = list(diameters)[0]
         elif len(diameters) > 1:
-            #sinon prendre le plus petit
+            # sinon prendre le plus petit
             obj.DrillDiameter = min(diameters)
 
         # Si tous les perçages ont la même profondeur, la définir
@@ -118,7 +118,7 @@ class DrillGeometry:
     def execute(self, obj):
         """Mettre à jour la représentation visuelle"""
         # Obtenir l'objet de visualisation
-        #visual = self.getOrCreateVisualObject(obj)
+        # visual = self.getOrCreateVisualObject(obj)
 
         if not obj.DrillPositions:
             obj.Shape = Part.Shape()  # Shape vide
@@ -306,7 +306,6 @@ class ViewProviderDrillGeometry:
     def claimChildren(self):
         """Retourne les enfants de cet objet"""
 
-
         children = []
         # Récupérer tous les objets de contournage qui référencent cette géométrie par son nom
         if self.Object:
@@ -334,16 +333,16 @@ class ViewProviderDrillGeometry:
 
         return children
 
-    def onDelete(self, feature, subelements): # subelements is a tuple of strings
+    def onDelete(self, feature, subelements):  # subelements is a tuple of strings
 
         App.Console.PrintMessage(f"onDelete de {feature.Object.Name}\n")
         for child in feature.Object.Group:
             App.ActiveDocument.removeObject(child.Name)
-        return True # If False is returned the object won't be deleted
+        return True  # If False is returned the object won't be deleted
 
     def onBeforeDelete(self, obj, subelements):
         """Supprime tous les enfants lors de la suppression du parent"""
-        #debug
+        # debug
         App.Console.PrintMessage(f"onBeforeDelete de {obj.Name}\n")
         children = self.claimChildren()
         for child in children:

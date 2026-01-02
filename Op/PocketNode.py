@@ -7,14 +7,15 @@ class noeud:
     """
     Docstring for noeud
     """
-    def __init__(self,depth:int,j:int ,wires: list[Part.Wire] = []):
-        self.depth : int = depth
-        self.j : int = j
-        self.children: list['noeud'] = []
-        self.wires : Part.Wire = wires
-        self.hasChangend : bool = False
 
-    def addChild(self,child: 'noeud'):
+    def __init__(self, depth: int, j: int, wires: list[Part.Wire] = []):
+        self.depth: int = depth
+        self.j: int = j
+        self.children: list['noeud'] = []
+        self.wires: Part.Wire = wires
+        self.hasChangend: bool = False
+
+    def addChild(self, child: 'noeud'):
         self.children.append(child)
 
     def __repr__(self):
@@ -55,36 +56,33 @@ class noeud:
                 raise ValueError("La wire n'est pas fermée.")
             area = 0.0
             for i, edge in enumerate(self.wires.Edges):
-                
+
                 if edge.Vertexes[-1].Point.distanceToPoint(self.wires.Edges[(i+1) % len(self.wires.Edges)].Vertexes[0].Point) < 1e-6 or \
-                    edge.Vertexes[-1].Point.distanceToPoint(self.wires.Edges[(i+1) % len(self.wires.Edges)].Vertexes[-1].Point) < 1e-6:
+                        edge.Vertexes[-1].Point.distanceToPoint(self.wires.Edges[(i+1) % len(self.wires.Edges)].Vertexes[-1].Point) < 1e-6:
                     # edge est dans le bon sens
-                    #App.Console.PrintMessage(f'bon sens\n')
+                    # App.Console.PrintMessage(f'bon sens\n')
                     v1 = edge.Vertexes[0].Point
                     v2 = edge.Vertexes[-1].Point
                 else:
                     if i == 0:
                         firstflipped = True
                     # edge est dans le sens inverse
-                    #App.Console.PrintMessage(f'sens inverse\n')
+                    # App.Console.PrintMessage(f'sens inverse\n')
                     v1 = edge.Vertexes[-1].Point
                     v2 = edge.Vertexes[0].Point
 
-                
-
                 area += (v1.x - v2.x) * (v1.y + v2.y)
-                #App.Console.PrintMessage(f'area = {area}\n')
-            return (area > 0) 
+                # App.Console.PrintMessage(f'area = {area}\n')
+            return (area > 0)
         except Exception as e:
-            #App.Console.PrintError(f"isCCW erreur: {e}\n")
+            # App.Console.PrintError(f"isCCW erreur: {e}\n")
             return True
-    
-    def shiftWire(self, new_start_point: App.Vector)-> Part.Wire:
+
+    def shiftWire(self, new_start_point: App.Vector) -> Part.Wire:
         """reconstruit le wire en commençant par new_start_point"""
         first_edge = []
         next_edges = []
-        
-        
+
         self.wires = shiftWire(self.wires, new_start_point)
         self.hasChangend = True
         return self.wires
