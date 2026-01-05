@@ -4,6 +4,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
 import sys
+from utils import BQuantitySpinBox, Log
 from utils.PointSelectionObserver import PointSelectionObserver
 
 
@@ -87,16 +88,18 @@ class ContourTaskPanel:
         contourLayout = QtGui.QFormLayout()
 
         # Hauteur de référence
-        self.Zref = QtGui.QDoubleSpinBox()
-        self.Zref.setRange(-1000, 1000)
-        self.Zref.setDecimals(3)
-        self.Zref.setSuffix(" mm")
-        self.Zref.setValue(obj.Zref)
+        # self.Zref = QtGui.QDoubleSpinBox()
+        # self.Zref.setRange(-1000, 1000)
+        # self.Zref.setDecimals(3)
+        # self.Zref.setSuffix(" mm")
+        # self.Zref.setValue(obj.Zref)
+        self.Zref = BQuantitySpinBox.BQuantitySpinBox(obj, "Zref")
         # contourLayout.addRow("Zref:", self.Zref)
         zref_container = QtGui.QWidget()
         zref_h = QtGui.QHBoxLayout()
         zref_h.setContentsMargins(0, 0, 0, 0)
-        zref_h.addWidget(self.Zref)
+        zref_h.addWidget(self.Zref.getWidget())
+
         self.pickZrefButton = QtGui.QPushButton("<-")
         self.pickZrefButton.setToolTip("Définir Zref au point le plus haut du contour sélectionné")
         self.pickZrefButton.clicked.connect(self.startPickZref)
@@ -160,7 +163,7 @@ class ContourTaskPanel:
         # Connecter les signaux pour l'actualisation en temps réel
         self.confirmSelectionButton.clicked.connect(self.confirmSelection)
         self.direction.currentTextChanged.connect(self.updateContour)
-        self.Zref.valueChanged.connect(self.updateZref)
+        # self.Zref.valueChanged.connect(self.updateZref)
         self.depth.valueChanged.connect(self.updateDepth)
 
         # Connecter les signaux pour le changement de mode de profondeur
@@ -232,7 +235,7 @@ class ContourTaskPanel:
                 row += 1
 
         # Ajuster la taille des colonnes
-        self.edgesTable.resizeColumnsToContents()
+        # self.edgesTable.resizeColumnsToContents()
 
     def selectEdges(self):
         """Permet à l'utilisateur de sélectionner des arêtes"""
@@ -246,7 +249,8 @@ class ContourTaskPanel:
             self.viewModeToRestore = parent.Model.ViewObject.DisplayMode
             # print(f"viewModeToRestore: {self.viewModeToRestore}")
             # print(f"viewModeToRestore: {parent.Model.Name}")
-            parent.Model.ViewObject.DisplayMode = u"Wireframe"
+            if False:
+                parent.Model.ViewObject.DisplayMode = u"Wireframe"
         else:
             print("No parent found")
         self.selectable = self.obj.ViewObject.Selectable
@@ -261,7 +265,9 @@ class ContourTaskPanel:
 
         # Définir le mode de sélection pour les arêtes uniquement
         Gui.Selection.clearSelection()
-        Gui.Selection.addSelectionGate("SELECT Part::Feature SUBELEMENT Edge")
+
+        if False:
+            Gui.Selection.addSelectionGate("SELECT Part::Feature SUBELEMENT Edge")
 
         # Restaurer la sélection actuelle
         for obj in self.obj.Edges:
@@ -308,10 +314,8 @@ class ContourTaskPanel:
         self.obj.ViewObject.Selectable = self.selectable
 
         # recupere l'objet CamProject Parent
-        parent = self.obj.getParent()
-        while parent and not isinstance(parent, CamProject):
-            parent = parent.getParent()
-        parent = self.obj.getParent().getParent()  # TODO fixme
+        parent = find_cam_project(self.obj)
+
         if parent:
             parent.Model.ViewObject.DisplayMode = self.viewModeToRestore
 
@@ -324,6 +328,7 @@ class ContourTaskPanel:
         # Mettre à jour les arêtes sélectionnées
         edges = []
         for sel in selection:
+
             if sel.SubElementNames:
                 App.Console.PrintMessage(f"Objet: {sel.ObjectName}, Sous-éléments: {sel.SubElementNames}\n")
                 edges.append((sel.Object, sel.SubElementNames))
@@ -344,10 +349,55 @@ class ContourTaskPanel:
         self.selectEdgesButton.clicked.disconnect()
         self.selectEdgesButton.clicked.connect(self.selectEdges)
 
+        self.detectDepth()
+
         # Mettre à jour la forme
         self.obj.Document.recompute()
 
         App.Console.PrintMessage("Sélection confirmée.\n")
+
+    def detectDepth(self):
+        """Détecte automatiquement la profondeur en fonction des arêtes sélectionnées"""
+        if not hasattr(self.obj, "Edges") or not self.obj.Edges:
+            Log.baptDebug("Aucune arête sélectionnée, impossible de détecter la profondeur.\n")
+            return
+
+        if self.obj.Zref != 0 and self.obj.depth != 0:
+            Log.baptDebug("Zref et depth ne sont pas à 0, détection automatique de la profondeur ignorée.\n")
+            return
+
+        highest_z = float('-inf')
+        lowest_z = float('inf')
+
+        for sub in self.obj.Edges:
+            obj_ref = sub[0]
+            for sub_name in sub[1]:
+                element = obj_ref.Shape.getElement(sub_name)
+                element_type = getattr(element, "ShapeType", "Inconnu")
+                if element_type == "Edge":
+                    edge = obj_ref.Shape.getElement(sub_name)
+                    for vertex in edge.Vertexes:
+                        if vertex.Point.z > highest_z:
+                            highest_z = vertex.Point.z
+                        if vertex.Point.z < lowest_z:
+                            lowest_z = vertex.Point.z
+                elif element_type == "Face":
+                    face = obj_ref.Shape.getElement(sub_name)
+                    for vertex in face.Vertexes:
+                        if vertex.Point.z > highest_z:
+                            highest_z = vertex.Point.z
+                        if vertex.Point.z < lowest_z:
+                            lowest_z = vertex.Point.z
+
+        Log.baptDebug(f"Hauteur la plus haute du contour: {highest_z} mm\n")
+        Log.baptDebug(f"Hauteur la plus basse du contour: {lowest_z} mm\n")
+
+        # Mettre à jour Zref et depth
+        self.obj.Zref = highest_z
+        self.obj.depth = lowest_z
+
+        self.Zref.setValue(self.obj.Zref)
+        self.depth.setValue(self.obj.depth)
 
     def depthModeChanged(self):
         """Gère le changement de mode de profondeur (absolu/relatif)"""
@@ -358,9 +408,6 @@ class ContourTaskPanel:
             #     App.Console.PrintMessage('passage en relatif\n')
             self.absoluteDepthRadio.clicked.connect(self.depthModeChanged)
             self.relativeDepthRadio.clicked.disconnect(self.depthModeChanged)
-        #     # Passage en mode relatif
-        #     #self.depth.setRange(-100, 0)
-            # self.depth.setValue(current_value - self.Zref.value())
 
             self.depth.setSuffix(" mm (relatif)")
             self.obj.DepthMode = "Relatif"
@@ -368,9 +415,6 @@ class ContourTaskPanel:
             #     App.Console.PrintMessage('passage en absolu\n')
             self.absoluteDepthRadio.clicked.disconnect(self.depthModeChanged)
             self.relativeDepthRadio.clicked.connect(self.depthModeChanged)
-        #     # Passage en mode absolu
-        #     #self.depth.setRange(0.1, 100)
-            # self.depth.setValue(self.Zref.value() + current_value)
 
             self.depth.setSuffix(" mm (absolu)")
             self.obj.DepthMode = "Absolu"
@@ -378,9 +422,9 @@ class ContourTaskPanel:
         # Mettre à jour le contour
         self.updateContour()
 
-    def updateZref(self):
-        """Met à jour Zref"""
-        self.obj.Zref = self.Zref.value()
+    # def updateZref(self):
+    #     """Met à jour Zref"""
+    #     self.obj.Zref = self.Zref.value()
 
     def updateDepth(self):
         """Met à jour depth"""

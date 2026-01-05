@@ -2,11 +2,23 @@ import os
 import re
 import sys
 
+import BaptCamProject
 import FreeCAD as App
 import FreeCADGui as Gui
+from Op import PathOp
 from PySide import QtCore, QtGui
 import MPFParser
 import BaptUtilities
+from Tool import tool_utils
+from utils import Log
+
+DEBUG = True
+if DEBUG:
+    Log.setLevel(Log.Level.DEBUG, Log.thisModule())
+    FILE_DEBUG = "C:\\Users\\Baptou88\\AppData\\Roaming\\FreeCAD\\Mod\\Bapt\\FAO\\A911.mpf"
+else:
+    Log.setLevel(Log.Level.INFO, Log.thisModule())
+    FILE_DEBUG = ""
 
 
 class MpfReader:
@@ -15,7 +27,7 @@ class MpfReader:
     def __init__(self, obj):
         self.Type = "MPFReader"
 
-        obj.addProperty("App::PropertyFile", "FilePath", "File", "Path to MPF file")
+        obj.addProperty("App::PropertyFile", "FilePath", "File", "Path to MPF file").FilePath = FILE_DEBUG
         # obj.addProperty("App::PropertyString", "Content", "File", "Content of MPF file")
         # obj.addProperty("App::PropertyMap", "Tools", "File", "Liste des outils avec leur diamètre et leur position")
         obj.addProperty("App::PropertyMap", "Origins", "File", "Liste des origines de programme avec leur emplacement")
@@ -31,14 +43,132 @@ class MpfReader:
         pass
 
     def execute(self, obj):
-        App.Console.PrintMessage('Execute\n')
 
-        self.load_file(obj.FilePath)
+        # self.load_file(obj.FilePath)
 
         if not obj.Create:
             return
 
-    #     parser = MPFParser.MPFParser(self.content)
+        current_tool = None
+        current_op = None
+        current_origin = None
+
+        cam_project = BaptUtilities.find_cam_project(obj)
+
+        if not cam_project:
+            App.Console.PrintError("No active CamProject found in the document hierarchy.\n")
+            return
+
+        operations_group = cam_project.Proxy.getOperationsGroup(cam_project)
+        tool_group = cam_project.Proxy.getToolsGroup()
+        current_origin = cam_project.Proxy.getOrigin()
+
+        test = ""
+        gen = self.load_file_gen(obj.FilePath)
+        # for line in gen:
+        while True:
+            line = ""
+            try:
+                line = next(gen)
+            except StopIteration:
+                break
+            if line == "":
+                continue
+            if line.startswith('N') or line[0].isdigit():  # Ligne de programme
+                space = line.index(' ')
+                line = line[space+1:]
+
+            if line.startswith(';'):  # Commentaire
+                continue
+            elif line.startswith('* -'):
+                continue
+            elif line.startswith(('WORKPIECE')):
+                continue
+            elif line.startswith('BLK FORM'):
+                line = next(gen)
+                continue
+
+            elif line.startswith('S'):
+                line = line.replace('S', '')
+                space = line.index(' ')
+                speed_value = line[:space]
+                if current_tool is not None and hasattr(current_tool, 'Speed'):
+                    current_tool.Speed = int(speed_value)
+
+            elif line.startswith('T'):  # Changement d'outil
+                # Tool call can be like 'T1'  or 'T="1"' or 'TOOL CALL 1'
+                match = re.match(r'T(?:="?(\d+)"?|(\d+))|TOOL\s+CALL\s+(\d+)', line)
+
+                if match:
+                    tool_number = match.group(1)
+
+                    tool_obj = tool_utils.create_tool_obj(id=int(tool_number), name=f"Tool_{tool_number}")
+
+                    tool_group.addObject(tool_obj)
+
+                    current_tool = tool_obj
+
+                if current_op is not None:
+                    current_op.Gcode = test
+                    test = ""
+
+                # we suppose new operation starts with tool call
+                current_op = App.ActiveDocument.addObject("App::FeaturePython", f"Operation_T{tool_number}")
+                PathOp.pathOp(current_op)
+                operations_group.addObject(current_op)
+                current_op.Tool = current_tool
+                current_op.Proxy.installAttachment(current_op)
+                current_op.recompute()
+                if False and hasattr(current_op, "AttachmentSupport"):
+                    current_op.AttachmentSupport = current_origin
+                    current_op.MapMode = 'ObjectXY'  # "InertialCS"
+                current_op.recompute()
+                PathOp.pathOpViewProviderProxy(current_op.ViewObject)
+
+            elif line.startswith('MSG('):
+                # can be handled later
+                continue
+            elif line.startswith(('M0', 'M00', 'M1', 'M01', 'M2', 'M02', 'M30')):
+                continue  # program stop/pause, can be handled later
+            elif line.startswith('M6'):  # Tool change command
+                continue  # already handled with T command
+            elif line.startswith(('M3', 'M4', 'M5')):
+                continue  # spindle commands, can be handled later
+            elif line.startswith(('M7', 'M8', 'M9')):
+                continue  # coolant commands, can be handled later
+            elif line.startswith('G54') or line.startswith('G55') or line.startswith('G56') or line.startswith('G57') or line.startswith('G58') or line.startswith('G59'):
+                continue  # work coordinate system change, can be handled later
+            elif line.startswith(('G0', 'G1', 'G2', 'G3')):  # G-code command
+                if line.find('G17'):
+                    line.replace('G17', '')
+                    # plane selection, can be handled later
+
+                if current_op is None:
+                    Log.baptDebug("G-code command found before any tool call. Skipping.")
+                    continue
+                # Append G-code command to current operation
+
+                # current_op.Gcode.append(line)
+                test += line + '\n'
+            elif line.startswith('L'):  # G-code command
+                is_rapid = line.find('FMAX') != -1
+                is_G40 = line.find('G40') != -1
+                is_G41 = line.find('G41') != -1
+                is_G42 = line.find('G42') != -1
+                new = f"{'G0 ' if is_rapid else 'G1 '} {'G40 ' if is_G40 else ''}{'G41 ' if is_G41 else ''}{'G42 ' if is_G42 else ''}"
+                line = line.replace('L', new)
+            elif line.startswith(('X', 'Y', 'Z')):
+                if current_op is None:
+                    Log.baptDebug("G-code command found before any tool call. Skipping.")
+                    continue
+                # Append G-code command to current operation
+                test += line + '\n'
+            else:
+                Log.baptDebug(f"Unknown command: {line}")
+
+        if current_op is not None:
+            current_op.Gcode = test
+        #     parser = MPFParser.MPFParser(self.content)
     #     commands = parser.parse()
     #     self.activeTool = None
     #     self.activeOrigin = None
@@ -49,6 +179,7 @@ class MpfReader:
     #         self.process_command(command)
 
     #     pass
+
     # def process_command(self, command):
     #     if command["Type"] == "toolCall":
     #         #create object tool
@@ -57,18 +188,25 @@ class MpfReader:
     #         self.activeTool = t
 
     #     pass
+
     def load_file(self, file_path):
         if not file_path:
             return False
 
         try:
             with open(file_path, 'r') as file:
-                content = file.read()
-                self.content = content
+                self.content = file.read()
                 return True
         except Exception as e:
             App.Console.PrintError(f"Erreur lors de la lecture du fichier: {str(e)}\n")
             return False
+
+    def load_file_gen(self, file_path):
+        """Générateur pour lire un fichier ligne par ligne"""
+
+        with open(file_path, 'r') as file:
+            for line in file:
+                yield line.strip()
 
 
 class MpfReaderTaskPanel:
@@ -84,7 +222,7 @@ class MpfReaderTaskPanel:
         # Champ pour le chemin du fichier
         file_layout = QtGui.QHBoxLayout()
         self.file_path = QtGui.QLineEdit()
-        self.file_path.setText("D:\Program Files\FreeCAD 1.0\Mod\Bapt\FAO\\test.MPF")
+        self.file_path.setText(FILE_DEBUG)
         self.file_path.setReadOnly(True)
         file_layout.addWidget(self.file_path)
 
@@ -426,6 +564,17 @@ class ImportMpfCommand:
         obj = doc.addObject("App::DocumentObjectGroupPython", "MpfReader")
 
         mpfReader = MpfReader(obj)
+
+        sel = Gui.Selection.getSelection()
+        for s in sel:
+            if isinstance(s.Proxy, BaptCamProject.CamProject):
+                s.addObject(obj)
+                break
+        # else:
+        #     for d in App.ActiveDocument.Objects:
+        #         if isinstance(d.Proxy, BaptCamProject.CamProject):
+        #             d.addObject(obj)
+        #             break
 
         if obj.ViewObject:
             ViewProviderMpfReader(obj.ViewObject)

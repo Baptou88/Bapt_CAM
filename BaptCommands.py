@@ -107,6 +107,32 @@ class CreateContourCommand:
         # Créer l'objet de contournage
         obj = doc.addObject("Part::FeaturePython", "Contournage")
 
+        pref = BaptPreferences.BaptPreferences()
+        modeAjout = pref.getModeAjout()
+
+        # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
+        # 1 = ajouter à la géométrie comme enfant (pas conseillé)
+        # 2 = ajouter au groupe opérations du projet CAM
+
+        if modeAjout == 1 or modeAjout == 0:
+
+            # Ajouter le contournage comme enfant de la géométrie du contour
+            contour_geometry.addObject(obj)
+            contour_geometry.Group.append(obj)
+
+        if modeAjout == 2 or modeAjout == 0:
+            camProject = BaptUtilities.find_cam_project(contour_geometry)
+            if camProject:
+                operations_group = camProject.Proxy.getOperationsGroup(camProject)
+                if modeAjout == 2:
+                    operations_group.addObject(obj)
+                    operations_group.Group.append(obj)
+                elif modeAjout == 0:
+                    link = doc.addObject('App::Link', f'Link_{obj.Label}')
+                    link.setLink(obj)
+                    operations_group.addObject(link)
+                    operations_group.Group.append(link)
+
         # Ajouter la fonctionnalité
         contour = OpContournage.ContournageCycle(obj)
 
@@ -133,32 +159,6 @@ class CreateContourCommand:
         #             parent.addObject(obj)
         #             App.Console.PrintMessage(f"Contournage ajouté comme enfant de {parent.Label}\n")
         #             break
-
-        pref = BaptPreferences.BaptPreferences()
-        modeAjout = pref.getModeAjout()
-
-        # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
-        # 1 = ajouter à la géométrie comme enfant (pas conseillé)
-        # 2 = ajouter au groupe opérations du projet CAM
-
-        if modeAjout == 1 or modeAjout == 0:
-
-            # Ajouter le contournage comme enfant de la géométrie du contour
-            contour_geometry.addObject(obj)
-            contour_geometry.Group.append(obj)
-
-        if modeAjout == 2 or modeAjout == 0:
-            camProject = BaptUtilities.find_cam_project(contour_geometry)
-            if camProject:
-                operations_group = camProject.Proxy.getOperationsGroup(camProject)
-                if modeAjout == 2:
-                    operations_group.addObject(obj)
-                    operations_group.Group.append(obj)
-                elif modeAjout == 0:
-                    link = doc.addObject('App::Link', f'Link_{obj.Label}')
-                    link.setLink(obj)
-                    operations_group.addObject(link)
-                    operations_group.Group.append(link)
 
         # Recomputer
 
@@ -728,13 +728,13 @@ class TestPathCommand:
 
         import BaptPath
         App.Console.PrintMessage("Testing BaptPath.path...\n")
-        PathOp.path(obj)
+        PathOp.pathOp(obj)
 
         # obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
 
         obj.Gcode = "R1=10\nG0 X0 Y0 Z10\nG1 Z0 F500\nLABEL1:\nG91\nG1 Z-2\nG90\nG1 X16 Y0\nG3 X20 Y4 I0 J4 \nG1 X20 Y20\nG1 X0 Y20\nG1 X0 Y0\nREPEAT LABEL1 P=R1\nG0 Z10\n"
         obj.Gcode = "G0 X20 Y20 Z2\nG81 Z-20 R2\nG0 X30\nG80\nG0 X40\nG83 Z-30 R2 Q2"
-        PathOp.pathViewProviderProxy(obj.ViewObject)
+        PathOp.pathOpViewProviderProxy(obj.ViewObject)
 
         # Ajouter au groupe Operations
         operations_group = project.Proxy.getOperationsGroup(project)
@@ -790,7 +790,6 @@ class HoleRecognitionCommand:
 
 
 # Enregistrer les commandes
-Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
 Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
 Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
 Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())

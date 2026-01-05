@@ -2,21 +2,35 @@ from BaptPath import GcodeAnimator, GcodeEditorTaskPanel
 import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
-
+from utils import Log
 from Op.BaseOp import baseOp, baseOpViewProviderProxy
 
 
-class path(baseOp):
+class pathOp(baseOp):
     def __init__(self, obj):
         App.Console.PrintMessage("Initializing path object proxy for: {}\n".format(__class__.__name__))
         super().__init__(obj)
         self.Type = "Path"
+
         obj.Proxy = self
 
+        self.installToolProp(obj)
+
+    def installAttachment(self, obj):
+        obj.addProperty("App::PropertyPlacement", "Placement", "Base", "Description for tooltip")
+        # obj.addExtension('App::GeoFeatureGroupExtensionPython')
+        obj.addExtension('Part::AttachExtensionPython')
+
     def execute(self, obj):
+
+        if hasattr(obj, "AttachmentSupport"):
+            pass
+            # obj.positionBySupport()
+
         return super().execute(obj)
 
     def onChanged(self, fp, prop):
+        return
         return super().onChanged(fp, prop)
 
     def onDocumentRestored(self, obj):
@@ -25,7 +39,7 @@ class path(baseOp):
         self.__init__(obj)
 
 
-class pathViewProviderProxy(baseOpViewProviderProxy):
+class pathOpViewProviderProxy(baseOpViewProviderProxy):
     def __init__(self, vobj):
         App.Console.PrintMessage("Initializing path view provider proxy for: {}\n".format(__class__.__name__))
         super().__init__(vobj)

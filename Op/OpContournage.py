@@ -27,8 +27,9 @@ class ContournageCycle(baseOp):
 
         # Propriétés pour les paramètres d'usinage
         if not hasattr(obj, "ToolDiameter"):
-            obj.addProperty("App::PropertyFloat", "ToolDiameter", "Tool", "Diamètre de l'outil")
+            obj.addProperty("App::PropertyLength", "ToolDiameter", "Tool", "Diamètre de l'outil")
             obj.ToolDiameter = 6.0
+            obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
 
         if not hasattr(obj, "CutDepth"):
             obj.addProperty("App::PropertyLength", "CutDepth", "Cut", "Profondeur de coupe")
@@ -75,8 +76,7 @@ class ContournageCycle(baseOp):
             obj.addProperty("App::PropertyFloat", "SurepRadiale", "Toolpath", "Surépaisseur radiale")
             obj.SurepAxiale = 0.0
 
-        if not hasattr(obj, "Tool"):
-            obj.addProperty("App::PropertyLink", "Tool", "Tool", "Tool")
+        super().installToolProp(obj)
 
         obj.Proxy = self
 
@@ -93,6 +93,7 @@ class ContournageCycle(baseOp):
         """Mettre à jour la représentation visuelle"""
         if App.ActiveDocument.Restoring:
             return
+        super().execute(obj)
 
         obj.Shape = Part.Shape()  # Initialize shape
         all_pass_shapes_collected = []  # To collect all edges/wires from all passes
@@ -127,7 +128,7 @@ class ContournageCycle(baseOp):
                 return
 
         # --- Calculations needed once ---
-        tool_offset_radius = obj.ToolDiameter / 2.0
+        tool_offset_radius = obj.ToolDiameter.Value / 2.0
         direction_contour = contour_geom.Direction if hasattr(contour_geom, "Direction") else "Horaire"
         direction_usinage = obj.Direction
 

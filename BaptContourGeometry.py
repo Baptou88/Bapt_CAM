@@ -1,20 +1,21 @@
-from BaptPreferences import BaptPreferences
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
-import os
 
-from PySide import QtCore, QtGui
-import math
 import sys
 import BaptUtilities
+from utils import Log
 
 try:
     from pivy import coin  # type: ignore
 except ImportError:
     App.Console.PrintError("Impossible d'importer le module coin. La mise en surbrillance des arêtes ne fonctionnera pas correctement.\n")
 
-DEBUG = False
+DEBUG = True
+if DEBUG:
+    Log.setLevel(Log.Level.DEBUG, Log.thisModule())
+else:
+    Log.setLevel(Log.Level.INFO, Log.thisModule())
 
 
 class ContourGeometry:
@@ -122,27 +123,23 @@ class ContourGeometry:
             for sub in obj.Edges:
                 obj_ref = sub[0]  # L'objet référencé
                 sub_names = sub[1]  # Les noms des sous-éléments (arêtes)
-                shape_type = getattr(obj_ref.Shape, "ShapeType", "Inconnu")
-                if DEBUG:
-                    App.Console.PrintMessage(f"Traitement de l'objet {obj_ref.Name} avec les sous-éléments {sub_names}, type:{shape_type}\n")
 
-                if shape_type == "Face":
-                    # Si l'objet est une face, prendre toutes ses arêtes
-                    face_edges = obj_ref.Shape.Edges
-                    edges.extend(face_edges)
-                    App.Console.PrintMessage(f"Face détectée, ajout de {len(face_edges)} arêtes de {obj_ref.Name}\n")
-                    continue  # Passer à l'objet suivant
-                else:
-                    for sub_name in sub_names:
-                        if "Edge" in sub_name:
-                            try:
-                                edge = obj_ref.Shape.getElement(sub_name)
-                                edges.append(edge)
-                                # App.Console.PrintMessage(f"Arête ajoutée: {sub_name} de {obj_ref.Name}\n")
-                            except Exception as e:
-                                App.Console.PrintError(f"Execute : Erreur lors de la récupération de l'arête {sub_name}: {str(e)}\n")
-                                exc_type, exc_obj, exc_tb = sys.exc_info()
-                                App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
+                for sub_name in sub_names:
+                    element = obj_ref.Shape.getElement(sub_name)
+                    element_type = getattr(element, "ShapeType", "Inconnu")
+                    Log.baptDebug(f"Traitement de l'objet {obj_ref.Name} avec les sous-éléments {sub_names}, type:{element_type}\n")
+                    if element_type == "Edge":
+                        edge = obj_ref.Shape.getElement(sub_name)
+                        edges.append(edge)
+                        # App.Console.PrintMessage(f"Arête ajoutée: {sub_name} de {obj_ref.Name}\n")
+
+                    elif element_type == "Face":
+                        # Si l'élément est une face, ajouter toutes ses arêtes
+                        face_edges = element.Edges
+                        edges.extend(face_edges)
+                        Log.baptDebug(f"Face détectée, ajout de {len(face_edges)} arêtes de {obj_ref.Name}\n")
+                    else:
+                        App.Console.PrintWarning(f"Element {sub_name} de {obj_ref.Name} n'est ni une arête ni une face (type: {element_type}), ignoré.\n")
 
             if not edges:
                 App.Console.PrintError("Aucune arête valide trouvée.\n")

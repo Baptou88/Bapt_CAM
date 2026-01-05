@@ -89,8 +89,7 @@ class DrillOperation(baseOp):
             obj.addProperty("App::PropertyFloat", "Ap", "Contournage", "Prise de Passe Max")
             obj.Ap = 0.5
 
-        if not hasattr(obj, "Tool"):
-            obj.addProperty("App::PropertyLink", "Tool", "Op", "Tool")
+        super().installToolProp(obj)
 
     def onChanged(self, obj, prop):
         """Appelé quand une propriété est modifiée"""

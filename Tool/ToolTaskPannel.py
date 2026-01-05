@@ -4,7 +4,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 
 from PySide import QtCore, QtGui
-from Tool import ToolSelectorDialog
+from Tool import ToolSelectorDialog, tool_utils
 
 import utils.BQuantitySpinBox as BQantitySpinBox
 
@@ -97,14 +97,10 @@ class ToolTaskPanel:
                 groupTools = p.Proxy.getToolsGroup()
                 # tool = App.ActiveDocument.getObject(f"T{sel.id} ({sel.name})")
                 if current_tool is None or current_tool.Id != sel.id:
-                    new_tool = App.ActiveDocument.addObject("Part::Cylinder", f"T{sel.id} ({sel.name})")
-                    new_tool.addProperty("App::PropertyInteger", "Id", "Tool", "Tool ID").Id = sel.id
-                    new_tool.addProperty("App::PropertyString", "Name", "Tool", "Tool Name").Name = sel.name
-                    new_tool.addProperty("App::PropertySpeed", "Speed", "Tool", "Tool Speed").Speed = f"{sel.speed} mm/min"
-                    new_tool.addProperty("App::PropertySpeed", "Feed", "Tool", "Tool Feed").Feed = f"{sel.feed} mm/min"
+                    new_tool = tool_utils.create_tool_obj(sel.id, sel.name, sel.diameter, sel.speed, sel.feed)
                     groupTools.addObject(new_tool)
                     self.obj.Tool = new_tool
-                    new_tool.Radius = sel.diameter / 2.0
+
                     if current_tool is not None:
                         # Supprimer l'ancien outil
                         groupTools.removeObject(current_tool)

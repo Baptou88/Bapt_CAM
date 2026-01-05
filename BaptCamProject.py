@@ -8,6 +8,7 @@ from PySide import QtWidgets
 import PySide.QtCore as QtCore
 import PySide.QtGui as QtGui
 import Draft
+import CamProjectTaskPanel
 
 
 class Stock:
@@ -287,6 +288,7 @@ class ObjSelector(QtWidgets.QDialog):
 
         # Action lors de la sélection
         self.listWidget.currentRowChanged.connect(self.showObj)
+        self.listWidget.doubleClicked.connect(self.accept)
 
     def showObj(self, row):
         if row < 0 or row >= len(self.objects):
@@ -381,6 +383,11 @@ class CamProject:
             obj.addProperty("App::PropertyStringList", "PostProcessor",
                             "Project", "Post Processor to use for G-Code generation")
             obj.PostProcessor = ["Siemens828"]  # Valeur par défaut
+
+        if not hasattr(obj, "toolChangePos"):
+            obj.addProperty("App::PropertyVector", "toolChangePos", "Project", "Origine de la pièce")
+            obj.toolChangePos = App.Vector(0, 0, 250)
+
         # Créer le groupe Operations
         self.getOperationsGroup(obj)
 
@@ -395,7 +402,7 @@ class CamProject:
         self.getStock(obj)
 
         # Obtenir l'objet Origin
-        self.origin = self.getOrigin(obj)
+        self.origin = self.getOrigin()
 
         # Créer ou obtenir l'objet Tools
         self.getToolsGroup()
@@ -448,6 +455,8 @@ class CamProject:
         if not operations_group:
             operations_group = App.ActiveDocument.addObject(
                 "App::DocumentObjectGroupPython", "Operations")
+            if hasattr(operations_group, "ViewObject"):
+                operationGroupViewProviderProxy(operations_group.ViewObject)
             operations_group.Label = "Operations"
             obj.Group.append(operations_group)
             obj.addObject(operations_group)
@@ -473,14 +482,14 @@ class CamProject:
 
         return geometry_group
 
-    def getOrigin(self, obj):
+    def getOrigin(self):
         """Obtenir ou créer l'objet Origin pour le projet"""
         # if hasattr(obj, "Origin") and obj.Origin:
         #     return obj.Origin
         # App.Console.PrintMessage("Origin not found in project. Creating new origin.\n")
         # Chercher un objet Origin dans le groupe du projet
-        if hasattr(obj, "Group"):
-            for child in obj.Group:
+        if hasattr(self.Object, "Group"):
+            for child in self.Object.Group:
                 if hasattr(child, "Proxy") and getattr(child.Proxy, "Type", "") == "Origin":
                     # obj.Origin = child
                     return child
@@ -489,8 +498,8 @@ class CamProject:
         import BaptOrigin
 
         origin = BaptOrigin.createOrigin()
-        origin.Label = "Default Origin"
-        obj.addObject(origin)
+        origin.Label = "WCS_G54"
+        self.Object.addObject(origin)
         # obj.Origin = origin
         App.Console.PrintMessage("Origin created: " + origin.Name + "\n")
         return origin
@@ -689,7 +698,7 @@ class ViewProviderCamProject:
 
     def setEdit(self, vobj, mode=0):
         """Appelé lorsque l'objet est édité"""
-        import CamProjectTaskPanel
+
         taskd = CamProjectTaskPanel.CamProjectTaskPanel(
             vobj.Object, self.deleteObjectsOnReject())
         Gui.Control.showDialog(taskd)
@@ -713,3 +722,63 @@ class ViewProviderCamProject:
     def __setstate__(self, state):
         """Désérialisation"""
         return None
+
+
+class operationGroupViewProviderProxy():
+    def __init__(self, vobj):
+        App.Console.PrintMessage("Initializing operation group view provider proxy for: {}\n".format(__class__.__name__))
+        vobj.Proxy = self
+        self.Object = vobj.Object
+
+    def attach(self, vobj):
+        """Appelé lors de l'attachement du ViewProvider"""
+        self.Object = vobj.Object
+
+    def __getstate__(self):
+        """Sérialisation"""
+        return None
+
+    def __setstate__(self, state):
+        """Désérialisation"""
+        return None
+
+    def setupContextMenu(self, vobj, menu):
+        """Configuration du menu contextuel"""
+        simulateAllOp = QtGui.QAction(Gui.getIcon(
+            "Std_TransformManip.svg"), "Simul", menu)
+        QtCore.QObject.connect(simulateAllOp, QtCore.SIGNAL(
+            "triggered()"), lambda: self.simulateAllOperations(vobj))
+        # action = menu.addAction("Edit")
+        menu.addAction(simulateAllOp)
+
+        # action.triggered.connect(lambda: self.setEdit(vobj))
+
+        return True
+
+    def simulateAllOperations(self, vobj):
+        """Simuler toutes les opérations dans le groupe"""
+        from BaptPath import GcodeAnimationControl, GcodeAnimator
+
+        App.Console.PrintMessage("Simulating all operations in group: {}\n".format(vobj.Object.Name))
+
+        # Collecter toutes les opérations actives
+        operations = []
+        for child in vobj.Object.Group:
+            # Gérer les liens
+            actual_obj = child.LinkedObject if hasattr(child, 'LinkedObject') else child
+
+            # Vérifier que l'objet a un ViewObject et est actif
+            if hasattr(actual_obj, "ViewObject") and hasattr(actual_obj, "Active"):
+                if actual_obj.Active:
+                    operations.append(actual_obj)
+                    App.Console.PrintMessage(f"  Adding operation: {actual_obj.Label}\n")
+
+        if not operations:
+            App.Console.PrintWarning("Aucune opération active trouvée dans le groupe\n")
+            return False
+
+        # Afficher le panneau de contrôle avec toutes les opérations
+        panel = GcodeAnimationControl(operations=operations)
+        Gui.Control.showDialog(panel)
+
+        return True

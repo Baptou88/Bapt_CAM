@@ -26,8 +26,9 @@ class Surfacage(baseOp):
             obj.addProperty("App::PropertyString", "Name", "Surfacage", "Nom de l'opérateur").Name = "Surfacage"
         if not hasattr(obj, "Stock"):
             obj.addProperty("App::PropertyLink", "Stock", "Surfacage", "Stock")
-        if not hasattr(obj, "Tool"):
-            obj.addProperty("App::PropertyLink", "Tool", "Surfacage", "Tool")
+
+        super().installToolProp(obj)
+
         if not hasattr(obj, "Depth"):
             obj.addProperty("App::PropertyFloat", "Depth", "Surfacage", "Profondeur finale")
 

@@ -14,5 +14,21 @@
 			
 		],
 		"description": "Log output to console"
+	},
+	
+	"try_except": {
+		"scope": "python",
+		"prefix": "tryexcept",
+		"body": [
+			"try:",
+			"  ${TM_SELECTED_TEXT}",
+			"except Exception as e:",
+			"  App.Console.PrintError(f\"${1:message} {str(e)}\\n\")",
+			"  exc_type, exc_obj, exc_tb = sys.exc_info()",
+			"  App.Console.PrintMessage(f'{exc_tb.tb_lineno}\\n')",
+			"  Log.baptDebug(f\"${1:message} {str(e)}\")"
+		],
+		"description": "try_except"
+	
 	}
 }

@@ -9,6 +9,7 @@ from BaptPreferences import BaptPreferences
 from CamProjectTaskPanel import PostProcessorTaskPanel
 from BasePostPro import BasePostPro
 import FreeCAD as App  # type: ignore
+from Op.PathOp import pathOp
 from PySide import QtGui, QtCore  # type: ignore
 import BaptUtilities as BaptUtils
 
@@ -155,6 +156,10 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
                 commentaire = Postpro.writeComment(f"Cycle: Contournage personnalisé")
                 gcode_lines.append(commentaire)
                 gcode_lines.append(obj.Gcode)
+
+        elif isinstance(obj.Proxy, pathOp):
+            gcode_lines.append(Postpro.writeComment(f"Path operation: {obj.Label}"))
+            gcode_lines.append(Postpro.transformGCode(obj.Gcode))
 
     gcode_lines.append(Postpro.writeFooter())
 

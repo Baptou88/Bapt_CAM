@@ -32,37 +32,87 @@ class PostPro(BasePostPro):
         return blk
 
     def transformGCode(self, gcode):
-
+        current_move = None
+        current_pos = {'X': 0.0, 'Y': 0.0, 'Z': 0.0}
         lines = gcode.split('\n')
         retour = []
+
+        def linear_move(line: str, rapid: bool = None):
+            if rapid is not None:
+                current_move = 'G0' if rapid else 'G1'
+
+            if line.startswith('G'):
+                space = line.index(' ')
+                new_line = line[space+1:]
+            else:
+                new_line = line
+
+            for axis in ['X', 'Y', 'Z']:
+                if axis in new_line:
+                    parts = new_line.split(axis)
+                    coord_part = parts[1]
+                    coord_str = ''
+                    for c in coord_part:
+                        if c in ' XYZFMG':
+                            break
+                        coord_str += c
+                    if coord_str != '':
+                        current_pos[axis] = float(coord_str)
+
+            if 'G40' in line:
+                new_line = new_line.replace('G40', '')
+                new_line += ' R0'
+
+            if 'G41' in line:
+                new_line = new_line.replace('G41', '')
+                new_line += ' RL'
+
+            if 'G42' in line:
+                new_line = new_line.replace('G42', '')
+                new_line += ' RR'
+
+            if 'F' in new_line:
+                parts = new_line.split('F')
+                # remove feed from line
+                new_line = parts[0]
+                feed = parts[1]
+                new_line += f' F{feed}'
+
+            if current_move == 'G0':
+                new_line += ' FMAX'
+            return 'L ' + new_line
+
         for i in range(len(lines)):
             if lines[i].startswith('(') and lines[i].endswith(')'):
                 lines[i] = lines[i][1:-1]  # Remove parentheses
                 lines[i] = self.writeComment(lines[i])
-            elif lines[i].startswith('G0'):
-                lines[i] = lines[i].replace('G0', 'L ')
-                lines[i] += ' FMAX'
-            elif lines[i].startswith('G1'):
-                lines[i] = lines[i].replace('G1', 'L ')
-                feed = None
-                if 'F' in lines[i]:
-                    parts = lines[i].split('F')
-                    # remove feed from line
-                    lines[i] = parts[0]
-                    feed = parts[1]
-                if 'G40' in lines[i]:
-                    lines[i] = lines[i].replace('G40', '')
-                    lines[i] += ' R0'
-                if 'G41' in lines[i]:
-                    # parts = lines[i].split('F')
-                    # lines[i] = parts[0] + ' F' + parts[1]
-                    lines[i] = lines[i].replace('G41', '')
-                    lines[i] += ' RL'
-                if 'G42' in lines[i]:
-                    lines[i] = lines[i].replace('G42', '')
-                    lines[i] += ' RR'
-                if feed is not None:
-                    lines[i] += f' F{feed}'
+            elif lines[i].startswith(('G0', 'G00')):
+                lines[i] = linear_move(lines[i], rapid=True)
+            elif lines[i].startswith(('G1', 'G01')):
+                lines[i] = linear_move(lines[i], rapid=False)
+                # current_move = 'G1'
+                # lines[i] = lines[i].replace('G1', 'L ')
+                # feed = None
+                # if 'F' in lines[i]:
+                #     parts = lines[i].split('F')
+                #     # remove feed from line
+                #     lines[i] = parts[0]
+                #     feed = parts[1]
+                # if 'G40' in lines[i]:
+                #     lines[i] = lines[i].replace('G40', '')
+                #     lines[i] += ' R0'
+                # if 'G41' in lines[i]:
+                #     # parts = lines[i].split('F')
+                #     # lines[i] = parts[0] + ' F' + parts[1]
+                #     lines[i] = lines[i].replace('G41', '')
+                #     lines[i] += ' RL'
+                # if 'G42' in lines[i]:
+                #     lines[i] = lines[i].replace('G42', '')
+                #     lines[i] += ' RR'
+                # if feed is not None:
+                #    lines[i] += f' F{feed}'
+            elif lines[i].startswith(('X', 'Y', 'Z')):
+                lines[i] = linear_move(lines[i], rapid=None)
 
             retour.append(lines[i])
         return '\n'.join(retour)

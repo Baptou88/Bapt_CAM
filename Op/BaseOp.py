@@ -1,5 +1,6 @@
 from BaptPath import GcodeAnimationControl, GcodeAnimator, absinc, comp, memory
 from BaptPreferences import BaptPreferences
+import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
 
@@ -7,6 +8,14 @@ from Op.utils import CoolantMode
 from PySide import QtCore, QtGui
 from pivy import coin  # type: ignore
 import math
+
+from utils import Log
+
+DEBUG = True
+if DEBUG:
+    Log.setLevel(Log.Level.DEBUG, Log.thisModule())
+else:
+    Log.setLevel(Log.Level.INFO, Log.thisModule())
 
 
 class baseOp:
@@ -35,10 +44,15 @@ class baseOp:
 
         # obj.Proxy = self
 
+    def installToolProp(self, obj):
+        if not hasattr(obj, "Tool"):
+            obj.addProperty("App::PropertyLink", "Tool", "Op", "Tool")
+
     def onChanged(self, fp, prop):
         self.execute(fp)
 
     def execute(self, obj):
+        self.cam_proj = BaptUtilities.find_cam_project(obj)
         pass
 
     def __getstate__(self):
@@ -77,7 +91,15 @@ class baseOpViewProviderProxy:
 
     def onChanged(self, vp, prop):
         ''' Print the name of the property that has changed '''
-        # App.Console.PrintMessage("Change property: " + str(prop) + "\n")
+        Log.baptDebug("Change property: " + str(prop))
+        if prop in "Rapid":
+            r = vp.Rapid
+            self.rapid_color.rgb.setValues(0, 1, [(r[0], r[1], r[2])])
+            return
+        if prop == "Feed":
+            f = vp.Feed
+            self.feed_color.rgb.setValues(0, 1, [(f[0], f[1], f[2])])
+            return
 
     def __getstate__(self):
         ''' When saving the document this object gets stored using Python's cPickle module.
@@ -262,7 +284,11 @@ class baseOpViewProviderProxy:
         self.direction_switch.whichChild = 0
 
     def updateData(self, fp, prop):
+        if prop == "Gcode":
+            self.updatePathGeometry(fp)
+            return
 
+    def updatePathGeometry(self, fp):
         # if no Gcode property, nothing to do
         if not hasattr(self.Object, "Gcode"):
             return
@@ -298,8 +324,16 @@ class baseOpViewProviderProxy:
         feed_coords = []
         feed_idx = []
 
-        # current position (start at origin)
-        self.cur = (0.0, 0.0, 0.0)
+        toolChangePos = App.Vector(0, 0, 0)
+        if hasattr(fp, "Proxy") and hasattr(fp.Proxy, "cam_proj"):
+            cam_project = fp.Proxy.cam_proj
+            if cam_project is not None and hasattr(cam_project, "toolChangePos"):
+                toolChangePos = cam_project.toolChangePos
+            else:
+                Log.baptDebug("No CamProject found for Op object {}".format(self.Object.Name))
+
+        # current position (start at tool change position)
+        self.cur = (toolChangePos.x, toolChangePos.y, toolChangePos.z)
 
         self.ordered_segments = []
         self.segment_metadata = {"rapid": [], "feed": []}
@@ -419,25 +453,28 @@ class baseOpViewProviderProxy:
                 self.line += 1
                 up = ln.upper()
                 # consider only movement commands G0/G00 and G1/G01
-                if up.startswith("G0") or up.startswith("G00"):
+                if up.startswith(("G0", "G00")):
                     new = parse_xyz(ln, self.cur, self.absinc_mode)
                     append_segment(rapid_coords, rapid_idx, self.cur, new)
                     self.cur = new
+                    self.mem.moveMode = "rapid"
                     if self.mem.current_cycle is not None:
                         executeCycle()
 
-                elif up.startswith("G1") or up.startswith("G01"):
+                elif up.startswith(("G1", "G01")):
                     new = parse_xyz(ln, self.cur, self.absinc_mode)
                     append_segment(feed_coords, feed_idx, self.cur, new)
                     self.cur = new
+                    self.mem.moveMode = "feed"
                     if self.mem.current_cycle is not None:
                         executeCycle()
-                elif up.startswith("G2") or up.startswith("G3"):
+
+                elif up.startswith(("G2", "G02", "G3", "G03")):
                     # Circular interpolation. Prefer I/J (center offsets). If only R given, compute center(s).
                     is_ccw = up.startswith("G3")
                     end = parse_xyz(ln, self.cur, self.absinc_mode)
                     I, J, R = parse_ijr(ln)
-
+                    self.mem.moveMode = "arc"
                     # if no XY endpoint given, skip (cannot handle)
                     if (end[0], end[1]) == (self.cur[0], self.cur[1]):
                         # nothing to do if no movement in XY
@@ -683,14 +720,18 @@ class baseOpViewProviderProxy:
                 elif up.startswith("(") or up.startswith(";"):
                     # comment line, ignore
                     pass
+                elif any(t.upper().startswith(("X", "Y", "Z")) for t in ln.split()):
+                    new = parse_xyz(ln, self.cur)
+                    if self.mem.moveMode == "rapid":
+                        append_segment(rapid_coords, rapid_idx, self.cur, new)
+                    elif self.mem.moveMode == "feed":
+                        append_segment(feed_coords, feed_idx, self.cur, new)
+                    self.cur = new
+                    if self.mem.current_cycle is not None:
+                        executeCycle()
                 else:
-                    # other lines may still change position if they contain coords
-                    App.Console.PrintMessage("Ignoring line: {}\n".format(ln))
-                    if any(t.upper().startswith(("X", "Y", "Z")) for t in ln.split()):
-                        new = parse_xyz(ln, self.cur)
-                        self.cur = new
-                        if self.mem.current_cycle is not None:
-                            executeCycle()
+
+                    Log.baptDebug("Ignoring line: {}\n".format(ln))
 
         processGcode()
 
@@ -753,11 +794,11 @@ class baseOpViewProviderProxy:
     def startSimulation(self, vobj):
         """Start the G-code simulation animation"""
         vp = vobj.Proxy
-        vp.animator = GcodeAnimator(vp)
-        vp.animator.load_paths(include_rapid=True)
+        # vp.animator = GcodeAnimator(vp)
+        # vp.animator.load_paths(include_rapid=True)
         # vp.animator.start(speed_mm_s=20.0)
 
-        control = GcodeAnimationControl(vp.animator)
+        control = GcodeAnimationControl([vobj.Proxy.Object])
         # control.show()
         Gui.Control.showDialog(control)
 
