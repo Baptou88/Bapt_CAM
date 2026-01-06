@@ -25,7 +25,7 @@ G3     | CC         | Circular interpolation, ccw
 G17    | PLANE XY   | Select XY plane for circular interpolation
 G18    | PLANE XZ   | Select XZ plane for circular interpolation
 G19    | PLANE YZ   | Select YZ plane for circular interpolation
-G40    | R0         | Cutter compensation off 
+G40    | R0         | Cutter compensation off
 G41    | RL         | Cutter compensation left
 G42    | RR         | Cutter compensation right
 G90    |            | Absolute programming
@@ -64,6 +64,36 @@ class memory():
         self.labels[key] = value
 
 
+class GCodeHighlighter(QtGui.QSyntaxHighlighter):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        # Format G0 (rouge)
+        self.fmt_g0 = QtGui.QTextCharFormat()
+        self.fmt_g0.setForeground(QtGui.QColor("red"))
+        self.rule_g0 = QtCore.QRegularExpression(r"\bG0\b")
+        # QtCore.QRegExp(r"\bG0\b")
+
+        # Format G1 (vert)
+        self.fmt_g1 = QtGui.QTextCharFormat()
+        self.fmt_g1.setForeground(QtGui.QColor("green"))
+        self.rule_g1 = QtCore.QRegularExpression(r"\bG1\b")
+
+    def _apply_rule(self, text, regex, fmt):
+        it = regex.globalMatch(text)
+        while it.hasNext():
+            match = it.next()
+            start = match.capturedStart()
+            length = match.capturedLength()
+            self.setFormat(start, length, fmt)
+
+    def highlightBlock(self, text):
+        # G0
+        self._apply_rule(text, self.rule_g0, self.fmt_g0)
+        # G1
+        self._apply_rule(text, self.rule_g1, self.fmt_g1)
+
+
 class GcodeEditorTaskPanel:
     def __init__(self, obj):
         self.obj = obj
@@ -79,6 +109,9 @@ class GcodeEditorTaskPanel:
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
         layout.addWidget(self.buttonBox)
+
+        # Activer le highlighter
+        self.highlighter = GCodeHighlighter(self.textEdit.document())
 
     def accept(self):
         self.obj.Gcode = self.textEdit.toPlainText()
