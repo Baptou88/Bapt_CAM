@@ -343,24 +343,35 @@ class baseOpViewProviderProxy:
         self.mem = memory()
         self.line = 0
 
-        def parse_ijr(line):
+        def parse_ijr(line: str, prev):
             """helper to parse I/J/R (center offsets or radius)"""
             I = J = R = None
             for token in line.split():
                 t = token.upper()
                 if t.startswith("I"):
                     try:
+                        if t.startswith("I=AC("):
+                            I = float(token[5:-1]) - prev[0]
+                            continue
                         I = float(token[1:])
                     except:
                         pass
                 elif t.startswith("J"):
                     try:
+                        if t.startswith("J=AC("):
+                            J = float(token[5:-1]) - prev[1]
+                            continue
                         J = float(token[1:])
                     except:
                         pass
                 elif t.startswith("R"):
                     try:
                         R = float(token[1:])
+                    except:
+                        pass
+                elif t.startswith("CR="):
+                    try:
+                        R = float(token[3:])
                     except:
                         pass
             return I, J, R
@@ -473,7 +484,7 @@ class baseOpViewProviderProxy:
                     # Circular interpolation. Prefer I/J (center offsets). If only R given, compute center(s).
                     is_ccw = up.startswith("G3")
                     end = parse_xyz(ln, self.cur, self.absinc_mode)
-                    I, J, R = parse_ijr(ln)
+                    I, J, R = parse_ijr(ln, self.cur)
                     self.mem.moveMode = "arc"
                     # if no XY endpoint given, skip (cannot handle)
                     if (end[0], end[1]) == (self.cur[0], self.cur[1]):
@@ -531,6 +542,7 @@ class baseOpViewProviderProxy:
                             radius = R
                     else:
                         # no center info -> fallback to linear
+                        Log.baptDebug("G2/G3 command without I/J or R info; treating as linear move")
                         append_segment(feed_coords, feed_idx, self.cur, end)
                         self.cur = end
                         continue
