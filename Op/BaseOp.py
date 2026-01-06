@@ -42,6 +42,9 @@ class baseOp:
             obj.CoolantMode = CoolantMode
             obj.CoolantMode = "Flood"  # Valeur par défaut
 
+        # set property "Gcode" hidden
+        obj.setEditorMode("Gcode", 2)
+
         # obj.Proxy = self
 
     def installToolProp(self, obj):
