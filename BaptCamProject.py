@@ -681,7 +681,7 @@ class ViewProviderCamProject:
 
     def deleteObjectsOnReject(self):
         """Indique si l'objet doit être supprimé si l'édition est annulée"""
-        return self.deleteOnReject
+        return hasattr(self, "deleteOnReject") and self.deleteOnReject
 
     def onDelete(self, vobj, subelements):
         """Appelé lors de la suppression de l'objet"""

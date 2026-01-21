@@ -1,3 +1,4 @@
+import sys
 from Op.BaseOp import baseOpViewProviderProxy
 from BaptTools import ToolDatabase
 import FreeCAD as App
@@ -9,6 +10,7 @@ import os
 import math
 from PySide import QtCore, QtGui
 import BaptUtilities
+from utils import Log
 
 
 cycleType = ["Simple", "Peck", "Tapping", "Boring", "Reaming", "Contournage"]
@@ -308,7 +310,7 @@ class DrillOperation(baseOp):
         point_height = diameter / (2 * math.tan(math.radians(point_angle / 2)))
 
         # profondeur du percage
-        depth = top_pos.z - bottom_pos.z
+        depth = math.fabs(bottom_pos.z - top_pos.z)
         if depth <= point_height:
             # - calcul du rayon
             radius = math.tan(math.radians(point_angle / 2)) * depth
@@ -317,7 +319,7 @@ class DrillOperation(baseOp):
 
         else:
             # Créer le corps du foret (cylindre)
-            body_length = top_pos.z - bottom_pos.z - point_height
+            body_length = depth - point_height
             body = Part.makeCylinder(diameter / 2, body_length, top_pos, App.Vector(0, 0, -1))
 
             # Créer la pointe du foret (cône)
@@ -325,6 +327,7 @@ class DrillOperation(baseOp):
 
             # Fusionner le corps et la pointe
             drill_bit = body.fuse(tip)
+
         return drill_bit
 
     def createTapBit(self, top_pos, bottom_pos, diameter, length, thread_pitch):

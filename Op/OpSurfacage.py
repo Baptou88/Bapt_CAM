@@ -257,7 +257,7 @@ class SurfacageTaskPanel:
         ui2 = ToolTaskPanel(obj)
         self.form = [self.ui1, ui2.getForm(), self.cuttingCondition.getForm()]
         self.ui1.setWindowTitle("Édition de l'opérateur")
-        self.ui1.setWindowIcon(QtGui.QIcon(BaptUtilities.getIconPath("surfacage.svg")))
+        self.ui1.setWindowIcon(QtGui.QIcon(BaptUtilities.getIconPath("Surfacage.svg")))
 
         layout = QtGui.QFormLayout(self.ui1)
         # Nom

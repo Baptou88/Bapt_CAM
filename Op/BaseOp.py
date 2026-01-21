@@ -67,6 +67,17 @@ class baseOp:
         return None
 
 
+class repeatGcodeException(Exception):
+    def __init__(self, message):
+        super().__init__(self, message)
+        self.message = message
+
+    def __str__(self):
+        return self.message
+
+    pass
+
+
 class baseOpViewProviderProxy:
     def __init__(self, obj):
         "Set this object as the proxy object of the actual view provider"
@@ -299,7 +310,7 @@ class baseOpViewProviderProxy:
         gcode_text = str(self.Object.Gcode or "")
         self.lines = [l.strip() for l in gcode_text.splitlines() if l.strip()]
 
-        def parse_xyz(line, prev, absinc_mode=absinc.G90):
+        def parse_xyz(line: str, prev, absinc_mode=absinc.G90):
             """helper to parse coords in a G-code line (X Y Z)"""
             x, y, z = prev
 
@@ -345,6 +356,54 @@ class baseOpViewProviderProxy:
         self.absinc_mode = absinc.G90  # default absolute mode
         self.mem = memory()
         self.line = 0
+        self.pending_chamfer = None  # Pour stocker le chanfrein en attente (distance CHF)
+        self.pending_rnd = None  # Pour stocker l'arrondi en attente (rayon RND)
+
+        def parse_chf_rnd(line: str):
+            """Parse CHF (chamfer) and RND (rounding) commands"""
+            chf = None
+            rnd = None
+            up = line.upper()
+
+            # Chercher CHF (chanfrein)
+            if "CHF" in up:
+                try:
+                    idx = up.index("CHF")
+                    # Extraire la valeur après CHF
+                    rest = up[idx+3:].strip()
+                    if rest and (rest[0].isdigit() or rest[0] == '.'):
+                        # Extraire le nombre
+                        num_str = ""
+                        for c in rest:
+                            if c.isdigit() or c == '.' or c == '-':
+                                num_str += c
+                            else:
+                                break
+                        if num_str:
+                            chf = float(num_str)
+                except (ValueError, IndexError):
+                    pass
+
+            # Chercher RND (arrondi)
+            if "RND" in up:
+                try:
+                    idx = up.index("RND")
+                    # Extraire la valeur après RND
+                    rest = up[idx+3:].strip()
+                    if rest and (rest[0].isdigit() or rest[0] == '.'):
+                        # Extraire le nombre
+                        num_str = ""
+                        for c in rest:
+                            if c.isdigit() or c == '.' or c == '-':
+                                num_str += c
+                            else:
+                                break
+                        if num_str:
+                            rnd = float(num_str)
+                except (ValueError, IndexError):
+                    pass
+
+            return chf, rnd
 
         def parse_ijr(line: str, prev):
             """helper to parse I/J/R (center offsets or radius)"""
@@ -412,6 +471,208 @@ class baseOpViewProviderProxy:
             self.ordered_segments.append((group, a, b))
             self.segment_metadata[group].append((a, b))
 
+        def _create_chamfer(coords_list, idx_list, p0, p1, chf_dist):
+            """
+            Crée un chanfrein entre le segment précédent et le segment actuel.
+            Le chanfrein coupe le coin au point p0 (point de jonction)
+            chf_dist: distance du chanfrein depuis le point de jonction
+
+            Cette fonction:
+            1. Modifie rétroactivement le dernier point du segment précédent pour le raccourcir
+            2. Crée le segment de chanfrein
+            3. Crée le segment actuel qui commence après le chanfrein
+            """
+            # Vérifier qu'il y a un segment précédent à modifier
+            if len(coords_list) < 2:
+                # Pas de segment précédent, créer un segment normal
+                append_segment(coords_list, idx_list, p0, p1)
+                return
+
+            # Calculer le vecteur directionnel du segment actuel
+            dx_next = p1[0] - p0[0]
+            dy_next = p1[1] - p0[1]
+            dz_next = p1[2] - p0[2]
+            length_next = math.sqrt(dx_next*dx_next + dy_next*dy_next + dz_next*dz_next)
+
+            if length_next < chf_dist:
+                Log.baptWarning(f"Chamfer distance {chf_dist} is larger than next segment length {length_next}. Using normal segment.")
+                append_segment(coords_list, idx_list, p0, p1)
+                return
+
+            # Récupérer le point précédent (avant-dernier point dans coords_list)
+            p_prev = coords_list[-2]
+
+            # Calculer le vecteur directionnel du segment précédent
+            dx_prev = p0[0] - p_prev[0]
+            dy_prev = p0[1] - p_prev[1]
+            dz_prev = p0[2] - p_prev[2]
+            length_prev = math.sqrt(dx_prev*dx_prev + dy_prev*dy_prev + dz_prev*dz_prev)
+
+            if length_prev < chf_dist:
+                Log.baptWarning(f"Chamfer distance {chf_dist} is larger than previous segment length {length_prev}. Using normal segment.")
+                append_segment(coords_list, idx_list, p0, p1)
+                return
+
+            # Point avant le chanfrein (raccourcir le segment précédent)
+            t_prev = (length_prev - chf_dist) / length_prev
+            before_chf = (
+                p_prev[0] + dx_prev * t_prev,
+                p_prev[1] + dy_prev * t_prev,
+                p_prev[2] + dz_prev * t_prev
+            )
+
+            # Point après le chanfrein (début du segment actuel)
+            t_next = chf_dist / length_next
+            after_chf = (
+                p0[0] + dx_next * t_next,
+                p0[1] + dy_next * t_next,
+                p0[2] + dz_next * t_next
+            )
+
+            # Modifier rétroactivement le dernier point du segment précédent
+            coords_list[-1] = before_chf
+
+            # Ajouter le segment de chanfrein
+            append_segment(coords_list, idx_list, before_chf, after_chf)
+
+            # Ajouter le segment actuel
+            append_segment(coords_list, idx_list, after_chf, p1)
+
+        def _create_rounding(coords_list, idx_list, p0, p1, rnd_radius):
+            """
+            Crée un arrondi au point de jonction p0 entre le segment précédent et le segment actuel.
+            Approxime l'arc par plusieurs petits segments
+            rnd_radius: rayon de l'arrondi
+
+            Cette fonction:
+            1. Modifie rétroactivement le dernier point du segment précédent
+            2. Crée plusieurs segments pour approximer l'arc arrondi
+            3. Crée le segment actuel qui commence après l'arrondi
+            """
+            # Vérifier qu'il y a un segment précédent à modifier
+            if len(coords_list) < 2:
+                append_segment(coords_list, idx_list, p0, p1)
+                return
+
+            # Calculer le vecteur directionnel du segment actuel
+            dx_next = p1[0] - p0[0]
+            dy_next = p1[1] - p0[1]
+            dz_next = p1[2] - p0[2]
+            length_next = math.sqrt(dx_next*dx_next + dy_next*dy_next + dz_next*dz_next)
+
+            # Récupérer le point précédent
+            p_prev = coords_list[-2]
+
+            # Calculer le vecteur directionnel du segment précédent
+            dx_prev = p0[0] - p_prev[0]
+            dy_prev = p0[1] - p_prev[1]
+            dz_prev = p0[2] - p_prev[2]
+            length_prev = math.sqrt(dx_prev*dx_prev + dy_prev*dy_prev + dz_prev*dz_prev)
+
+            # Distance de tangence (approximation simple : rayon = distance)
+            tang_dist = rnd_radius
+
+            if length_prev < tang_dist or length_next < tang_dist:
+                Log.baptWarning(f"Rounding radius {rnd_radius} is too large for segments. Using normal segment.")
+                append_segment(coords_list, idx_list, p0, p1)
+                return
+
+            # Point de début de l'arc (raccourcir le segment précédent)
+            t_prev = (length_prev - tang_dist) / length_prev
+            arc_start = (
+                p_prev[0] + dx_prev * t_prev,
+                p_prev[1] + dy_prev * t_prev,
+                p_prev[2] + dz_prev * t_prev
+            )
+
+            # Point de fin de l'arc (début du segment actuel)
+            t_next = tang_dist / length_next
+            arc_end = (
+                p0[0] + dx_next * t_next,
+                p0[1] + dy_next * t_next,
+                p0[2] + dz_next * t_next
+            )
+
+            # Modifier rétroactivement le dernier point du segment précédent
+            coords_list[-1] = arc_start
+
+            # Créer un arc circulaire simple
+            # Le centre de l'arc est à l'intersection des perpendiculaires à arc_start et arc_end
+            # passant par ces points à distance rnd_radius
+
+            # Vecteurs unitaires des deux segments en 2D
+            u_prev_x = dx_prev / length_prev
+            u_prev_y = dy_prev / length_prev
+            u_next_x = dx_next / length_next
+            u_next_y = dy_next / length_next
+
+            # Vecteur de arc_start vers arc_end
+            chord_x = arc_end[0] - arc_start[0]
+            chord_y = arc_end[1] - arc_start[1]
+            chord_len = math.sqrt(chord_x*chord_x + chord_y*chord_y)
+
+            if chord_len > 1e-6:
+                # Milieu de la corde
+                mid_x = (arc_start[0] + arc_end[0]) / 2.0
+                mid_y = (arc_start[1] + arc_end[1]) / 2.0
+
+                # Vecteur perpendiculaire à la corde (vers le centre)
+                perp_x = -chord_y / chord_len
+                perp_y = chord_x / chord_len
+
+                # Distance du milieu de la corde au centre (théorème de Pythagore)
+                # rnd_radius² = (chord_len/2)² + h²
+                half_chord = chord_len / 2.0
+                if rnd_radius > half_chord:
+                    h = math.sqrt(rnd_radius * rnd_radius - half_chord * half_chord)
+
+                    # Déterminer le sens (le centre doit être du côté "intérieur" de l'angle)
+                    # Produit vectoriel pour savoir de quel côté
+                    cross = u_prev_x * u_next_y - u_prev_y * u_next_x
+                    if cross < 0:
+                        h = -h
+
+                    # Centre de l'arc
+                    cx = mid_x + perp_x * h
+                    cy = mid_y + perp_y * h
+
+                    # Créer l'arc avec plusieurs segments
+                    num_segments = max(3, min(20, int(rnd_radius * 2)))
+
+                    # Angles de départ et de fin
+                    angle_start = math.atan2(arc_start[1] - cy, arc_start[0] - cx)
+                    angle_end = math.atan2(arc_end[1] - cy, arc_end[0] - cx)
+
+                    # Calculer la différence d'angle (sens le plus court)
+                    angle_diff = angle_end - angle_start
+                    if angle_diff > math.pi:
+                        angle_diff -= 2 * math.pi
+                    elif angle_diff < -math.pi:
+                        angle_diff += 2 * math.pi
+
+                    # Générer les points sur l'arc
+                    prev_point = arc_start
+                    for i in range(1, num_segments + 1):
+                        t = i / num_segments
+                        angle = angle_start + angle_diff * t
+
+                        seg_point = (
+                            cx + rnd_radius * math.cos(angle),
+                            cy + rnd_radius * math.sin(angle),
+                            arc_start[2] + (arc_end[2] - arc_start[2]) * t
+                        )
+                        append_segment(coords_list, idx_list, prev_point, seg_point)
+                        prev_point = seg_point
+                else:
+                    # Rayon trop petit pour la corde, ligne droite
+                    append_segment(coords_list, idx_list, arc_start, arc_end)
+            else:
+                # Points identiques, ligne droite
+                append_segment(coords_list, idx_list, arc_start, arc_end)
+
+            # Ajouter le segment actuel
+            append_segment(coords_list, idx_list, arc_end, p1)
+
         def executeCycle():
             new = self.cur
 
@@ -453,6 +714,93 @@ class baseOpViewProviderProxy:
             else:
                 raise ValueError()
 
+        def interpretArg(arg: str):
+            ''' arg : X+0 retourne ('X', 0)'''
+            ''' arg : X=R0 Retourne ('X', le contenu de la variable R0)'''
+            ''' arg : X=(10 + R0) Retourne ('X', 10 + le contenu de la variable R0)'''
+            ''' arg : X=(10 + 5)*2 Retourne ('X', retourne le resultat de l'expression)'''
+            
+            if not arg:
+                return None, None
+            
+            arg = arg.strip()
+            cursor = 0
+            
+            # Extraire le nom de l'argument (lettres au début)
+            argName = ""
+            while cursor < len(arg) and arg[cursor].isalpha():
+                argName += arg[cursor].upper()
+                cursor += 1
+            
+            if not argName:
+                return None, None
+            
+            # Le reste est la valeur
+            value_str = arg[cursor:].strip()
+            
+            if not value_str:
+                return argName, None
+            
+            # Cas 1: Simple nombre (X+10, X-5, X10.5)
+            if value_str[0] in ['+', '-', '.'] or value_str[0].isdigit():
+                try:
+                    num_str = value_str.replace(',', '.')
+                    value = float(num_str) if '.' in num_str else int(num_str)
+                    return argName, value
+                except ValueError:
+                    pass
+            
+            # Cas 2: Référence à variable (X=R0)
+            if value_str.startswith('='):
+                var_name = value_str[1:].strip()
+                if var_name.startswith('R') and var_name[1:].isdigit():
+                    # Récupérer la valeur de la variable
+                    if var_name in self.mem.variables:
+                        return argName, self.mem.variables[var_name]
+                    else:
+                        Log.baptWarning(f"Variable {var_name} not defined")
+                        return argName, 0
+            
+            # Cas 3: Expression (X=(10 + R0), X=(10 + 5)*2)
+            if '(' in value_str or 'R' in value_str.upper():
+                try:
+                    # Remplacer les variables R par leurs valeurs
+                    expr = value_str.replace('=', '').strip()
+                    
+                    # Remplacer R0, R1, etc. par leurs valeurs
+                    import re
+                    def replace_var(match):
+                        var_name = match.group(0)
+                        if var_name in self.mem.variables:
+                            return str(self.mem.variables[var_name])
+                        else:
+                            Log.baptWarning(f"Variable {var_name} not defined, using 0")
+                            return "0"
+                    
+                    expr = re.sub(r'R\d+', replace_var, expr)
+                    
+                    # Évaluer l'expression mathématique
+                    # Sécurité: seulement les opérations de base
+                    allowed_chars = set('0123456789+-*/().() ')
+                    if all(c in allowed_chars for c in expr.replace(' ', '')):
+                        value = eval(expr)
+                        return argName, float(value) if isinstance(value, float) else int(value)
+                    else:
+                        Log.baptWarning(f"Invalid expression: {expr}")
+                        return argName, 0
+                except Exception as e:
+                    Log.baptWarning(f"Error evaluating expression {value_str}: {e}")
+                    return argName, 0
+            
+            # Cas par défaut: essayer de parser comme nombre
+            try:
+                value_str = value_str.replace(',', '.')
+                value = float(value_str) if '.' in value_str else int(value_str)
+                return argName, value
+            except ValueError:
+                Log.baptWarning(f"Cannot parse argument: {arg}")
+                return argName, 0
+
         def processGcode():
             while self.line < len(self.lines):
 
@@ -477,15 +825,36 @@ class baseOpViewProviderProxy:
 
                 elif up.startswith(("G1", "G01")):
                     new = parse_xyz(ln, self.cur, self.absinc_mode)
-                    append_segment(feed_coords, feed_idx, self.cur, new)
+
+                    # Si un chanfrein ou arrondi était en attente depuis la ligne précédente
+                    if self.pending_chamfer is not None:
+                        # Créer un chanfrein entre self.cur et new
+                        _create_chamfer(feed_coords, feed_idx, self.cur, new, self.pending_chamfer)
+                        self.pending_chamfer = None
+                    elif self.pending_rnd is not None:
+                        # Créer un arrondi entre self.cur et new
+                        _create_rounding(feed_coords, feed_idx, self.cur, new, self.pending_rnd)
+                        self.pending_rnd = None
+                    else:
+                        # Pas de chanfrein/arrondi, segment normal
+                        append_segment(feed_coords, feed_idx, self.cur, new)
+
                     self.cur = new
+
+                    # Détecter CHF et RND dans la ligne pour le PROCHAIN segment
+                    chf, rnd = parse_chf_rnd(ln)
+                    if chf is not None:
+                        self.pending_chamfer = chf
+                    if rnd is not None:
+                        self.pending_rnd = rnd
+
                     self.mem.moveMode = "feed"
                     if self.mem.current_cycle is not None:
                         executeCycle()
 
                 elif up.startswith(("G2", "G02", "G3", "G03")):
                     # Circular interpolation. Prefer I/J (center offsets). If only R given, compute center(s).
-                    is_ccw = up.startswith("G3")
+                    is_ccw = up.startswith(("G3", "G03"))
                     end = parse_xyz(ln, self.cur, self.absinc_mode)
                     I, J, R = parse_ijr(ln, self.cur)
                     self.mem.moveMode = "arc"
@@ -661,10 +1030,19 @@ class baseOpViewProviderProxy:
                     if len(parts) == 2:  # REPEAT Start
                         label_begin = parts[1] if len(parts) > 1 else None
                         n_times = 1
+                        if not label_begin in self.mem.labels:
+                            raise repeatGcodeException("Invalid REPEAT syntax, label for start not found")
                     elif len(parts) == 3:  # REPEAT Start P=
                         label_begin = parts[1] if len(parts) > 1 else None
 
+                        if not label_begin in self.mem.labels:
+                            raise repeatGcodeException("Invalid REPEAT syntax, label for start not found")
+
+                        if not parts[2].startswith("P="):
+                            raise repeatGcodeException("Invalid REPEAT syntax, expected P= for number of times")
+
                         n_times = parts[2].removeprefix("P=")
+
                         if n_times.isdigit():
                             n_times = int(n_times)
                         elif n_times.startswith("R"):
@@ -672,10 +1050,19 @@ class baseOpViewProviderProxy:
                             if var_name in self.mem.variables:
                                 n_times = int(self.mem.variables[var_name])
                             else:
-                                raise Exception("Variable {} not defined for REPEAT".format(var_name))
+                                raise repeatGcodeException("Variable {} not defined for REPEAT".format(var_name))
                     elif len(parts) == 4:  # REPEAT Start End P=
                         label_begin = parts[1]
+
+                        if not label_begin in self.mem.labels:
+                            raise repeatGcodeException("Invalid REPEAT syntax, label for start not found")
+
                         label_end = parts[2]
+                        if not label_end in self.mem.labels:
+                            raise repeatGcodeException("Invalid REPEAT syntax, label for end not found")
+                        if not parts[3].startswith("P="):
+                            raise repeatGcodeException("Invalid REPEAT syntax, expected P= for number of times")
+
                         n_times = parts[3].removeprefix("P=")
                         if n_times.isdigit():
                             n_times = int(n_times)
@@ -684,7 +1071,7 @@ class baseOpViewProviderProxy:
                             if var_name in self.mem.variables:
                                 n_times = int(self.mem.variables[var_name])
                             else:
-                                raise Exception("Variable {} not defined for REPEAT".format(var_name))
+                                raise repeatGcodeException("Variable {} not defined for REPEAT".format(var_name))
                     else:
                         pass
                     # App.Console.PrintMessage("REPEAT command found: label={} times={}\n".format(label_begin, n_times))
@@ -748,7 +1135,10 @@ class baseOpViewProviderProxy:
 
                     Log.baptDebug("Ignoring line: {}\n".format(ln))
 
-        processGcode()
+        try:
+            processGcode()
+        except repeatGcodeException as e:
+            Log.baptError("Error processing REPEAT command: {}".format(str(e)))
 
         # store coords for callbacks/picking
         self.rapid_coords = rapid_coords

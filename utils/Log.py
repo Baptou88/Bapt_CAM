@@ -96,3 +96,8 @@ def _log(level: Level, module_line_func, message: str) -> None:
 def baptDebug(message: str) -> None:
     """Log a debug message."""
     return _log(Level.DEBUG, _caller(), message)
+
+
+def baptError(message: str) -> None:
+    """Log an error message."""
+    return _log(Level.CRITICAL, _caller(), message)

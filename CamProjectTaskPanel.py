@@ -194,7 +194,7 @@ class CamProjectTaskPanel:
         # Obtenir l'objet Stock
         self.stock = self.getStockObject(obj)
 
-        self.ui1 = Gui.PySideUic.loadUi(BaptUtilities.getPanel("CamProject.ui"))
+        self.ui1 = Gui.PySideUic.loadUi(BaptUtilities.getPanel("CAMProject.ui"))
         self.ui1.setWindowTitle("Edit CAM Project")
         # Créer l'interface utilisateur
         ui2 = PostProcessorTaskPanel(obj)

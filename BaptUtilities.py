@@ -22,9 +22,12 @@ def getResourcesPath():
 
 def getPanel(panel):
     '''
-    Returns the panel path.
+    Returns the panel path or exception.
     '''
-    return os.path.join(getResourcesPath(), "panels", panel)
+    p = os.path.join(getResourcesPath(), "panels", panel)
+    if not os.path.exists(p):
+        raise Exception(f"Panel {panel} not Found at {p}")
+    return p
 
 
 def getIconPath(icon: str):

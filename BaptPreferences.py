@@ -163,7 +163,7 @@ class BaptPreferencesPage(QtGui.QWidget):
         self.mode_ajout_combo = QtGui.QComboBox()
         self.mode_ajout_combo.addItem("Ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien (default)")
         self.mode_ajout_combo.addItem("Ajouter à la géométrie comme enfant (pas conseillé)")
-        self.mode_ajout_combo.addItem("Ajouter uniquement au groupe opérations du projet CAM comme lien")
+        self.mode_ajout_combo.addItem("Ajouter uniquement au groupe opérations du projet CAM")
 
         # Chemin du dossier G-code
         gcode_group = QtGui.QGroupBox("Dossier G-code par défaut")

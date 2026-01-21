@@ -105,11 +105,6 @@ class GcodeEditorTaskPanel:
         self.textEdit.setPlainText(self.obj.Gcode)
         layout.addWidget(self.textEdit)
 
-        self.buttonBox = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Cancel)
-        self.buttonBox.accepted.connect(self.accept)
-        self.buttonBox.rejected.connect(self.reject)
-        layout.addWidget(self.buttonBox)
-
         # Activer le highlighter
         self.highlighter = GCodeHighlighter(self.textEdit.document())
 
@@ -119,6 +114,12 @@ class GcodeEditorTaskPanel:
 
     def reject(self):
         FreeCADGui.Control.closeDialog()
+
+    def clicked(self, button):
+        """clicked(button) ... callback invoked when the user presses any of the task panel buttons."""
+        if button == QtGui.QDialogButtonBox.Apply:
+            self.obj.Gcode = self.textEdit.toPlainText()
+            App.ActiveDocument.recompute()
 
     def getStandardButtons(self):
         """Définir les boutons standard"""

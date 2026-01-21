@@ -29,7 +29,6 @@ class ContournageCycle(baseOp):
         if not hasattr(obj, "ToolDiameter"):
             obj.addProperty("App::PropertyLength", "ToolDiameter", "Tool", "Diamètre de l'outil")
             obj.ToolDiameter = 6.0
-            obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
 
         if not hasattr(obj, "CutDepth"):
             obj.addProperty("App::PropertyLength", "CutDepth", "Cut", "Profondeur de coupe")
@@ -77,6 +76,9 @@ class ContournageCycle(baseOp):
             obj.SurepAxiale = 0.0
 
         super().installToolProp(obj)
+
+        if int(App.Version()[0]) >= 1 and int(App.Version()[1]) >= 1:
+            obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
 
         obj.Proxy = self
 
