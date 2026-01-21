@@ -1,3 +1,4 @@
+from BaptPath import GcodeEditorTaskPanel
 from Op.BaseOp import baseOpViewProviderProxy
 import BaptUtilities
 import FreeCAD as App
@@ -5,7 +6,8 @@ import FreeCADGui as Gui
 from Op.BaseOp import baseOp
 import Part
 from utils import Contour
-
+import PySide.QtGui as QtGui
+import PySide.QtCore as QtCore
 
 import math
 import sys
@@ -150,7 +152,7 @@ class ContournageCycle(baseOp):
         previous_pass_actual_end_point = None
         rapid_traverse_z = contour_zref + 2.0
 
-        for pass_z in passes_z_values:
+        for p, pass_z in enumerate(passes_z_values):
             App.Console.PrintMessage(f"Processing pass at Z = {pass_z}\n")
             # current_pass_toolpath_segments list is removed as segments are added directly to all_pass_shapes_collected
 
@@ -269,10 +271,21 @@ class ContournageCycle(baseOp):
                         approachPoint = core_toolpath_start_pt - App.Vector(-tangent_start.y, tangent_start.x, 0).normalize().multiply(approach_length)
                     perp_start = App.Vector(-tangent_start.y, tangent_start.x, 0).normalize()  # Assuming XY plane
                     pass_approach_edges.append(Part.makeLine(core_toolpath_start_pt + perp_start.multiply(approach_length), core_toolpath_start_pt))
+                elif approach_type == "Perp+Arc":
+                    pass  # TODO: Implement Perp+Arc approach
                 obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{rapid_traverse_z:.3f}\n"
                 obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{pass_z + 2:.3f}\n"
-                obj.Gcode += f"G1 Z{pass_z:.3f}\n"
-                obj.Gcode += f"G1 X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f}\n"
+                obj.Gcode += f"G1 Z{pass_z:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
+                comp = "G40"
+                if obj.Compensation in ["Ordinateur", "Ordinateur + G41/G42"]:
+                    if is_offset_inward:
+                        comp = "G41"
+                    else:
+                        comp = "G42"
+                if p == 0:
+                    obj.Gcode += f"{obj.Label}_start:\n"
+
+                obj.Gcode += f"G1 {comp} X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
             # TODO: Add Helicoidal approach if needed, ensuring Z movement relative to pass_z
 
             current_edge = None
@@ -335,9 +348,12 @@ class ContournageCycle(baseOp):
                         perp_end = App.Vector(-tangent_end.y, tangent_end.x, 0).normalize()
                         SortiePt = core_toolpath_end_pt - perp_end.multiply(approach_length)
                     pass_retract_edges.append(Part.makeLine(core_toolpath_end_pt, SortiePt))
-                obj.Gcode += f"G1 X{SortiePt.x:.3f} Y{SortiePt.y:.3f}\n"
+                obj.Gcode += f"G1 G40 X{SortiePt.x:.3f} Y{SortiePt.y:.3f}\n"
 
             obj.Gcode += f"G0 Z{rapid_traverse_z:.3f}\n"
+
+            if p == 0:
+                obj.Gcode += f"{obj.Label}_end:\n"
 
             # Determine the actual start point of this pass's full trajectory (including approach)
             current_pass_trajectory_start_point = core_toolpath_start_pt  # Default to core path start
@@ -533,6 +549,19 @@ class ViewProviderContournageCycle(baseOpViewProviderProxy):
         # Ne pas réclamer la géométrie du contour comme enfant
         # car c'est le contour qui doit être l'enfant de la géométrie
         return []
+
+    def setupContextMenu(self, vobj, menu):
+        super().setupContextMenu(vobj, menu)
+
+        viewGcode = QtGui.QAction(Gui.getIcon("Std_TransformManip.svg"), "View G-code", menu)
+        QtCore.QObject.connect(viewGcode, QtCore.SIGNAL("triggered()"), lambda: self.viewGcode(vobj))
+        menu.addAction(viewGcode)
+        return True
+
+    def viewGcode(self, vobj):
+        """Afficher le G-code dans une boîte de dialogue"""
+        taskPanel = GcodeEditorTaskPanel(vobj.Object)
+        Gui.Control.showDialog(taskPanel)
 
     def setEdit(self, vobj, mode=0):
         """Ouvre le panneau de tâche pour l'édition"""

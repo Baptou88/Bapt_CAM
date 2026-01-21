@@ -79,6 +79,11 @@ class GCodeHighlighter(QtGui.QSyntaxHighlighter):
         self.fmt_g1.setForeground(QtGui.QColor("green"))
         self.rule_g1 = QtCore.QRegularExpression(r"\bG1\b")
 
+        # Format ; or () commentaires (gris)
+        self.fmt_comment = QtGui.QTextCharFormat()
+        self.fmt_comment.setForeground(QtGui.QColor("gray"))
+        self.rule_comment = QtCore.QRegularExpression(r";.*|(\(.*\))")
+
     def _apply_rule(self, text, regex, fmt):
         it = regex.globalMatch(text)
         while it.hasNext():
@@ -92,6 +97,8 @@ class GCodeHighlighter(QtGui.QSyntaxHighlighter):
         self._apply_rule(text, self.rule_g0, self.fmt_g0)
         # G1
         self._apply_rule(text, self.rule_g1, self.fmt_g1)
+        # Commentaires
+        self._apply_rule(text, self.rule_comment, self.fmt_comment)
 
 
 class GcodeEditorTaskPanel:
