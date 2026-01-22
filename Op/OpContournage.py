@@ -277,7 +277,7 @@ class ContournageCycle(baseOp):
                 obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{pass_z + 2:.3f}\n"
                 obj.Gcode += f"G1 Z{pass_z:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
                 comp = "G40"
-                if obj.Compensation in ["Ordinateur", "Ordinateur + G41/G42"]:
+                if obj.Compensation in ["Machine", "Ordinateur + G41/G42"]:
                     if is_offset_inward:
                         comp = "G41"
                     else:
