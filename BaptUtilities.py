@@ -41,7 +41,7 @@ def getExamplesPath():
     '''
     Returns the examples path.
     '''
-    return os.path.join(App.getUserConfigDir(), "Mod","Bapt","examples")
+    return os.path.join(get_module_path(),"examples")
 
 def getDefaultToolsDbPath():
     """Retourne le chemin par défaut de la base de données d'outils."""
