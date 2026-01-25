@@ -72,3 +72,28 @@ class PostPro(BasePostPro.BasePostPro):
             gcode_lines += (f"G0 X{pt.x:.3f} Y{pt.y:.3f} \n")
         gcode_lines += "MCALL\n"
         return gcode_lines
+
+    def G84(self, obj):
+        doc = App.ActiveDocument
+        geom = doc.getObject(obj.DrillGeometryName)
+        if geom and hasattr(geom, 'DrillPositions'):
+            points = geom.DrillPositions
+
+        safe_z = getattr(obj, 'SafeHeight', 5.0).Value
+        final_z = getattr(obj, 'FinalDepth', -5.0).Value
+        coolant = getattr(obj, 'CoolantMode', False)
+        planDeRetrait = safe_z
+        DistSecurite = safe_z
+        z0 = None
+        Speed = getattr(obj, 'SpindleSpeed', None).getValueAs("mm/min")  # FIXME Speed
+        Feed = getattr(obj, 'FeedRate', None).getValueAs("mm/min")
+        gcode_lines = f"S{Speed}\n"
+        gcode_lines += f"F{Feed}\n"
+        gcode_lines += f"M{self.coolantModeToCode(coolant)}\n"
+        for pt in points:
+            if z0 is None or z0 != pt.z:
+                z0 = pt.z
+                gcode_lines += (f"CYCLE84({z0 + planDeRetrait},{z0},{DistSecurite},{final_z},,1,12)\n")
+            gcode_lines += (f"G0 X{pt.x:.3f} Y{pt.y:.3f} \n")
+        gcode_lines += "MCALL\n"
+        return gcode_lines

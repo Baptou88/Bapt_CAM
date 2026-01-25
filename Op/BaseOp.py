@@ -676,7 +676,7 @@ class baseOpViewProviderProxy:
         def executeCycle():
             new = self.cur
 
-            if self.mem.current_cycle["type"] == 81:
+            if self.mem.current_cycle["type"] == 81 or self.mem.current_cycle["type"] == 84:
 
                 a = list(new[0:2])
                 a.append(self.mem.current_cycle["Z"])
@@ -719,28 +719,28 @@ class baseOpViewProviderProxy:
             ''' arg : X=R0 Retourne ('X', le contenu de la variable R0)'''
             ''' arg : X=(10 + R0) Retourne ('X', 10 + le contenu de la variable R0)'''
             ''' arg : X=(10 + 5)*2 Retourne ('X', retourne le resultat de l'expression)'''
-            
+
             if not arg:
                 return None, None
-            
+
             arg = arg.strip()
             cursor = 0
-            
+
             # Extraire le nom de l'argument (lettres au début)
             argName = ""
             while cursor < len(arg) and arg[cursor].isalpha():
                 argName += arg[cursor].upper()
                 cursor += 1
-            
+
             if not argName:
                 return None, None
-            
+
             # Le reste est la valeur
             value_str = arg[cursor:].strip()
-            
+
             if not value_str:
                 return argName, None
-            
+
             # Cas 1: Simple nombre (X+10, X-5, X10.5)
             if value_str[0] in ['+', '-', '.'] or value_str[0].isdigit():
                 try:
@@ -749,7 +749,7 @@ class baseOpViewProviderProxy:
                     return argName, value
                 except ValueError:
                     pass
-            
+
             # Cas 2: Référence à variable (X=R0)
             if value_str.startswith('='):
                 var_name = value_str[1:].strip()
@@ -760,15 +760,16 @@ class baseOpViewProviderProxy:
                     else:
                         Log.baptWarning(f"Variable {var_name} not defined")
                         return argName, 0
-            
+
             # Cas 3: Expression (X=(10 + R0), X=(10 + 5)*2)
             if '(' in value_str or 'R' in value_str.upper():
                 try:
                     # Remplacer les variables R par leurs valeurs
                     expr = value_str.replace('=', '').strip()
-                    
+
                     # Remplacer R0, R1, etc. par leurs valeurs
                     import re
+
                     def replace_var(match):
                         var_name = match.group(0)
                         if var_name in self.mem.variables:
@@ -776,9 +777,9 @@ class baseOpViewProviderProxy:
                         else:
                             Log.baptWarning(f"Variable {var_name} not defined, using 0")
                             return "0"
-                    
+
                     expr = re.sub(r'R\d+', replace_var, expr)
-                    
+
                     # Évaluer l'expression mathématique
                     # Sécurité: seulement les opérations de base
                     allowed_chars = set('0123456789+-*/().() ')
@@ -791,7 +792,7 @@ class baseOpViewProviderProxy:
                 except Exception as e:
                     Log.baptWarning(f"Error evaluating expression {value_str}: {e}")
                     return argName, 0
-            
+
             # Cas par défaut: essayer de parser comme nombre
             try:
                 value_str = value_str.replace(',', '.')
@@ -969,6 +970,7 @@ class baseOpViewProviderProxy:
 
                 elif up.startswith("G80"):
                     self.mem.current_cycle = None
+
                 elif up.startswith("G81"):
                     up.removeprefix("G81")
                     tokens = up.split(" ")
@@ -1003,6 +1005,29 @@ class baseOpViewProviderProxy:
                             if d["Q"] <= 0:
                                 raise ValueError()
                     self.mem.current_cycle = {"type": 83, "Z": d["Z"], "R": d["R"], "Q": d["Q"]}
+                    executeCycle()
+
+                elif up.startswith("G84"):
+                    # tapping cycle
+                    code = int(up[1:3])
+                    up = up[3:]
+
+                    tokens = up.split(" ")
+                    d = dict()
+                    for t in tokens:
+                        if t.upper().startswith("X"):
+                            d["X"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else self.cur + float(t[1:])
+                        if t.upper().startswith("Y"):
+                            d["Y"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else self.cur + float(t[1:])
+                        if t.upper().startswith("Z"):
+                            d["Z"] = float(t[1:]) if self.mem.absincMode == absinc.G90 else self.cur + float(t[1:])
+                        if t.upper().startswith("R"):
+                            d["R"] = float(t[1:])
+                    if any(k in d for k in ['X', 'Y', 'Z']):  # TODO: Process Move with all [G81-G89] cycle
+                        new = (d.get("X", self.cur[0]), d.get("Y", self.cur[1]), d.get("R"))
+                        append_segment(rapid_coords, rapid_idx, self.cur, new)
+                        self.cur = new
+                    self.mem.current_cycle = {"type": 84, "Z": d["Z"], "R": d["R"]}
                     executeCycle()
 
                 elif up.startswith("G90"):
@@ -1178,7 +1203,7 @@ class baseOpViewProviderProxy:
         action2 = menu.addAction("Simulate Toolpath")
         action2.triggered.connect(lambda: self.startSimulation(vobj))
 
-        action_Toggle = QtGui.QAction(Gui.getIcon("Std_TransformManip.svg"), "Active Op", menu)
+        action_Toggle = QtGui.QAction(Gui.getIcon("Std_TransformManip.svg"), "Desactive Op" if vobj.Object.Active else "Active Op", menu)
         QtCore.QObject.connect(action_Toggle, QtCore.SIGNAL("triggered()"), lambda: self.ToggleOp(vobj))
         menu.addAction(action_Toggle)
         return True

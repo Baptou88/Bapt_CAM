@@ -29,9 +29,10 @@ class BaptWorkbench (Workbench):
         translate = App.Qt.translate
         import BaptUtilities
         App.Console.PrintMessage(f'Activing tr {os.path.join(BaptUtilities.getResourcesPath(), "translations")}\n')
-        Gui.addLanguagePath(r"C:\\Users\\Baptou88\\AppData\\Roaming\\FreeCAD\\Mod\\Bapt\\resources\\translations")
-        Gui.addLanguagePath("C:/Users/Baptou88/AppData/Roaming/FreeCAD/Mod/Bapt/resources/translations")
-        Gui.addLanguagePath("C:/Users/Baptou88/AppData/Roaming/FreeCAD/Mod/Bapt/resources/translations/")
+        Gui.addLanguagePath(os.path.join(BaptUtilities.getResourcesPath(), "translations"))
+        # Gui.addLanguagePath(r"C:\\Users\\Baptou88\\AppData\\Roaming\\FreeCAD\\Mod\\Bapt\\resources\\translations")
+        # Gui.addLanguagePath("C:/Users/Baptou88/AppData/Roaming/FreeCAD/Mod/Bapt/resources/translations")
+        # Gui.addLanguagePath("C:/Users/Baptou88/AppData/Roaming/FreeCAD/Mod/Bapt/resources/translations/")
 
         from PySide.QtCore import QT_TRANSLATE_NOOP
 

@@ -1,8 +1,10 @@
 from collections import deque
 import math
+from BaptPath import GcodeEditorTaskPanel
 import BaptPreferences
 import FreeCAD as App
 import FreeCADGui as Gui
+from Op import BaseOp
 from Op.PocketNode import noeud
 import Part
 from PySide import QtGui, QtCore
@@ -11,7 +13,7 @@ import traceback
 import BaptUtilities
 from utils import BQuantitySpinBox
 from utils import Log as Log
-from utils.Contour import getFirstPoint, getLastPoint, shiftWire
+from utils.Contour import getFirstPoint, getLastPoint, shiftWire, edgeToGcode
 
 if True:
     Log.setLevel(Log.Level.DEBUG, Log.thisModule())
@@ -21,7 +23,7 @@ else:
 pocketFillMode = ["offset", "offset2", "zigzag", "spirale"]
 
 
-class PocketOperation:
+class PocketOperation(BaseOp.baseOp):
     """
     Opération d'usinage de poche basée sur ContourGeometry.
     Génère un chemin d'usinage à partir du centre avec un facteur de recouvrement.
@@ -29,6 +31,7 @@ class PocketOperation:
     initialized = False
 
     def __init__(self, obj):
+        super().__init__(obj)
         self.Type = "PocketOperation"
         self.initProperties(obj)
         obj.Proxy = self
@@ -61,9 +64,7 @@ class PocketOperation:
         obj.addProperty("App::PropertyBool", "useMiddleofFirstEdge", "Pocket", "Utiliser le milieu de la première arête").useMiddleofFirstEdge = False
         obj.addProperty("App::PropertyBool", "debugMode", "General", "Activer le mode debug").debugMode = False
 
-        if not hasattr(obj, "desactivated"):
-            obj.addProperty("App::PropertyBool", "desactivated", "General", "Désactiver le cycle")
-            obj.desactivated = False
+        self.installToolProp(obj)
 
     def onChanged(self, obj, prop):
         Log.baptDebug(f"{prop}")
@@ -172,38 +173,110 @@ class PocketOperation:
                 path = []
                 nodes = self.generate_offset_path2(edges, tool_diam, overlap, obj.maxGeneration)
 
-                parent, depth, levels = buildParentDepthLevel(nodes[0])
-                App.Console.PrintMessage(f'max {max(levels.keys())}\n')
-                leafs = levels[max(levels.keys())]
-                leaf: noeud = leafs[0]
-                if obj.useMiddleofFirstEdge:
-                    edge = leaf.wires.Edges[0]
-                    start_point = edge.Vertexes[0].Point
-                    end_point = edge.Vertexes[-1].Point
+                if not nodes:
+                    App.Console.PrintError("Aucun offset généré\n")
+                    obj.Shape = Part.Shape()
+                    return
+
+                # Parcours récursif en profondeur depuis la racine
+                # Les transitions entre frères passent par le parent commun
+                def traverse_depth_first(node: noeud, is_first_child=True):
+                    """
+                    Parcours récursif en profondeur.
+                    Pour chaque nœud :
+                    1. Descendre récursivement vers les enfants les plus profonds
+                    2. Usiner chaque enfant
+                    3. Remonter au nœud courant via transition
+                    4. Usiner le nœud courant
+                    """
+                    # Si le nœud a des enfants, les traiter d'abord (du plus profond vers le haut)
+                    for idx, child in enumerate(node.children):
+                        traverse_depth_first(child, is_first_child=(idx == 0))
+                        # Après avoir usiné l'enfant, créer transition vers le parent (nœud courant)
+                        if self.makeTransitionToParent(obj, child, node):
+                            Log.baptDebug(f'Transition enfant→parent OK\n')
+
+                    # Ajouter le wire du nœud courant au parcours
+                    path.append(node.wires)
+                    Log.baptDebug(f'Ajout nœud: {node}\n')
+
+                # Traitement spécial pour le premier nœud le plus profond
+                root = nodes[0]
+                parent, depth, levels = buildParentDepthLevel(root)
+                max_depth = max(levels.keys())
+
+                # Trouver le premier nœud le plus profond et décaler si demandé
+                if obj.useMiddleofFirstEdge and max_depth in levels and levels[max_depth]:
+                    deepest_node = levels[max_depth][0]
+                    edge = deepest_node.wires.Edges[0]
                     u1, v1 = edge.ParameterRange
                     mid_param = (u1 + v1)/2
                     mid_point = edge.valueAt(mid_param)
-                    new_start_point = mid_point
-                    Log.baptDebug(f'Using middle of first edge as start point: {new_start_point}\n')
-                    leaf.shiftWire(new_start_point)
-                App.Console.PrintMessage(f'leaf {leaf} len {len(leaf.wires.Edges)}\n')
-                generation = 0
-                while True and generation < obj.maxGeneration:
-                    generation = generation + 1
+                    Log.baptDebug(f'Décalage au milieu de la première arête: {mid_point}\n')
+                    deepest_node.shiftWire(mid_point)
 
-                    def findParent(node) -> noeud:
-                        if node in parent:
-                            return parent[node]
-                        return None
-                    p = findParent(leaf)
-                    path.append(leaf.wires)
-                    if p is not None:
+                App.Console.PrintMessage(f'Profondeur maximale: {max_depth}, Racines: {len(nodes)}\n')
 
-                        self.makeTransitionToParent(obj, leaf, p)
+                # Parcourir tous les arbres (si plusieurs racines)
+                for root_node in nodes:
+                    traverse_depth_first(root_node, is_first_child=True)
 
+                # Génération du G-code à partir du parcours
+                strGcode = ""
+
+                # Paramètres d'usinage
+                step_down = abs(obj.StepDown)
+                final_depth = obj.FinalDepth
+                start_depth = 0.0  # On suppose que la surface est à Z=0
+                feed_rate = obj.FeedRate.Value if hasattr(obj, 'FeedRate') else 1000.0
+                safe_z = 5.0  # Hauteur de sécurité
+
+                # Calculer le nombre de passes en profondeur
+                total_depth = abs(final_depth - start_depth)
+                num_passes = math.ceil(total_depth / step_down)
+
+                Log.baptDebug(f"Génération G-code: {num_passes} passes, step={step_down}, final={final_depth}\n")
+
+                # Générer le G-code pour chaque passe en profondeur
+                for pass_num in range(num_passes):
+                    # Calculer la profondeur de cette passe
+                    if pass_num == num_passes - 1:
+                        # Dernière passe : aller exactement à la profondeur finale
+                        current_z = final_depth
                     else:
-                        break
-                    leaf = p
+                        current_z = start_depth - (pass_num + 1) * step_down
+
+                    strGcode += f"; Passe {pass_num + 1}/{num_passes} à Z={current_z:.3f}\n"
+
+                    # Pour chaque wire du parcours
+                    first_wire = True
+                    for wire_compound in path:
+                        for wire in wire_compound.Wires:
+                            # Première position : mouvement rapide en Z safe puis au point de départ
+                            first_edge = wire.Edges[0]
+                            start_pt = first_edge.Vertexes[0].Point
+
+                            if first_wire:
+                                strGcode += f"G0 Z{safe_z:.3f}\n"
+                                strGcode += f"G0 X{start_pt.x:.3f} Y{start_pt.y:.3f}\n"
+                                strGcode += f"G1 Z{current_z:.3f} F{feed_rate:.3f}\n"
+                                first_wire = False
+                            else:
+                                # Liaison rapide vers le wire suivant
+                                strGcode += f"G0 Z{safe_z:.3f}\n"
+                                strGcode += f"G0 X{start_pt.x:.3f} Y{start_pt.y:.3f}\n"
+                                strGcode += f"G1 Z{current_z:.3f} F{feed_rate:.3f}\n"
+
+                            # Convertir chaque edge en G-code
+                            for edge in wire.Edges:
+                                edge_gcode = edgeToGcode(edge, bonSens=True, current_z=current_z,
+                                                         rapid=False, feed_rate=feed_rate)
+                                strGcode += edge_gcode
+
+                    # Remonter en sécurité après chaque passe
+                    strGcode += f"G0 Z{safe_z:.3f}\n"
+                obj.Gcode = strGcode
+                Log.baptDebug(f"G-code généré: {len(strGcode)} caractères\n")
 
                 # for n in nodes:
                 #     wires = n.getWires()
@@ -429,16 +502,12 @@ class PocketOperation:
 
     def makeTransitionToParent(self, obj, childNode: noeud, parentNode: noeud):
         """
-        Docstring for makeTransitionToParent
+        Crée une transition perpendiculaire entre un noeud enfant et son parent
+        La transition est perpendiculaire à la première arête du wire enfant
 
-        :param self: Description
-        :param obj: Description
-        :param childNode: Description
-        :type childNode: noeud
-        :param parentNode: Description
-        :type parentNode: noeud
-        :return: Description
-        :rtype: str
+        :param obj: L'objet PocketOperation
+        :param childNode: Noeud enfant (intérieur)
+        :param parentNode: Noeud parent (extérieur)
         """
 
         offset_dist = obj.ToolDiameter * (1 - obj.Overlap)
@@ -505,19 +574,43 @@ class PocketOperation:
                         new_start = pointToVector(p)
                         if obj.debugMode:
                             Part.show(Part.makeLine(start_point, new_start))
-                        # parentNode = shiftWire(parentWire, new_start)
+                        # Décaler le parent pour commencer au point trouvé
                         parentNode.shiftWire(new_start)
-                        childNode.wires.add(Part.makeLine(start_point, new_start))
-                        break
+                        # Ajouter la ligne de transition au wire enfant
+                        transition_line = Part.makeLine(start_point, new_start)
+                        childNode.wires.add(transition_line)
+                        Log.baptDebug(f'Transition vers parent: distance={d:.3f}mm\n')
+                        return True
 
-            App.Console.PrintMessage(f'{start_point} {edge_normal}\n')
+            # Si aucune intersection trouvée à la distance exacte, chercher la plus proche
+            Log.baptDebug(f'Recherche transition approximative...\n')
+            min_dist_diff = float('inf')
+            best_intersection = None
 
-            return parentWire
+            for i, e in enumerate(parentWire.Edges):
+                inter: list[Part.Point] = ray.intersect(e.Curve)
+                for p in inter:
+                    point = pointToVector(p)
+                    d = (point - start_point).Length
+                    dist_diff = abs(d - offset_dist)
+                    if dist_diff < min_dist_diff:
+                        min_dist_diff = dist_diff
+                        best_intersection = point
+
+            if best_intersection and min_dist_diff < offset_dist * 0.2:  # Tolérance 20%
+                parentNode.shiftWire(best_intersection)
+                transition_line = Part.makeLine(start_point, best_intersection)
+                childNode.wires.add(transition_line)
+                Log.baptDebug(f'Transition approximative: diff={min_dist_diff:.3f}mm\n')
+                return True
+
+            App.Console.PrintWarning(f'Aucune transition trouvée pour {childNode}\n')
+            return False
 
         except Exception as e:
             line_nr = traceback.extract_tb(sys.exc_info()[2])[-1][1]
             App.Console.PrintError(f"makeTransitionToParent : {e} at line {line_nr}\n")
-            return parentWire
+            return False
 
 
 class PocketOperationTaskPanel():
@@ -549,57 +642,75 @@ class PocketOperationTaskPanel():
         App.ActiveDocument.recompute()
 
 
-class ViewProviderPocketOperation:
+class ViewProviderPocketOperation(BaseOp.baseOpViewProviderProxy):
     def __init__(self, vobj):
-        vobj.Proxy = self
+        super().__init__(vobj)
         self.Object = vobj.Object
-        vobj.Transparency = 90  # Définit la transparence pour mieux voir le chemin
-
-    def getIcon(self):
-        """Retourne l'icône"""
-
-        if self.Object.desactivated:
-            return BaptUtilities.getIconPath("operation_disabled.svg")
-        return BaptUtilities.getIconPath("Pocket.svg")
+        vobj.Proxy = self
+        # vobj.Transparency = 90  # Définit la transparence pour mieux voir le chemin
 
     def attach(self, vobj):
         self.Object = vobj.Object
 
-        pass
+        return super().attach(vobj)
+
+    def getIcon(self):
+        """Retourne l'icône"""
+
+        if not self.Object.Active:
+            return BaptUtilities.getIconPath("operation_disabled.svg")
+        return BaptUtilities.getIconPath("Pocket.svg")
 
     def setupContextMenu(self, vobj, menu):
-        """Configuration du menu contextuel"""
-        action = menu.addAction("Edit")
-        action.triggered.connect(lambda: self.setEdit(vobj))
+        #     """Configuration du menu contextuel"""
+        super().setupContextMenu(vobj, menu)
 
-        action2 = menu.addAction("Activate" if vobj.Object.desactivated else "Desactivate")
-        action2.triggered.connect(lambda: self.setDesactivate(vobj))
+        action_edit_gcode = QtGui.QAction(Gui.getIcon("Std_TransformManip.svg"), "edit Gcode", menu)
+        QtCore.QObject.connect(action_edit_gcode, QtCore.SIGNAL("triggered()"), lambda: self.EditGcode(vobj))
+        menu.addAction(action_edit_gcode)
+        #     action = menu.addAction("Edit")
+        #     action.triggered.connect(lambda: self.setEdit(vobj))
+
+        #     action2 = menu.addAction("Activate" if vobj.Object.desactivated else "Desactivate")
+        #     action2.triggered.connect(lambda: self.setDesactivate(vobj))
         return True
 
-    def setDesactivate(self, vobj):
-        """Désactive l'objet"""
-        vobj.Object.desactivated = not vobj.Object.desactivated
-        if vobj.Object.desactivated:
-            vobj.Object.ViewObject.Visibility = False
-        else:
-            vobj.Object.ViewObject.Visibility = True
+    def EditGcode(self, vobj):
+        taskPanel = GcodeEditorTaskPanel(vobj.Object)
+        Gui.Control.showDialog(taskPanel)
 
-    def updateData(self, fp, prop):
-        pass
+    # def setDesactivate(self, vobj):
+    #     """Désactive l'objet"""
+    #     vobj.Object.desactivated = not vobj.Object.desactivated
+    #     if vobj.Object.desactivated:
+    #         vobj.Object.ViewObject.Visibility = False
+    #     else:
+    #         vobj.Object.ViewObject.Visibility = True
 
-    def getDisplayModes(self, vobj):
-        return ["Flat Lines", "Shaded", "Wireframe"]
+    # def updateData(self, fp, prop):
+    #     pass
 
-    def getDefaultDisplayMode(self):
-        return "FlatLines"
+    # def getDisplayModes(self, vobj):
+    #     return ["Flat Lines", "Shaded", "Wireframe"]
 
-    def setDisplayMode(self, vobj, mode=None):
-        if mode is None:
-            return self.getDefaultDisplayMode()
-        return mode
+    # def getDefaultDisplayMode(self):
+    #     return "FlatLines"
 
-    def onDelete(self, vobj, subelements):
-        return True
+    # def setDisplayMode(self, vobj, mode=None):
+    #     if mode is None:
+    #         return self.getDefaultDisplayMode()
+    #     return mode
+    # def getDefaultDisplayMode(self):
+    #     return super().getDefaultDisplayMode()
+
+    # def setDisplayMode(self, mode):
+    #     return super().setDisplayMode(mode)
+
+    # def getDisplayModes(self, vobj):
+    #     return super().getDisplayModes(vobj)
+
+    # def onDelete(self, vobj, subelements):
+    #     return True
 
     def __getstate__(self):
         return None

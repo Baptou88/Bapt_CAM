@@ -4,6 +4,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 import PySide.QtGui as QtGui
 import PySide.QtCore as QtCore
+from utils import Log
 
 DEBUG = False
 
@@ -38,21 +39,21 @@ class BQuantitySpinBox(QtCore.QObject):
             else:
                 Gui.ExpressionBinding(self.widget).bind(obj, prop)
         else:
-            App.Console.PrintMessage(f'attr is none\n')
-        # self.widget.setProperty("exprSet", "true")
+            pass
+            # self.widget.setProperty("exprSet", "true")
         # self.widget.style().unpolish(self.widget)
         # self.widget.ensurePolished()
         # Gui.ExpressionBinding(self.recouvrement).bind(self.obj,"Recouvrement")
-        # self.widget.installEventFilter(self)
+        self.widget.installEventFilter(self)
         # self.widget.textChanged.connect(lambda: self.onWidgetValueChanged())
         self.widget.valueChanged.connect(lambda: self.updateValue())
         # except Exception as e:
         #     App.Console.PrintError("BQuantitySpinBox __init__ error: {}\n".format(e))
 
-    # def eventFilter(self, obj, event):
-    #     if event.type() == QtCore.QEvent.Type.FocusIn:
-    #         self.updateWidget()
-    #     return False
+    def eventFilter(self, obj, event):
+        if event.type() == QtCore.QEvent.Type.FocusIn:
+            self.updateWidget()
+        return False
 
     def getProperty(self, obj, prop):
         """getProperty(obj, prop) ... answer obj's property defined by its canonical name."""
@@ -86,10 +87,11 @@ class BQuantitySpinBox(QtCore.QObject):
             if hasattr(attr, "Value"):
                 self.widget.setProperty("unit", attr.getUserPreferred()[2])
                 self.widget.setProperty("rawValue", attr.Value)
+                # Log.baptDebug(f'update Widget {self.obj.Name}.{self.prop} Value={attr.Value} unit={attr.getUserPreferred()[2]}\n')
             else:
                 self.widget.setProperty("rawValue", attr)
-            # self.widget.setProperty("binding","%s.%s" % (self.obj.Name, self.prop))
-            Gui.ExpressionBinding(self.widget).bind(self.obj, self.prop)
+            self.widget.setProperty("binding", "%s.%s" % (self.obj.Name, self.prop))
+            # Gui.ExpressionBinding(self.widget).bind(self.obj, self.prop)
 
         if expr:
             self.widget.setProperty("exprSet", "true")
@@ -105,14 +107,13 @@ class BQuantitySpinBox(QtCore.QObject):
         return self.widget
 
     def updateValue(self):
-        App.Console.PrintMessage(f'update Value\n')
         value = self.widget.property("rawValue")
         o, attr, name = self._getProperty(self.obj, self.prop)
         attrValue = attr.Value if hasattr(attr, "Value") else attr
 
         if DEBUG:
-            App.Console.PrintMessage(f'update Value current {attrValue} new {value}\n')
-            App.Console.PrintMessage(f'update Value o {o} attr {attr} name {name}\n')
+            Log.baptDebug(f'update Value current {attrValue} new {value}\n')
+            Log.baptDebug(f'update Value o {o} attr {attr} name {name}\n')
 
         if attrValue != value:
             self.updateProperty()

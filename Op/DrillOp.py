@@ -179,15 +179,19 @@ class DrillOperation(baseOp):
                 tool_shape = self.createToolShape(pos, obj)
                 tool_shapes.append(tool_shape)
 
-        obj.Gcode = ""
+        strGcode = ""
         if len(positions) > 0:
 
-            obj.Gcode += f"G0 X{positions[0].x} Y{positions[0].y} Z{positions[0].z + obj.SafeHeight.Value} \n"
+            strGcode += f"G0 X{positions[0].x} Y{positions[0].y} Z{positions[0].z + obj.SafeHeight.Value} \n"
             if obj.CycleType == "Simple":
-                obj.Gcode += f"G81 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z}\n"  # FIXME
+                strGcode += f"G81 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z}\n"  # FIXME
 
             elif obj.CycleType == "Peck":
-                obj.Gcode += f"G83 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z} Q{obj.PeckDepth.Value}\n"  # FIXME
+                strGcode += f"G83 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z} Q{obj.PeckDepth.Value}\n"  # FIXME
+
+            elif obj.CycleType == "Tapping":
+                # FIXME verifier la presence d'un outil de taraudage et son pas
+                strGcode += f"G84 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z} \n"
 
             elif obj.CycleType == "Contournage":
                 d = obj.Diam - tool_info.diameter
@@ -202,37 +206,39 @@ class DrillOperation(baseOp):
 
                 prisePasse = (profTotale / nbTour) / 2
 
-                obj.Gcode += f"{obj.Label}:\n"
-                obj.Gcode += f"G91\n"
-                obj.Gcode += f"G1 X{r}\n"
+                strGcode += f"{obj.Label}:\n"
+                strGcode += f"G91\n"
+                strGcode += f"G1 X{r}\n"
                 for _ in range(nbTour):
-                    obj.Gcode += f"G3 X{-d} Y0 Z-{prisePasse} I{-r} J{0}\n"
-                    obj.Gcode += f"G3 X{d} Y0 Z-{prisePasse} I{r} J{0}\n"
+                    strGcode += f"G3 X{-d} Y0 Z-{prisePasse} I{-r} J{0}\n"
+                    strGcode += f"G3 X{d} Y0 Z-{prisePasse} I{r} J{0}\n"
 
-                obj.Gcode += f"G3 X{-d} Y0 I{-r} J{0}\n"
-                obj.Gcode += f"G3 X{d} Y0 I{r} J{0}\n"
-                obj.Gcode += f"G1 X{-r}\n"
-                obj.Gcode += f"G1 Z{profTotale}\n"
-                obj.Gcode += f"G90\n"
-                obj.Gcode += f"{obj.Label}_FIN:\n"
+                strGcode += f"G3 X{-d} Y0 I{-r} J{0}\n"
+                strGcode += f"G3 X{d} Y0 I{r} J{0}\n"
+                strGcode += f"G1 X{-r}\n"
+                strGcode += f"G1 Z{profTotale}\n"
+                strGcode += f"G90\n"
+                strGcode += f"{obj.Label}_FIN:\n"
             else:
                 raise Exception(f"Unsupported Cycle Type : {obj.CycleType}")
 
             for i in range(1, len(positions)):
 
-                obj.Gcode += f"G0 X{positions[i].x} Y{positions[i].y} Z{positions[i].z + obj.SafeHeight.Value} \n"
+                strGcode += f"G0 X{positions[i].x} Y{positions[i].y} Z{positions[i].z + obj.SafeHeight.Value} \n"
                 if obj.CycleType == "Contournage":
-                    obj.Gcode += f"REPEAT {obj.Label} {obj.Label}_FIN P=1\n"
-                    # obj.Gcode += f"G91\n"
-                    # obj.Gcode += f"G1 X{r}\n"
-                    # obj.Gcode += f"G3 X{-d} Z-0.5 I{-r} J{0}\n"
-                    # obj.Gcode += f"G3 X{d} Z-0.5 I{r} J{0}\n"
-                    # obj.Gcode += f"G3 X{-d} Z-0.5 I{-r} J{0}\n"
-                    # obj.Gcode += f"G3 X{d} Z-0.5 I{r} J{0}\n"
-                    # obj.Gcode += f"G1 X{-r}\n"
-                    # obj.Gcode += f"G1 Z{2}\n"
-                    # obj.Gcode += f"G90\n"
-            obj.Gcode += "G80\n"
+                    strGcode += f"REPEAT {obj.Label} {obj.Label}_FIN P=1\n"
+                    # strGcode += f"G91\n"
+                    # strGcode += f"G1 X{r}\n"
+                    # strGcode += f"G3 X{-d} Z-0.5 I{-r} J{0}\n"
+                    # strGcode += f"G3 X{d} Z-0.5 I{r} J{0}\n"
+                    # strGcode += f"G3 X{-d} Z-0.5 I{-r} J{0}\n"
+                    # strGcode += f"G3 X{d} Z-0.5 I{r} J{0}\n"
+                    # strGcode += f"G1 X{-r}\n"
+                    # strGcode += f"G1 Z{2}\n"
+                    # strGcode += f"G90\n"
+            strGcode += "G80\n"
+
+        obj.Gcode = strGcode
 
         # # Créer un fil qui relie tous les trous
         # wires = []

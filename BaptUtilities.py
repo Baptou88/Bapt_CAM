@@ -10,7 +10,7 @@ def get_module_path():
     the module is installed in the app's module directory or the user's app data folder.
     (The second overrides the first.)
     '''
-    return os.path.dirname(__file__)
+    return os.path.dirname(__file__).rstrip("./")
 
 
 def getResourcesPath():

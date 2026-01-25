@@ -86,11 +86,6 @@ class CreateContourCommand:
     def IsActive(self):
         """La commande est active si une geometrie de contour est sélectionné"""
         sel = Gui.Selection.getSelection()
-        # debug
-        # if sel:
-        # App.Console.PrintMessage(f"Sélection: {sel[0].Name}\n")
-        # if hasattr(sel[0], "Proxy"):
-        # App.Console.PrintMessage(f"Type de Proxy: {sel[0].Proxy.Type}\n")
         if not sel:
             return False
         # return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
@@ -184,19 +179,21 @@ class CreateDrillGeometryCommand:
 
     def IsActive(self):
         """La commande est active si un projet CAM est sélectionné"""
-        sel = Gui.Selection.getSelection()
-        if not sel:
+        doc = App.ActiveDocument
+        if doc is None:
             return False
-        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject"
+        cam_project = BaptUtilities.getActiveCamProject()
+
+        return cam_project is not None
 
     def Activated(self):
         """Créer une nouvelle géométrie de perçage"""
 
         doc = App.ActiveDocument
-        doc.openTransaction('Create Drill Geometry')
-
         # Obtenir le projet CAM sélectionné
-        project = Gui.Selection.getSelection()[0]
+        project = BaptUtilities.getActiveCamProject()
+
+        doc.openTransaction('Create Drill Geometry')
 
         # Créer l'objet avec le type DocumentObjectGroupPython pour pouvoir contenir des enfants
         # obj = doc.addObject("App::DocumentObjectGroupPython", "DrillGeometry")
@@ -204,7 +201,7 @@ class CreateDrillGeometryCommand:
         obj.addExtension("App::GroupExtensionPython")
 
         # Ajouter la fonctionnalité
-        drill = BaptDrillGeometry.DrillGeometry(obj)
+        BaptDrillGeometry.DrillGeometry(obj)
 
         # Ajouter le ViewProvider
         if obj.ViewObject:
@@ -221,8 +218,6 @@ class CreateDrillGeometryCommand:
         if obj.ViewObject:
             obj.ViewObject.Proxy.setEdit(obj.ViewObject)
 
-        doc.recompute()
-
         doc.commitTransaction()
 
 
@@ -237,15 +232,12 @@ class CreateSurfacageCommand:
     def IsActive(self):
         """La commande est active si un document est ouvert"""
 
-        sel = Gui.Selection.getSelection()
-        if sel:
-            if hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject":
-                return True
-        obj = Gui.activeView().getActiveObject("camproject")
+        doc = App.ActiveDocument
+        if doc is None:
+            return False
+        cam_project = BaptUtilities.getActiveCamProject()
 
-        if obj:
-            return True
-        return False
+        return cam_project is not None
 
     def Activated(self):
         """Créer un nouveau surfacage"""
@@ -255,30 +247,15 @@ class CreateSurfacageCommand:
         if doc is None:
             doc = App.newDocument()
 
+        project = BaptUtilities.getActiveCamProject()
+
         doc.openTransaction('Create Surfacage')
 
         # Créer l'objet surfacage
         obj = doc.addObject("Part::FeaturePython", "Surfacage")
 
-        o = []
-        project = None
-        activeProject = Gui.activeView().getActiveObject("camproject")
-        if Gui.Selection.getSelection():
-            selecteItem = Gui.Selection.getSelection()[0]
-            if selecteItem and hasattr(selecteItem, "Proxy") and selecteItem.Proxy.Type == "CamProject":
-                o.append(selecteItem)
-        if activeProject and hasattr(activeProject, "Proxy") and activeProject.Proxy.Type == "CamProject":
-            o.append(activeProject)
-        if len(o) == 0:
-            App.Console.PrintError("Aucun projet CAM actif ou sélectionné.\n")
-            doc.commitTransaction()
-            return
-
-        project = o[0]
-
         # Ajouter la fonctionnalité
         OpSurfacage.Surfacage(obj)
-        App.Console.PrintMessage(f"Création du surfacage dans le projet {project.Label}\n")
         model = project.Proxy.getModel(project)
         if model is not None:
             obj.Depth = model.Shape.BoundBox.ZMax
@@ -295,15 +272,11 @@ class CreateSurfacageCommand:
 
         # Recomputer
         doc.recompute()
+        doc.commitTransaction()
 
         # Ouvrir l'éditeur
         if obj.ViewObject:
             obj.ViewObject.Proxy.setEdit(obj.ViewObject)
-
-        # Message de confirmation
-        App.Console.PrintMessage("Surfacage créé avec succès!\n")
-
-        doc.commitTransaction()
 
 
 class CreateCamProjectCommand:
@@ -342,6 +315,7 @@ class CreateCamProjectCommand:
 
         # Recomputer
         doc.recompute()
+        doc.commitTransaction()
 
         # Ouvrir l'éditeur
         if obj.ViewObject and App.GuiUp:
@@ -349,8 +323,6 @@ class CreateCamProjectCommand:
 
         # Message de confirmation
         App.Console.PrintMessage("Projet CAM créé avec succès!\n")
-
-        doc.commitTransaction()
 
 
 class CreateContourGeometryCommand:
@@ -363,53 +335,32 @@ class CreateContourGeometryCommand:
 
     def IsActive(self):
         """La commande est active si un projet CAM est sélectionné"""
-        sel = Gui.Selection.getSelection()
-        if sel:
-            if hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject":
-                return True
-        obj = Gui.activeView().getActiveObject("camproject")
+        doc = App.ActiveDocument
+        if doc is None:
+            return False
+        cam_project = BaptUtilities.getActiveCamProject()
 
-        if obj:
-            return True
-        return False
+        return cam_project is not None
 
     def Activated(self):
         """Créer une nouvelle géométrie de contour"""
 
-        App.ActiveDocument.openTransaction('Create Contour Geometry')
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Contour Geometry')
 
         # Obtenir le projet CAM sélectionné ou actif
-        o = []
-        project = None
-        activeProject = Gui.activeView().getActiveObject("camproject")
-        if Gui.Selection.getSelection():
-            selecteItem = Gui.Selection.getSelection()[0]
-            if selecteItem and hasattr(selecteItem, "Proxy") and selecteItem.Proxy.Type == "CamProject":
-                o.append(selecteItem)
-        if activeProject and hasattr(activeProject, "Proxy") and activeProject.Proxy.Type == "CamProject":
-            o.append(activeProject)
-        if len(o) == 0:
-            App.Console.PrintError("Aucun projet CAM actif ou sélectionné.\n")
+        project = BaptUtilities.getActiveCamProject()
 
-            return
-
-        project = o[0]
-
-        # Créer l'objet avec le bon type pour avoir une Shape
-        obj = App.ActiveDocument.addObject("Part::FeaturePython", "ContourGeometry")
+        obj = doc.addObject("Part::FeaturePython", "ContourGeometry")
         # obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "ContourGeometry")
         obj.addExtension("App::GroupExtensionPython")
 
         # Ajouter la fonctionnalité
-        contour = BaptContourGeometry.ContourGeometry(obj)
+        BaptContourGeometry.ContourGeometry(obj)
 
         # Ajouter le ViewProvider
         if obj.ViewObject:
             BaptContourGeometry.ViewProviderContourGeometry(obj.ViewObject)
-            obj.ViewObject.LineColor = (1.0, 0.0, 0.0)  # Rouge
-            obj.ViewObject.PointColor = (1.0, 0.0, 0.0)  # Rouge
-            obj.ViewObject.LineWidth = 4.0  # Largeur de ligne plus grande
-            obj.ViewObject.PointSize = 6.0  # Taille des points plus grande
 
         # Ajouter au groupe Geometry
         geometry_group = project.Proxy.getGeometryGroup(project)
@@ -418,18 +369,12 @@ class CreateContourGeometryCommand:
         # Message de confirmation
         App.Console.PrintMessage("Géométrie de contour créée.\n")
 
-        App.ActiveDocument.recompute()
-
-        # Ouvrir le panneau de tâches pour l'édition
-        # Gui.Selection.clearSelection()
-        # Gui.Selection.addSelection(obj)
-        # Gui.ActiveDocument.setEdit(obj.Name)
+        doc.commitTransaction()
+        doc.recompute()
 
         # Ouvrir l'éditeur
         if obj.ViewObject:
             obj.ViewObject.Proxy.setEdit(obj.ViewObject)
-
-        App.ActiveDocument.commitTransaction()
 
 
 class CreateContourEditableGeometryCommand:
@@ -449,11 +394,15 @@ class CreateContourEditableGeometryCommand:
 
     def Activated(self):
         """Créer une nouvelle géométrie de contour"""
-
-        App.ActiveDocument.openTransaction('Create Contour Geometry')
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Contour Geometry')
 
         # Obtenir le projet CAM sélectionné
         project = Gui.Selection.getSelection()[0]
+        if project is None:
+            App.Console.PrintError("Aucun projet CAM actif. Veuillez sélectionner ou activer un projet CAM.\n")
+            doc.abortTransaction()
+            return
 
         # Créer l'objet avec le bon type pour avoir une Shape
         obj = App.ActiveDocument.addObject("Part::FeaturePython", "ContourEditableGeometry")
@@ -717,17 +666,23 @@ class TestPathCommand:
                 'ToolTip': "Tester Path"}
 
     def IsActive(self):
-        sel = Gui.Selection.getSelection()
-        return sel and hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject"
+        doc = App.ActiveDocument
+        if doc is None:
+            return False
+        cam_project = BaptUtilities.getActiveCamProject()
+
+        return cam_project is not None
 
     def Activated(self):
         doc = App.ActiveDocument
+        project = BaptUtilities.getActiveCamProject()
+        if project is None:
+            App.Console.PrintError("Aucun projet CAM actif. Veuillez sélectionner ou activer un projet CAM.\n")
+            return
         doc.openTransaction('Test Path')
-        project = Gui.Selection.getSelection()[0]
+
         obj = doc.addObject("App::FeaturePython", "Test")
 
-        import BaptPath
-        App.Console.PrintMessage("Testing BaptPath.path...\n")
         PathOp.pathOp(obj)
 
         # obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
@@ -744,6 +699,7 @@ class TestPathCommand:
         # vp.animator = BaptPath.GcodeAnimator(vp)
         # vp.animator.load_paths(include_rapid=True)
         # vp.animator.start(speed_mm_s=20)
+        doc.commitTransaction()
 
         doc.recompute()
 

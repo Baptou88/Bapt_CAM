@@ -56,7 +56,24 @@ class BasePostPro:
 
         safe_z = getattr(obj, 'SafeHeight').Value
         gcode_lines = []
+        gcode_lines.append(f"G81 R{safe_z} Z{obj.FinalDepth.Value} F{obj.FeedRate.Value}")
         for pt in points:
             gcode_lines.append(f"G0 X{pt.x} Y{pt.y} Z{safe_z}")
-            gcode_lines.append(f"G80")
+        gcode_lines.append(f"G80")
+        return '\n'.join(gcode_lines)
+
+    def G84(self, obj):
+        doc = App.ActiveDocument
+        geom = doc.getObject(obj.DrillGeometryName)
+        if geom and hasattr(geom, 'DrillPositions'):
+            points = geom.DrillPositions
+
+        safe_z = getattr(obj, 'SafeHeight').Value
+        spindle = getattr(obj, 'SpindleSpeed', None)
+        gcode_lines = []
+        gcode_lines.append(f"S{spindle} M3")
+        gcode_lines.append(f"G84 R{safe_z} Z{obj.FinalDepth.Value} F{obj.FeedRate.Value}")
+        for pt in points:
+            gcode_lines.append(f"G0 X{pt.x} Y{pt.y} Z{safe_z}")
+        gcode_lines.append(f"G80")
         return '\n'.join(gcode_lines)

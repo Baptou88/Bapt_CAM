@@ -130,13 +130,12 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
                     gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
                     gcode_lines.append(f"G83 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} Q{peck:.3f} F{feed}")
                     gcode_lines.append(f"G80")
+
             elif cycle == "Tapping":
                 commentaire = Postpro.writeComment(f"Cycle: G84 - Taraudage")
                 gcode_lines.append(commentaire)
-                for pt in points:
-                    gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
-                    gcode_lines.append(f"G84 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
-                    gcode_lines.append(f"G80")
+                gcode_lines.append(Postpro.G84(obj))
+
             elif cycle == "Boring":
                 commentaire = Postpro.writeComment(f"Cycle: G85 - Alésage")
                 gcode_lines.append(commentaire)

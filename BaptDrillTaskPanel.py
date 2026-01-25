@@ -9,7 +9,7 @@ class DrillGeometryTaskPanel:
     def __init__(self, obj):
         # Garder une référence à l'objet
         self.obj = obj
-
+        App.ActiveDocument.openTransaction("Edit Drill Geometry")
         # Créer l'interface utilisateur
         self.ui1 = QtGui.QWidget()
         self.ui1.setWindowTitle("Edit Drill Geometry")
@@ -258,7 +258,7 @@ class DrillGeometryTaskPanel:
             return False
 
         self.obj.SelectedPosition = -1
-
+        App.ActiveDocument.commitTransaction()
         # Fermer la tâche
         Gui.Control.closeDialog()
         return True
@@ -267,7 +267,7 @@ class DrillGeometryTaskPanel:
         """Appelé quand l'utilisateur clique sur Cancel"""
 
         self.obj.SelectedPosition = -1
-
+        App.ActiveDocument.abortTransaction()
         Gui.Control.closeDialog()
         return False
 

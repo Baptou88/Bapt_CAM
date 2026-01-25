@@ -1,3 +1,4 @@
+import enum
 from BaptPath import GcodeEditorTaskPanel
 from Op.BaseOp import baseOpViewProviderProxy
 import BaptUtilities
@@ -12,8 +13,19 @@ import PySide.QtCore as QtCore
 import math
 import sys
 
-compensation = ["Ordinateur", "Machine", "Ordinateur + G41/G42", "Aucune"]
-approach_types = ["Tangentielle", "Perpendiculaire", "Hélicoïdale"]
+# compensation = ["Ordinateur", "Machine", "Ordinateur + G41/G42", "Aucune"]
+
+
+class compensation(enum.Enum):
+    Ordinateur = 0
+    Machine = 1
+    Ordinateur_G41_G42 = 2
+    Aucune = 3
+
+    def __repr__(self): return f"{self.name}"
+
+
+approach_types = ["Tangentielle", "Perpendiculaire", "Perp+Arc", "Hélicoïdale"]
 retract_types = ["Tangentielle", "Perpendiculaire", "Verticale"]
 
 
@@ -66,8 +78,8 @@ class ContournageCycle(baseOp):
 
         if not hasattr(obj, "Compensation"):
             obj.addProperty("App::PropertyEnumeration", "Compensation", "Toolpath", "Type de compensation d'outil")
-            obj.Compensation = compensation
-            obj.Compensation = compensation[0]
+            obj.Compensation = list(compensation.__members__.keys())
+            obj.Compensation = compensation.Ordinateur.name
 
         if not hasattr(obj, "SurepAxiale"):
             obj.addProperty("App::PropertyFloat", "SurepAxiale", "Toolpath", "Surépaisseur axiale")
@@ -101,7 +113,7 @@ class ContournageCycle(baseOp):
 
         obj.Shape = Part.Shape()  # Initialize shape
         all_pass_shapes_collected = []  # To collect all edges/wires from all passes
-        obj.Gcode = ""
+        strGcode = ""
 
         passes_z_values = self.calculatePasse(obj)
 
@@ -183,13 +195,13 @@ class ContournageCycle(baseOp):
 
                     offset_shape_result = wire_at_pass_z.makeOffset2D(actual_offset_value_surep, openResult=not is_contour_closed)  # join=0, fill=False,
 
-                    if obj.Compensation == "Machine":
+                    if obj.Compensation == compensation.Machine.name:
                         offset_shape_result = offset_shape_result.Wires[0].makeOffset2D(-actual_offset_value, openResult=not is_contour_closed)  # join=0, fill=False,
 
                     if offset_shape_result.Wires:
                         offset_toolpath_wire = offset_shape_result.Wires[0]
                         offset_toolpath_edges = offset_toolpath_wire.Edges
-                        if obj.Compensation == "Machine":
+                        if obj.Compensation == compensation.Machine.name:
                             # offset_shape_result = offset_shape_result.reversed()
                             offset_toolpath_edges.reverse()
 
@@ -248,44 +260,52 @@ class ContournageCycle(baseOp):
             App.Console.PrintMessage(f"first point: {core_toolpath_start_pt}, last point: {core_toolpath_end_pt}\n")
             # start_pt and end_pt are now core_toolpath_start_pt and core_toolpath_end_pt
 
-            obj.Gcode += f"(Pass at Z={pass_z})\n"
+            strGcode += f"(Pass at Z={pass_z})\n"
             # Approach
 
             tangent_start_vec = first_toolpath_edge.tangentAt(first_toolpath_edge.FirstParameter)
-            if tangent_start_vec.Length > 1e-6:
-                tangent_start = tangent_start_vec.normalize()
-                if approach_type == "Tangentielle":
-                    if is_offset_inward:
-                        approachPoint = core_toolpath_start_pt - tangent_start.multiply(approach_length)
-                    else:
-                        approachPoint = core_toolpath_start_pt + tangent_start.multiply(approach_length)
-                    pass_approach_edges.append(Part.makeLine(approachPoint, core_toolpath_start_pt))
-                    # obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{rapid_traverse_z:.3f}\n"
-                    # obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{pass_z + 2:.3f}\n"
-                    # obj.Gcode += f"G1 Z{pass_z:.3f}\n"
-                    # obj.Gcode += f"G1 X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f}\n"
-                elif approach_type == "Perpendiculaire":
-                    if is_offset_inward:
-                        approachPoint = core_toolpath_start_pt + App.Vector(-tangent_start.y, tangent_start.x, 0).normalize().multiply(approach_length)
-                    else:
-                        approachPoint = core_toolpath_start_pt - App.Vector(-tangent_start.y, tangent_start.x, 0).normalize().multiply(approach_length)
-                    perp_start = App.Vector(-tangent_start.y, tangent_start.x, 0).normalize()  # Assuming XY plane
-                    pass_approach_edges.append(Part.makeLine(core_toolpath_start_pt + perp_start.multiply(approach_length), core_toolpath_start_pt))
-                elif approach_type == "Perp+Arc":
-                    pass  # TODO: Implement Perp+Arc approach
-                obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{rapid_traverse_z:.3f}\n"
-                obj.Gcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{pass_z + 2:.3f}\n"
-                obj.Gcode += f"G1 Z{pass_z:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
-                comp = "G40"
-                if obj.Compensation in ["Machine", "Ordinateur + G41/G42"]:
-                    if is_offset_inward:
-                        comp = "G41"
-                    else:
-                        comp = "G42"
-                if p == 0:
-                    obj.Gcode += f"{obj.Label}_start:\n"
+            if tangent_start_vec.Length < 1e-6:
+                raise ValueError("Tangent length at start is too small.")
 
-                obj.Gcode += f"G1 {comp} X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
+            tangent_start = tangent_start_vec.normalize()
+            if approach_type == "Tangentielle":
+                if is_offset_inward:
+                    approachPoint = core_toolpath_start_pt - tangent_start.multiply(approach_length)
+                else:
+                    approachPoint = core_toolpath_start_pt + tangent_start.multiply(approach_length)
+                pass_approach_edges.append(Part.makeLine(approachPoint, core_toolpath_start_pt))
+
+            elif approach_type in ["Perpendiculaire", "Perp+Arc"]:
+                if is_offset_inward:
+                    approachPoint = core_toolpath_start_pt + App.Vector(-tangent_start.y, tangent_start.x, 0).normalize().multiply(approach_length)
+                else:
+                    approachPoint = core_toolpath_start_pt - App.Vector(-tangent_start.y, tangent_start.x, 0).normalize().multiply(approach_length)
+                perp_start = App.Vector(-tangent_start.y, tangent_start.x, 0).normalize()  # Assuming XY plane
+                pass_approach_edges.append(Part.makeLine(core_toolpath_start_pt + perp_start.multiply(approach_length), core_toolpath_start_pt))
+            elif approach_type == "Perp+Arc":
+                pass  # TODO: Implement Perp+Arc approach
+            strGcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{rapid_traverse_z:.3f}\n"
+            strGcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{pass_z + 2:.3f}\n"
+            strGcode += f"G1 Z{pass_z:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
+            comp = "G40"
+            if obj.Compensation in [compensation.Machine.name, compensation.Ordinateur_G41_G42.name]:
+                if is_offset_inward:
+                    comp = "G41"
+                else:
+                    comp = "G42"
+            if p == 0:
+                strGcode += f"{obj.Label}_start:\n"
+            if approach_type == "Perp+Arc":
+                r = 1
+                a = approach_length.Value - r
+                angle = math.asin(r/a)
+                D = App.Vector(((a*a-r*r)/a)*math.cos(angle), -((r/a)*math.sqrt(a*a-r*r))*math.sin(angle), 0)
+                strGcode += f"G1 X{approachPoint.x + D.x:.3f} Y{approachPoint.y + D.y:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
+                strGcode += f"G3 X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f} R{r:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
+                pass  # TODO: Implement Perp+Arc G-code
+            else:
+
+                strGcode += f"G1 {comp} X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
             # TODO: Add Helicoidal approach if needed, ensuring Z movement relative to pass_z
 
             current_edge = None
@@ -326,7 +346,7 @@ class ContournageCycle(baseOp):
                     else:
                         pass
 
-                obj.Gcode += Contour.edgeToGcode(edge, bonSens=bon_sens, current_z=pass_z, rapid=False, is_offset_inward=is_offset_inward)
+                strGcode += Contour.edgeToGcode(edge, bonSens=bon_sens, current_z=pass_z, rapid=False, is_offset_inward=is_offset_inward)
 
             # Retract
 
@@ -348,12 +368,12 @@ class ContournageCycle(baseOp):
                         perp_end = App.Vector(-tangent_end.y, tangent_end.x, 0).normalize()
                         SortiePt = core_toolpath_end_pt - perp_end.multiply(approach_length)
                     pass_retract_edges.append(Part.makeLine(core_toolpath_end_pt, SortiePt))
-                obj.Gcode += f"G1 G40 X{SortiePt.x:.3f} Y{SortiePt.y:.3f}\n"
+                strGcode += f"G1 G40 X{SortiePt.x:.3f} Y{SortiePt.y:.3f}\n"
 
-            obj.Gcode += f"G0 Z{rapid_traverse_z:.3f}\n"
+            strGcode += f"G0 Z{rapid_traverse_z:.3f}\n"
 
             if p == 0:
-                obj.Gcode += f"{obj.Label}_end:\n"
+                strGcode += f"{obj.Label}_end:\n"
 
             # Determine the actual start point of this pass's full trajectory (including approach)
             current_pass_trajectory_start_point = core_toolpath_start_pt  # Default to core path start
@@ -394,6 +414,8 @@ class ContournageCycle(baseOp):
         else:
             App.Console.PrintWarning("No toolpath segments generated for any pass.\n")
             obj.Shape = Part.Shape()
+
+        obj.Gcode = strGcode
 
     def reorder_wire(self, shape):
         """

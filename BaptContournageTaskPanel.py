@@ -5,7 +5,7 @@ from Op import OpContournage
 from PySide import QtCore, QtGui
 from Tool.ToolTaskPannel import ToolTaskPanel
 from Gui.cuttingConditionTaskPanel import cuttingConditionTaskPanel
-from utils import BQuantitySpinBox
+from utils import BQuantitySpinBox, Log
 
 
 class ContournageTaskPanel:
@@ -34,7 +34,7 @@ class ContournageTaskPanel:
         # self.toolDiameter.setRange(0.1, 100)
         # self.toolDiameter.setDecimals(2)
         # self.toolDiameter.setSuffix(" mm")
-        self.toolDiameter.setValue(obj.ToolDiameter)
+        # self.toolDiameter.setValue(obj.ToolDiameter)
         toolLayout.addRow("Diamètre de l'outil:", self.toolDiameter.getWidget())
 
         # Longueur d'approche/sortie personnalisée
@@ -68,7 +68,7 @@ class ContournageTaskPanel:
 
         # Compensation de l'outil
         self.compensationTool = QtGui.QComboBox()
-        self.compensationTool.addItems(OpContournage.compensation)
+        self.compensationTool.addItems(list(comp.name for comp in OpContournage.compensation))
         if hasattr(obj, "Compensation"):
             idx = self.compensationTool.findText(obj.Compensation)
             if idx >= 0:
@@ -98,12 +98,14 @@ class ContournageTaskPanel:
         cutLayout.addRow("Profondeur de coupe:", self.cutDepth)
 
         # Profondeur par passe
-        self.stepDown = QtGui.QDoubleSpinBox()
-        self.stepDown.setRange(0.1, 100)
-        self.stepDown.setDecimals(2)
-        self.stepDown.setSuffix(" mm")
-        self.stepDown.setValue(obj.StepDown)
-        cutLayout.addRow("Profondeur par passe:", self.stepDown)
+        # self.stepDown = QtGui.QDoubleSpinBox()
+        # self.stepDown.setRange(0.1, 100)
+        # self.stepDown.setDecimals(2)
+        # self.stepDown.setSuffix(" mm")
+        # self.stepDown.setValue(obj.StepDown)
+        self.stepDown = BQuantitySpinBox.BQuantitySpinBox(obj, "StepDown")
+
+        cutLayout.addRow("Profondeur par passe:", self.stepDown.getWidget())
 
         cutGroup.setLayout(cutLayout)
         layout.addWidget(cutGroup)
@@ -176,7 +178,7 @@ class ContournageTaskPanel:
         # Connecter les signaux
         # self.toolDiameter.valueChanged.connect(self.updateContournage)
         self.cutDepth.valueChanged.connect(self.updateContournage)
-        self.stepDown.valueChanged.connect(self.updateContournage)
+        # self.stepDown.valueChanged.connect(self.updateContournage)
         self.direction.currentTextChanged.connect(self.updateContournage)
         self.showToolPath.stateChanged.connect(self.updateDisplay)
         self.pathWidth.valueChanged.connect(self.updateDisplay)
@@ -210,7 +212,7 @@ class ContournageTaskPanel:
         """Met à jour les paramètres de contournage"""
         # self.obj.ToolDiameter = self.toolDiameter.value()
         self.obj.CutDepth = self.cutDepth.value()
-        self.obj.StepDown = self.stepDown.value()
+        # self.obj.StepDown = self.stepDown.value()
         self.obj.Direction = self.direction.currentText()
         if hasattr(self.obj, "ApproachRetractLength"):
             self.obj.ApproachRetractLength = self.approachRetractLength.value()

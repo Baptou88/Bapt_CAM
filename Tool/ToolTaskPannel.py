@@ -6,6 +6,7 @@ import FreeCADGui as Gui
 from PySide import QtCore, QtGui
 from Tool import ToolSelectorDialog, tool_utils
 
+from utils import Log
 import utils.BQuantitySpinBox as BQantitySpinBox
 
 
@@ -48,13 +49,13 @@ class ToolTaskPanel:
 
         # champ d'edition Speed
         self.speed = QtGui.QDoubleSpinBox()
-        self.speed = BQantitySpinBox.BQuantitySpinBox(self.obj.Tool, "Speed")
+        self.speed = BQantitySpinBox.BQuantitySpinBox(self.obj, "Tool.Speed")
         # self.speed.setRange(0, 10000)
         self.toolLayout.addRow("Vitesse de coupe (RPM):", self.speed.getWidget())
 
         # champ d'edition Feed
         # self.feed = QtGui.QDoubleSpinBox()
-        self.feed = BQantitySpinBox.BQuantitySpinBox(self.obj.Tool, "Feed")
+        self.feed = BQantitySpinBox.BQuantitySpinBox(self.obj, "Tool.Feed")
         # self.feed.setRange(0, 10000)
         self.toolLayout.addRow("Vitesse d'avance:", self.feed.getWidget())
 
@@ -77,44 +78,46 @@ class ToolTaskPanel:
             self.feed.setValue(self.obj.Tool.Feed)
 
     def selectTool(self):
-        App.Console.PrintMessage(f'label\n')
-        # QtGui.QMessageBox.information(self.form, "Info", "Bouton de sélection d'outil cliqué!")
-
         """Ouvre le dialogue de sélection d'outil"""
-        if not hasattr(self.obj, "Tool") or self.obj.Tool is None:
-            current_tool = None
-        else:
-            current_tool = self.obj.Tool
+
+        current_tool = getattr(self.obj, "Tool", None)
 
         dialog = ToolSelectorDialog.ToolSelectorDialog(current_tool.Id if current_tool else -1, self.form)
         result = dialog.exec_()
         sel = dialog.selected_tool
-        if result == QtGui.QDialog.Accepted and sel is not None:
-            # Récupérer le projet CAM actif
-            p = find_cam_project(self.obj)
-            # p = Gui.activeView().getActiveObject("camproject")  # FIXME
-            if p:
-                groupTools = p.Proxy.getToolsGroup()
-                # tool = App.ActiveDocument.getObject(f"T{sel.id} ({sel.name})")
-                if current_tool is None or current_tool.Id != sel.id:
-                    new_tool = tool_utils.create_tool_obj(sel.id, sel.name, sel.diameter, sel.speed, sel.feed)
-                    groupTools.addObject(new_tool)
-                    self.obj.Tool = new_tool
+        if result == QtGui.QDialog.Rejected and sel is None:
+            return
+        # Récupérer le projet CAM actif
+        p = find_cam_project(self.obj)
+        if not p:
+            return
 
-                    if current_tool is not None:
-                        # Supprimer l'ancien outil
-                        groupTools.removeObject(current_tool)
-                        App.ActiveDocument.removeObject(current_tool.Label)
+        groupTools = p.Proxy.getToolsGroup()
 
-                    # TODO Verifier si l'outil n'est pas déja utilisé par un autre objet avant de le supprimer
-                new_tool.Height = sel.length
-                self.idTool.setValue(sel.id)
-                self.nameTool.setText(sel.name)
-                self.diameter.setValue(sel.diameter)
-                self.speed.setValue(sel.speed)
-                self.feed.setValue(sel.feed)
+        if current_tool is None or current_tool.Id != sel.id:
+            new_tool = tool_utils.create_tool_obj(sel.id, sel.name, sel.diameter, sel.speed, sel.feed)
+            groupTools.addObject(new_tool)
+            new_tool.recompute()
+            self.obj.Tool = new_tool
 
-                self.initToolComboBox()
+            if current_tool is not None:
+                # Supprimer l'ancien outil s'il n'est utilisé par aucun autre objet
+                if len(current_tool.InList) <= 1:
+                    App.Console.PrintMessage("L'outil n'est utilisé par plusieurs objets, il sera supprimé.\n")
+                    groupTools.removeObject(current_tool)
+                    App.ActiveDocument.removeObject(current_tool.Label)
+
+        App.Console.PrintMessage(f'label: {self.obj.Tool.Label}\n')
+        new_tool.Height = sel.length
+        self.idTool.setValue(sel.id)
+        self.nameTool.setText(sel.name)
+        self.diameter.setValue(sel.diameter)
+        self.speed.updateWidget()
+        self.feed.updateWidget()
+
+        self.obj.recompute()
+
+        self.initToolComboBox()
 
     def initValues(self):
 
@@ -132,18 +135,20 @@ class ToolTaskPanel:
     def initToolComboBox(self):
         '''populate tool combo box'''
         p = find_cam_project(self.obj)
-        if p:
-            groupTools = p.Proxy.getToolsGroup()
-            self.toolComboBox.clear()
-            for t in groupTools.Group:
-                self.toolComboBox.addItem(t.Label)
-            if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
-                idx = self.toolComboBox.findText(self.obj.Tool.Label)
-                # if idx >= 0:
-                self.toolComboBox.setCurrentIndex(idx)
+        if not p:
+            return
 
-            else:
-                self.toolComboBox.setCurrentIndex(-1)
+        groupTools = p.Proxy.getToolsGroup()
+        self.toolComboBox.clear()
+        for t in groupTools.Group:
+            self.toolComboBox.addItem(t.Label)
+        if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
+            idx = self.toolComboBox.findText(self.obj.Tool.Label)
+            Log.baptDebug(f'Finding tool {self.obj.Tool.Label} in tool group idx {idx}\n')
+            if idx >= 0:
+                self.toolComboBox.setCurrentIndex(idx)
+        else:
+            self.toolComboBox.setCurrentIndex(-1)
 
     def initListeners(self):
         self.selectToolButton.clicked.connect(lambda: self.selectTool())
