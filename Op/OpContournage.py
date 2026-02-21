@@ -87,7 +87,7 @@ class ContournageCycle(baseOp):
 
         if not hasattr(obj, "SurepRadiale"):
             obj.addProperty("App::PropertyFloat", "SurepRadiale", "Toolpath", "Surépaisseur radiale")
-            obj.SurepAxiale = 0.0
+            obj.SurepRadiale = 0.0
 
         super().installToolProp(obj)
 

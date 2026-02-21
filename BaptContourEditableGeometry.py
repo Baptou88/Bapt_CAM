@@ -1,3 +1,4 @@
+import sys
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
@@ -24,8 +25,8 @@ class ContourEditableGeometry:
             obj.DepthMode = ["Absolu", "Relatif"]
             obj.DepthMode = "Absolu"
 
-        obj.Proxy = self
         self.createSketch(obj)
+        obj.Proxy = self
 
     def createSketch(self, obj):
         """Crée un Sketch si besoin"""
@@ -34,39 +35,44 @@ class ContourEditableGeometry:
             obj.Sketch = sketch
             # Optionnel : placer le sketch dans le même groupe que la géométrie
             if hasattr(obj, "Group"):
-                obj.Group.append(sketch)
+
+                obj.addObject(sketch)
 
     def execute(self, obj):
         """Met à jour la forme à partir du Sketch"""
-        if obj.Sketch:
-            try:
-                shape = obj.Sketch.Shape
+        if not obj.Sketch and len(obj.Sketch.Shape.Edges) <= 0:
+            obj.Shape = Part.Shape()
+            return
+        try:
+            shape = obj.Sketch.Shape
 
-                adjusted_edges_depth = []
+            adjusted_edges_depth = []
 
-                for i, edge in enumerate(shape.Edges):
-                    if obj.DepthMode == "Relatif":
-                        z_offset = obj.depth
-                        translation = App.Vector(0, 0, z_offset)
-                    else:  # Absolu
-                        z_value = obj.depth
-                        translation = App.Vector(0, 0, z_value - edge.Vertexes[0].Z)
+            for i, edge in enumerate(shape.Edges):
+                if obj.DepthMode == "Relatif":
+                    z_offset = obj.depth
+                    translation = App.Vector(0, 0, z_offset)
+                else:  # Absolu
+                    z_value = obj.depth
+                    translation = App.Vector(0, 0, z_value - edge.Vertexes[0].Z)
 
-                    moved_edge = edge.translate(translation)
-                    adjusted_edges_depth.append(moved_edge)
+                moved_edge = edge.translate(translation)
+                adjusted_edges_depth.append(moved_edge)
 
-                wire_z_final = Part.Wire(adjusted_edges_depth)
-                # shape = Part.Shape([wire_z_final])
-                shapes = [shape, wire_z_final]
-                coumpound = Part.Compound(shapes)
-                obj.Shape = coumpound
-            except Exception as e:
-                App.Console.PrintError(f"Erreur lors de la récupération du shape du sketch : {e}\n")
-        else:
+            wire_z_final = Part.Wire(adjusted_edges_depth)
+            # shape = Part.Shape([wire_z_final])
+            shapes = [shape, wire_z_final]
+            coumpound = Part.Compound(shapes)
+            obj.Shape = coumpound
+        except Exception as e:
+            App.Console.PrintError(f"Erreur lors de la récupération du shape du sketch : {e}\n")
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
             obj.Shape = Part.Shape()
 
     def onChanged(self, obj, prop):
         """Synchronise la forme si le Sketch change"""
+        return
         if prop in ["Sketch", "depth", "Direction", "DepthMode"]:
             self.execute(obj)
 

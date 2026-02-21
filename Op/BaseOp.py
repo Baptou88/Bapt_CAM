@@ -105,7 +105,7 @@ class baseOpViewProviderProxy:
 
     def onChanged(self, vp, prop):
         ''' Print the name of the property that has changed '''
-        Log.baptDebug("Change property: " + str(prop))
+        # Log.baptDebug("Change property: " + str(prop))
         if prop in "Rapid":
             r = vp.Rapid
             self.rapid_color.rgb.setValues(0, 1, [(r[0], r[1], r[2])])

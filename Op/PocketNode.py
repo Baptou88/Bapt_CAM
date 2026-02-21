@@ -14,6 +14,7 @@ class noeud:
         self.children: list['noeud'] = []
         self.wires: Part.Wire = wires
         self.hasChangend: bool = False
+        self.visited: bool = False  # Marqueur pour le parcours
 
     def addChild(self, child: 'noeud'):
         self.children.append(child)

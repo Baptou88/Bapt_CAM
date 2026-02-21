@@ -71,7 +71,9 @@ class MpfReader:
             try:
                 line = next(gen)
             except StopIteration:
+                App.Console.PrintMessage(f'Stop Iter\n')
                 break
+            App.Console.PrintMessage(f'{line}\n')
             if line == "":
                 continue
             if line.startswith('N') or line[0].isdigit():  # Ligne de programme
@@ -100,7 +102,7 @@ class MpfReader:
                 match = re.match(r'T(?:="?(\d+)"?|(\d+))|TOOL\s+CALL\s+(\d+)', line)
 
                 if match:
-                    tool_number = match.group(1)
+                    tool_number = match.group(1) or match.group(2) or match.group(3)
 
                     tool_obj = tool_utils.create_tool_obj(id=int(tool_number), name=f"Tool_{tool_number}")
 
@@ -151,18 +153,37 @@ class MpfReader:
                 # current_op.Gcode.append(line)
                 test += line + '\n'
             elif line.startswith('L'):  # G-code command
+                App.Console.PrintMessage(f'par là {line}\n')
                 is_rapid = line.find('FMAX') != -1
-                is_G40 = line.find('G40') != -1
-                is_G41 = line.find('G41') != -1
-                is_G42 = line.find('G42') != -1
+                is_G40 = line.find('R0') != -1
+                is_G41 = line.find('RL') != -1
+                is_G42 = line.find('RR') != -1
+                line = line.replace('FMAX', '').replace('R0', '').replace('RL', '').replace('RR', '').strip()
+                line = line.replace(',', '.')
+                # Verifie que G40, G41, G42 ne sont pas combinés
+                if sum([is_G40, is_G41, is_G42]) > 1:
+                    Log.baptDebug("G-code command L with multiple cutter compensation codes found. Skipping.")
+                    continue
                 new = f"{'G0 ' if is_rapid else 'G1 '} {'G40 ' if is_G40 else ''}{'G41 ' if is_G41 else ''}{'G42 ' if is_G42 else ''}"
                 line = line.replace('L', new)
+                if not any(['X' in line, 'Y' in line, 'Z' in line]):
+                    continue
+                test += line + '\n'
             elif line.startswith(('X', 'Y', 'Z')):
                 if current_op is None:
                     Log.baptDebug("G-code command found before any tool call. Skipping.")
                     continue
                 # Append G-code command to current operation
                 test += line + '\n'
+            elif line.startswith('CYCL DEF '):
+                line = line.replace('CYCL DEF ', '')
+                cycle_type = int(line.split(' ')[0])
+                if cycle_type == 247:
+                    line = next(gen)
+                continue
+            elif line.startswith(('CC', 'CR', 'C')):
+                Log.baptError("Circular interpolation commands CC and CR are not implemented yet.")
+                raise NotImplementedError("Circular interpolation commands CC and CR are not implemented yet.")
             else:
                 Log.baptDebug(f"Unknown command: {line}")
 

@@ -19,7 +19,7 @@ def isOp(obj) -> bool:
     Retourne True si obj est une opération d'usinage (ContournageCycle, DrillOperation, etc.).
     """
     if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type in [
-            'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path']:
+            'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path', 'PocketOperation']:
         return True
     return False
 
