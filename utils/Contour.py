@@ -53,7 +53,7 @@ def getLastPoint(edges):
         return 0
 
 
-def edgeToGcode(edge, bonSens=True, current_z=0.0, rapid=False, feed_rate=1000, is_offset_inward=True):
+def edgeToGcode(edge, bonSens=True, current_z=0.0, rapid=False, feed_rate=1000, gcodeWriter=None):
     """
     Convert an edge to G-code.
     :param edge: The edge to convert.
@@ -74,16 +74,18 @@ def edgeToGcode(edge, bonSens=True, current_z=0.0, rapid=False, feed_rate=1000, 
     if edge.Curve.TypeId == 'Part::GeomLine':
         # Line handling can be added here if needed
         # Move to start point
-        if rapid:
-            gcode += f"G0 X{start_point.x:.3f} Y{start_point.y:.3f} Z{current_z:.3f}\n"
-        else:
-            gcode += f"G1 X{start_point.x:.3f} Y{start_point.y:.3f} Z{current_z:.3f} F{feed_rate}\n"
+        # if rapid:
+        #     gcode += f"G0 X{start_point.x:.3f} Y{start_point.y:.3f} Z{current_z:.3f}\n"
+        # else:
+        #     gcode += f"G1 X{start_point.x:.3f} Y{start_point.y:.3f} Z{current_z:.3f} F{feed_rate}\n"
 
         # Move to end point
         if rapid:
             gcode += f"G0 X{end_point.x:.3f} Y{end_point.y:.3f} Z{current_z:.3f}\n"
         else:
             gcode += f"G1 X{end_point.x:.3f} Y{end_point.y:.3f} Z{current_z:.3f} F{feed_rate}\n"
+        if gcodeWriter:
+            gcodeWriter.linearMove({'X': end_point.x, 'Y': end_point.y, 'Z': current_z}, feed=feed_rate, rapid=rapid)
 
     elif edge.Curve.TypeId == 'Part::GeomCircle':
         circle = edge.Curve
@@ -155,6 +157,8 @@ def edgeToGcode(edge, bonSens=True, current_z=0.0, rapid=False, feed_rate=1000, 
             arc = "G2"  # Clockwise
 
         gcode += f"{arc} X{end_point.x:.3f} Y{end_point.y:.3f} I{center.x - start_point.x:.3f} J{center.y - start_point.y:.3f} F{feed_rate}\n"
+        if gcodeWriter:
+            gcodeWriter.arcMove({'X': end_point.x, 'Y': end_point.y, 'Z': current_z, 'CCW': is_ccw, 'I': center.x - start_point.x, 'J': center.y - start_point.y}, feed=feed_rate)
 
     elif edge.CurveType == 'BSplineCurve':  # More specific BSpline handling if possible
         raise NotImplementedError(f"Edge type {edge.Curve.TypeId} not implemented in G-code generation.")

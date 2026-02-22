@@ -113,33 +113,13 @@
         <widget class="QComboBox" name="directionCombo"/>
        </item>
        <item row="5" column="0">
-        <widget class="QLabel" name="label_3">
-         <property name="text">
-          <string>nbGen</string>
-         </property>
-        </widget>
-       </item>
-       <item row="5" column="1">
-        <widget class="Gui::QuantitySpinBox" name="nbGenSpin" native="true">
-         <property name="statusTip">
-          <string>Nombre de boucle</string>
-         </property>
-         <property name="minimum" stdset="0">
-          <double>-999999999.000000000000000</double>
-         </property>
-         <property name="maximum" stdset="0">
-          <double>999999999.000000000000000</double>
-         </property>
-        </widget>
-       </item>
-       <item row="6" column="0">
         <widget class="QLabel" name="label_5">
          <property name="text">
           <string>Surep Radiale</string>
          </property>
         </widget>
        </item>
-       <item row="6" column="1">
+       <item row="5" column="1">
         <widget class="Gui::QuantitySpinBox" name="surepAxialeSpin" native="true">
          <property name="minimum" stdset="0">
           <double>-999999999.000000000000000</double>
@@ -149,14 +129,14 @@
          </property>
         </widget>
        </item>
-       <item row="7" column="0">
+       <item row="6" column="0">
         <widget class="QLabel" name="label_8">
          <property name="text">
           <string>Step Down</string>
          </property>
         </widget>
        </item>
-       <item row="7" column="1">
+       <item row="6" column="1">
         <widget class="Gui::QuantitySpinBox" name="stepDownSpin" native="true">
          <property name="statusTip">
           <string>Diamètre</string>
@@ -168,6 +148,16 @@
           <double>999999999.000000000000000</double>
          </property>
         </widget>
+       </item>
+       <item row="7" column="0">
+        <widget class="QLabel" name="label_9">
+         <property name="text">
+          <string>Plongee</string>
+         </property>
+        </widget>
+       </item>
+       <item row="7" column="1">
+        <widget class="QComboBox" name="plongeeCombo"/>
        </item>
       </layout>
      </widget>
@@ -186,14 +176,34 @@
       <attribute name="label">
        <string>Page 2</string>
       </attribute>
-      <layout class="QGridLayout" name="gridLayout_3">
-       <item row="0" column="0">
+      <layout class="QFormLayout" name="formLayout_3">
+       <item row="0" column="0" colspan="2">
         <widget class="QCheckBox" name="useMiddleofFirstEdge">
          <property name="enabled">
           <bool>true</bool>
          </property>
          <property name="text">
           <string>Use middle of firste Edge</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QLabel" name="label_3">
+         <property name="text">
+          <string>nbGen</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="Gui::QuantitySpinBox" name="nbGenSpin" native="true">
+         <property name="statusTip">
+          <string>Nombre de boucle</string>
+         </property>
+         <property name="minimum" stdset="0">
+          <double>-999999999.000000000000000</double>
+         </property>
+         <property name="maximum" stdset="0">
+          <double>999999999.000000000000000</double>
          </property>
         </widget>
        </item>
@@ -210,6 +220,12 @@
    <header location="global">Gui/QuantitySpinBox.h</header>
   </customwidget>
  </customwidgets>
+ <tabstops>
+  <tabstop>modeCombo</tabstop>
+  <tabstop>directionCombo</tabstop>
+  <tabstop>plongeeCombo</tabstop>
+  <tabstop>useMiddleofFirstEdge</tabstop>
+ </tabstops>
  <resources/>
  <connections/>
 </ui>

@@ -23,6 +23,7 @@ class BaptPreferences:
         self.ModeAjout: int = None
         self.DefaultRapidColor = (1.0, 0.0, 0.0)
         self.DefaultFeedColor = (0.0, 1.0, 0.0)
+        self.debugGcode: bool = False
 
         # Load settings
         self.preferences = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Bapt")
@@ -54,6 +55,8 @@ class BaptPreferences:
         feed_color_unsigned = (r << 16) | (g << 8) | b
         self.preferences.SetUnsigned("DefaultFeedColor", feed_color_unsigned)
 
+        self.preferences.SetBool("DebugGcode", self.debugGcode)
+
         self.Dirty = False
 
         return True
@@ -65,6 +68,7 @@ class BaptPreferences:
         self.AutoChildUpdate = self.preferences.GetBool("AutoChildUpdate", False)
         self.ModeAjout = self.preferences.GetInt("ModeAjout", 0)
         DefaultRapidColor = self.preferences.GetUnsigned("DefaultRapidColor", 16711680)  # Default to red
+        self.debugGcode = self.preferences.GetBool("DebugGcode", False)
 
         # unsigned int to tuple
         r = (DefaultRapidColor >> 16) & 0xFF
@@ -155,6 +159,11 @@ class BaptPreferencesPage(QtGui.QWidget):
         layout.addWidget(self.auto_child_update_checkbox)
         # self.auto_child_update_checkbox.setChecked(BaptUtilities.getAutoChildUpdate())
         # self.auto_child_update_checkbox.stateChanged.connect(self.onAutoChildUpdateChanged)
+
+        # Checkbox pour activer le debug du G-code
+        self.debug_gcode_checkbox = QtGui.QCheckBox("Activer le debug du G-code")
+        self.debug_gcode_checkbox.setToolTip("Si activé, des commentaires seront ajoutés dans le G-code pour faciliter le debug.")
+        layout.addWidget(self.debug_gcode_checkbox)
 
         mode_ajout_label = QtGui.QLabel("Mode d'ajout des opérations:")
         mode_ajout_label.setToolTip("Sélectionnez comment les opérations doivent être ajoutées aux projets CAM.")
@@ -248,6 +257,7 @@ class BaptPreferencesPage(QtGui.QWidget):
         self.prefs.ModeAjout = self.mode_ajout_combo.currentIndex()
         self.prefs.DefaultRapidColor = self.rapidColor
         self.prefs.DefaultFeedColor = self.feedColor
+        self.prefs.debugGcode = self.debug_gcode_checkbox.isChecked()
 
         self.prefs.saveSettings()
 

@@ -6,7 +6,7 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from Op.BaseOp import baseOp
 import Part
-from utils import Contour
+from utils import Contour, GcodeWriter
 import PySide.QtGui as QtGui
 import PySide.QtCore as QtCore
 
@@ -113,7 +113,7 @@ class ContournageCycle(baseOp):
 
         obj.Shape = Part.Shape()  # Initialize shape
         all_pass_shapes_collected = []  # To collect all edges/wires from all passes
-        strGcode = ""
+        gcodeWriter = GcodeWriter.GcodeWriter()
 
         passes_z_values = self.calculatePasse(obj)
 
@@ -260,7 +260,7 @@ class ContournageCycle(baseOp):
             App.Console.PrintMessage(f"first point: {core_toolpath_start_pt}, last point: {core_toolpath_end_pt}\n")
             # start_pt and end_pt are now core_toolpath_start_pt and core_toolpath_end_pt
 
-            strGcode += f"(Pass at Z={pass_z})\n"
+            gcodeWriter.comment(f"Pass at Z={pass_z}")
             # Approach
 
             tangent_start_vec = first_toolpath_edge.tangentAt(first_toolpath_edge.FirstParameter)
@@ -283,10 +283,12 @@ class ContournageCycle(baseOp):
                 perp_start = App.Vector(-tangent_start.y, tangent_start.x, 0).normalize()  # Assuming XY plane
                 pass_approach_edges.append(Part.makeLine(core_toolpath_start_pt + perp_start.multiply(approach_length), core_toolpath_start_pt))
             elif approach_type == "Perp+Arc":
-                pass  # TODO: Implement Perp+Arc approach
-            strGcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{rapid_traverse_z:.3f}\n"
-            strGcode += f"G0 X{approachPoint.x:.3f} Y{approachPoint.y:.3f} Z{pass_z + 2:.3f}\n"
-            strGcode += f"G1 Z{pass_z:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
+                pass  # TODO: Implement Perp+Arc approach.
+
+            gcodeWriter.linearMove({'X': approachPoint.x, 'Y': approachPoint.y, 'Z': rapid_traverse_z}, rapid=True)
+            gcodeWriter.linearMove({'X': approachPoint.x, 'Y': approachPoint.y, 'Z': pass_z + 2}, rapid=True)
+            gcodeWriter.linearMove({'Z': pass_z}, feed=float(obj.FeedRate.getValueAs('mm/min')), rapid=False)
+
             comp = "G40"
             if obj.Compensation in [compensation.Machine.name, compensation.Ordinateur_G41_G42.name]:
                 if is_offset_inward:
@@ -294,18 +296,19 @@ class ContournageCycle(baseOp):
                 else:
                     comp = "G42"
             if p == 0:
-                strGcode += f"{obj.Label}_start:\n"
+                gcodeWriter.lines.append(f"{obj.Label}_start:")
+
             if approach_type == "Perp+Arc":
                 r = 1
                 a = approach_length.Value - r
                 angle = math.asin(r/a)
                 D = App.Vector(((a*a-r*r)/a)*math.cos(angle), -((r/a)*math.sqrt(a*a-r*r))*math.sin(angle), 0)
-                strGcode += f"G1 X{approachPoint.x + D.x:.3f} Y{approachPoint.y + D.y:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
-                strGcode += f"G3 X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f} R{r:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
+                gcodeWriter.linearMove({'X': approachPoint.x + D.x, 'Y': approachPoint.y + D.y}, feed=float(obj.FeedRate.getValueAs('mm/min')))
+                gcodeWriter.arcMove({'X': core_toolpath_start_pt.x, 'Y': core_toolpath_start_pt.y, 'R': r, 'CCW': True}, feed=float(obj.FeedRate.getValueAs('mm/min')))
                 pass  # TODO: Implement Perp+Arc G-code
             else:
 
-                strGcode += f"G1 {comp} X{core_toolpath_start_pt.x:.3f} Y{core_toolpath_start_pt.y:.3f} F{obj.FeedRate.getValueAs('mm/min')}\n"
+                gcodeWriter.linearMove({'X': core_toolpath_start_pt.x, 'Y': core_toolpath_start_pt.y, 'comp': comp}, feed=float(obj.FeedRate.getValueAs('mm/min')))
             # TODO: Add Helicoidal approach if needed, ensuring Z movement relative to pass_z
 
             current_edge = None
@@ -346,7 +349,7 @@ class ContournageCycle(baseOp):
                     else:
                         pass
 
-                strGcode += Contour.edgeToGcode(edge, bonSens=bon_sens, current_z=pass_z, rapid=False, is_offset_inward=is_offset_inward)
+                Contour.edgeToGcode(edge, bonSens=bon_sens, current_z=pass_z, rapid=False, gcodeWriter=gcodeWriter)
 
             # Retract
 
@@ -368,12 +371,13 @@ class ContournageCycle(baseOp):
                         perp_end = App.Vector(-tangent_end.y, tangent_end.x, 0).normalize()
                         SortiePt = core_toolpath_end_pt - perp_end.multiply(approach_length)
                     pass_retract_edges.append(Part.makeLine(core_toolpath_end_pt, SortiePt))
-                strGcode += f"G1 G40 X{SortiePt.x:.3f} Y{SortiePt.y:.3f}\n"
 
-            strGcode += f"G0 Z{rapid_traverse_z:.3f}\n"
+                gcodeWriter.linearMove({'X': SortiePt.x, 'Y': SortiePt.y, 'comp': 'G40'}, feed=float(obj.FeedRate.getValueAs('mm/min')))
+
+            gcodeWriter.linearMove({'Z': rapid_traverse_z}, rapid=True)
 
             if p == 0:
-                strGcode += f"{obj.Label}_end:\n"
+                gcodeWriter.lines.append(f"{obj.Label}_end:")
 
             # Determine the actual start point of this pass's full trajectory (including approach)
             current_pass_trajectory_start_point = core_toolpath_start_pt  # Default to core path start
@@ -415,7 +419,7 @@ class ContournageCycle(baseOp):
             App.Console.PrintWarning("No toolpath segments generated for any pass.\n")
             obj.Shape = Part.Shape()
 
-        obj.Gcode = strGcode
+        obj.Gcode = '\n'.join(gcodeWriter.lines)
 
     def reorder_wire(self, shape):
         """

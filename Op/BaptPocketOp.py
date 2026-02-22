@@ -12,7 +12,7 @@ import sys
 import traceback
 import BaptUtilities
 from Tool.ToolTaskPannel import ToolTaskPanel
-from utils import BQuantitySpinBox
+from utils import BQuantitySpinBox, GcodeWriter
 from utils import Log as Log
 from utils.Contour import getFirstPoint, getLastPoint, shiftWire, edgeToGcode
 
@@ -24,6 +24,8 @@ else:
 pocketFillMode = ["offset", "offset2", "zigzag", "spirale"]
 
 Direction = ["Climb (Avalant)", "Conventional (opposition)"]
+
+Plongee = ["Directe", "Helicoidale", "Rampante"]
 
 
 class PocketOperation(BaseOp.baseOp):
@@ -63,6 +65,9 @@ class PocketOperation(BaseOp.baseOp):
         obj.addProperty("App::PropertyEnumeration", "FillMode", "Pocket", "Mode de remplissage").FillMode = pocketFillMode
         obj.FillMode = pocketFillMode[1]
 
+        obj.addProperty("App::PropertyEnumeration", "PlungeType", "Pocket", "Type de plongée").PlungeType = Plongee
+        obj.PlungeType = Plongee[0]
+
         obj.addProperty("Part::PropertyPartShape", "Path", "Pocket", "Chemin d'usinage généré")
 
         obj.addProperty("App::PropertyInteger", "maxGeneration", "Pocket", "Nombre maximum de générations d'offset").maxGeneration = 2
@@ -77,7 +82,7 @@ class PocketOperation(BaseOp.baseOp):
 
     def onChanged(self, obj, prop):
         # Log.baptDebug(f"{prop}")
-        if prop in ["Overlap", "ToolDiameter", "StepDown", "FillMode", "Contour", "maxGeneration", "useMiddleofFirstEdge"]:
+        if prop in ["Overlap", "ToolDiameter", "StepDown", "FillMode", "Contour", "maxGeneration", "useMiddleofFirstEdge", "SurepAxiale", "SurepRadiale", "debugMode", "Direction", "PlungeType"]:
             self.execute(obj)
 
     def is_shape_valid(self, shape: Part.Shape):
@@ -148,6 +153,8 @@ class PocketOperation(BaseOp.baseOp):
 
             tool_diam = obj.ToolDiameter
             overlap = obj.Overlap
+
+            gcodeWriter = GcodeWriter.GcodeWriter()
 
             # spheres pour marquer le debut du contour
             spheres = []
@@ -247,15 +254,12 @@ class PocketOperation(BaseOp.baseOp):
                     f'Parcours terminé : {len(path)} segments, '
                     f'{len(visited)} nœuds visités\n')
 
-                # Génération du G-code à partir du parcours continu
-                strGcode = ""
-
                 # Paramètres d'usinage
                 step_down = abs(obj.StepDown)
                 final_depth = obj.Contour.depth if hasattr(obj.Contour, "depth") else -5.0
                 final_depth += obj.SurepAxiale
                 start_depth = obj.Contour.Zref if hasattr(obj.Contour, "Zref") else 0.0
-                feed_rate = obj.FeedRate.Value if hasattr(obj, 'FeedRate') else 1000.0
+                feed_rate = float(obj.FeedRate.getValueAs('mm/min')) if hasattr(obj, 'FeedRate') else 1000.0
                 safe_z = start_depth + 5.0
 
                 total_depth = abs(final_depth - start_depth)
@@ -278,13 +282,25 @@ class PocketOperation(BaseOp.baseOp):
                     else:
                         current_z = start_depth - (pass_num + 1) * step_down
 
-                    strGcode += f"; Passe {pass_num + 1}/{num_passes} à Z={current_z:.3f}\n"
+                    gcodeWriter.comment(f"Passe {pass_num + 1}/{num_passes} à Z={current_z:.3f}")
 
-                    # Positionnement rapide puis plongée
-                    strGcode += f"G0 Z{safe_z:.3f}\n"
-                    strGcode += f"G0 X{start_pt.x:.3f} Y{start_pt.y:.3f}\n"
-                    strGcode += f"G1 Z{current_z:.3f} F{feed_rate:.3f}\n"
-
+                    # Positionnement rapide et plongée
+                    gcodeWriter.linearMove({'X': start_pt.x, 'Y': start_pt.y}, rapid=True)
+                    gcodeWriter.linearMove({'Z': safe_z}, rapid=True)
+                    if obj.PlungeType == "Directe":
+                        gcodeWriter.linearMove({'Z': current_z}, feed=feed_rate, rapid=False)
+                    elif obj.PlungeType == "Helicoidale":
+                        dz = safe_z - current_z
+                        diam = tool_diam * 1.5
+                        nbtour = math.ceil(dz / 1.0)  # 1mm par tour
+                        prisePasse = (dz/nbtour) / 2
+                        gcodeWriter.linearMove({'X': start_pt.x + diam/2, 'Y': start_pt.y, 'Z': safe_z}, feed=feed_rate)
+                        Log.baptDebug(f"Plongée hélicoïdale: {nbtour} tours, prise de passe {prisePasse:.3f}\n")
+                        Log.baptDebug(f"safe_z {safe_z}, current_z {current_z}\n")
+                        for i in range(nbtour):
+                            gcodeWriter.arcMove({'X': start_pt.x - diam/2, 'Y': start_pt.y, 'Z': safe_z - ((i+1)*prisePasse + i * prisePasse), 'CCW': True, 'I': -diam/2, 'J': 0}, feed=feed_rate)
+                            gcodeWriter.arcMove({'X': start_pt.x + diam/2, 'Y': start_pt.y, 'Z': safe_z - ((i+1)*(prisePasse * 2)), 'CCW': True, 'I': diam/2, 'J': 0}, feed=feed_rate)
+                        gcodeWriter.linearMove({'X': start_pt.x, 'Y': start_pt.y, 'Z': current_z}, feed=feed_rate)
                     # Le parcours est continu : pas de repositionnement rapide
                     # On détermine bonSens par arête en suivant la position courante
                     current_pos = App.Vector(start_pt)
@@ -298,18 +314,18 @@ class PocketOperation(BaseOp.baseOp):
                                 edge, bonSens=bonSens,
                                 current_z=current_z,
                                 rapid=False,
-                                feed_rate=feed_rate)
-                            strGcode += edge_gcode
+                                feed_rate=feed_rate, gcodeWriter=gcodeWriter)
+
                             # Mettre à jour la position courante
                             if bonSens:
                                 current_pos = edge.Vertexes[-1].Point
                             else:
                                 current_pos = edge.Vertexes[0].Point
 
-                    strGcode += f"G0 Z{safe_z:.3f}\n"
+                    gcodeWriter.linearMove({'Z': safe_z}, rapid=True)
 
-                obj.Gcode = strGcode
-                Log.baptDebug(f"G-code généré: {len(strGcode)} caractères\n")
+                obj.Gcode = "\n".join(gcodeWriter.lines)
+                Log.baptDebug(f"G-code généré: {len(obj.Gcode)} caractères\n")
 
                 # for n in nodes:
                 #     wires = n.getWires()
@@ -966,6 +982,12 @@ class PocketOperationTaskPanel():
                 obj.FillMode if hasattr(obj, 'FillMode') else pocketFillMode[0])
             self.ui1.modeCombo.currentTextChanged.connect(self.updateObj)
 
+            for plunge in Plongee:
+                self.ui1.plongeeCombo.addItem(plunge)
+            self.ui1.plongeeCombo.setCurrentText(
+                obj.PlungeType if hasattr(obj, 'PlungeType') else Plongee[0])
+            self.ui1.plongeeCombo.currentTextChanged.connect(self.updateObj)
+
         except Exception as e:
             App.Console.PrintError(f"PocketOperationTaskPanel init: {str(e)}\n")
             exc_type, exc_obj, exc_tb = sys.exc_info()
@@ -976,6 +998,7 @@ class PocketOperationTaskPanel():
             self.obj.FillMode = self.ui1.modeCombo.currentText()
             self.obj.Direction = self.ui1.directionCombo.currentText()
             self.obj.useMiddleofFirstEdge = self.ui1.useMiddleofFirstEdge.isChecked()
+            self.obj.PlungeType = self.ui1.plongeeCombo.currentText()
             self.obj.touch()
             App.ActiveDocument.recompute()
         except Exception as e:
