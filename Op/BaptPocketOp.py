@@ -120,6 +120,8 @@ class PocketOperation(BaseOp.baseOp):
         return edges
 
     def execute(self, obj):
+        if App.ActiveDocument.Restoring:
+            return
         # Chercher le parent ContourGeometry dans l'arborescence
         # if not self.initialized:
         #     Log.baptDebug("execute ignored")
@@ -215,9 +217,12 @@ class PocketOperation(BaseOp.baseOp):
                 # et finir le nœud interrompu.
                 visited = set()
 
-                # S'assurer que tous les wires sont en sens anti-horaire (CCW)
+                # S'assurer que le sens de rotation correspond au paramètre Direction
+                # Climb (Avalant) = CCW (sens anti-horaire, fraisage en avalant)
+                # Conventional (opposition) = CW (sens horaire, fraisage en opposition)
+                want_ccw = (obj.Direction == Direction[0])  # Direction[0] = "Climb (Avalant)"
                 for root_node in nodes:
-                    self._ensure_ccw(root_node)
+                    self._ensure_direction(root_node, want_ccw)
 
                 for root_node in nodes:
                     parent_map = self._build_parent_map(root_node)
@@ -695,27 +700,28 @@ class PocketOperation(BaseOp.baseOp):
 
         return None
 
-    def _ensure_ccw(self, node: noeud):
-        """S'assure que tous les wires de l'arbre sont en sens anti-horaire.
-        Utilise le renversement topologique de OpenCASCADE puis reconstruit
-        le wire pour que l'itération des arêtes suive le sens CCW."""
-        if not node.isCCW():
+    def _ensure_direction(self, node: noeud, want_ccw: bool):
+        """S'assure que le wire du nœud et de tous ses enfants est dans le sens
+        voulu : CCW si want_ccw=True (Climb/Avalant), CW sinon (Conventional).
+        Inverse l'ordre des arêtes ET l'orientation de chaque arête."""
+        is_ccw = node.isCCW()
+        needs_flip = (want_ccw and not is_ccw) or (not want_ccw and is_ccw)
+        if needs_flip:
             try:
-                # reversed() retourne un Part.Shape avec la topologie inversée.
-                # Les arêtes extraites seront dans l'ordre inverse avec des
-                # orientations inversées → le nouveau wire va en sens CCW.
-                reversed_shape = node.wires.reversed()
-                node.wires = Part.Wire(reversed_shape.Edges)
-                Log.baptDebug(f'Wire inversé pour CCW : {node}\n')
+                # Inverser l'ordre des arêtes et l'orientation de chacune
+                reversed_edges = [e.reversed() for e in reversed(list(node.wires.Edges))]
+                node.wires = Part.Wire(reversed_edges)
+                direction_str = 'CCW' if want_ccw else 'CW'
+                Log.baptDebug(f'Wire inversé pour {direction_str} : {node}\n')
                 # Vérification post-inversion
-                if not node.isCCW():
+                if node.isCCW() != want_ccw:
                     App.Console.PrintWarning(
-                        f'Wire toujours CW après inversion : {node}\n')
+                        f'Sens incorrect après inversion pour {node}\n')
             except Exception as e:
                 App.Console.PrintWarning(
-                    f'Inversion CCW échouée pour {node}: {e}\n')
+                    f'Inversion de sens échouée pour {node}: {e}\n')
         for child in node.children:
-            self._ensure_ccw(child)
+            self._ensure_direction(child, want_ccw)
 
     def _machine_node(self, obj, node: noeud, offset_dist: float,
                       visited: set, path: list):

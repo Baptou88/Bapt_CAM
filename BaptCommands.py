@@ -12,6 +12,7 @@ import BaptDrillGeometry
 from BaptHighlight import CreateHighlightCommand
 import BaptMpfReader
 import BaptPath
+import Op.AdaptativeOp as AdaptativeOp
 import Op.BaptPocketOp as BaptPocketOp
 import BaptPostProcess
 import BaptPreferences
@@ -48,6 +49,29 @@ class CreateOriginCommand:
         doc.recompute()
         doc.commitTransaction()
         App.Console.PrintMessage(f"Origine créée : {obj.OriginName} ({obj.OriginNumber})\n")
+
+
+class CreateAdaptativeOperationCommand:
+    """Commande pour créer une opération de fraisage adaptatif (trochoïdal)"""
+
+    def GetResources(self):
+        return {'Pixmap': BaptUtilities.getIconPath("AdaptativeOp.svg"),
+                'MenuText': "Nouvelle opération adaptive",
+                'ToolTip': "Créer une opération de fraisage adaptatif trochoïdal"}
+
+    def IsActive(self):
+        sel = Gui.Selection.getSelection()
+        return sel and hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
+
+    def Activated(self):
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Adaptive Operation')
+        contour_geometry = Gui.Selection.getSelection()[0]
+        obj = AdaptativeOp.createAdaptativeOperation(contour=contour_geometry)
+        doc.recompute()
+        doc.commitTransaction()
+        App.Console.PrintMessage(
+            f"Opération adaptive créée et liée à {contour_geometry.Label}.\n")
 
 
 class CreatePocketOperationCommand:
@@ -760,3 +784,4 @@ Gui.addCommand('Bapt_CreateProbeFace', ProbeFaceCommand())
 Gui.addCommand('Bapt_TestPath', TestPathCommand())
 Gui.addCommand('Bapt_HighlightCollisions', CreateHighlightCommand())
 Gui.addCommand('Bapt_HoleRecognition', HoleRecognitionCommand())
+Gui.addCommand('Bapt_CreateAdaptativeOperation', CreateAdaptativeOperationCommand())

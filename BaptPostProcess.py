@@ -9,6 +9,7 @@ from BaptPreferences import BaptPreferences
 from CamProjectTaskPanel import PostProcessorTaskPanel
 from BasePostPro import BasePostPro
 import FreeCAD as App  # type: ignore
+from Op import AdaptativeOp
 from Op.PathOp import pathOp
 from PySide import QtGui, QtCore  # type: ignore
 import BaptUtilities as BaptUtils
@@ -19,7 +20,7 @@ def isOp(obj) -> bool:
     Retourne True si obj est une opération d'usinage (ContournageCycle, DrillOperation, etc.).
     """
     if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type in [
-            'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path', 'PocketOperation']:
+            'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path', 'PocketOperation', 'AdaptativeOperation']:
         return True
     return False
 
@@ -159,6 +160,14 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
         elif isinstance(obj.Proxy, pathOp):
             gcode_lines.append(Postpro.writeComment(f"Path operation: {obj.Label}"))
             gcode_lines.append(Postpro.transformGCode(obj.Gcode))
+
+        elif isinstance(obj.Proxy, AdaptativeOp):
+            gcode_lines.append(Postpro.writeComment(f"Adaptative operation: {obj.Label}"))
+            gcode_lines.append(Postpro.transformGCode(obj.Gcode))
+
+        else:
+            gcode_lines.append('M30')  # code de fin de programme
+            gcode_lines.append(Postpro.writeComment(f"Opération non prise en charge: {obj.Label} (Class: {obj.Proxy.__class__.__name__})"))
 
     gcode_lines.append(Postpro.writeFooter())
 

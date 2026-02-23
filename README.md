@@ -14,6 +14,8 @@ Therefore, I wanted to develop software that would meet my needs, and I found Fr
 
 ![Bapt's CAM Workbench Screenshot v0.0.3](/resources/Animation.gif)
 
+![Bapt's CAM Workbench Screenshot v0.1.2](/resources/image3.png)
+
 ## Philosophy and goal
 
 1. After working for several years on a numerically controlled machine and CAD software to create programs, I found that it was easier to first correctly create machining geometries before actually defining machining cycles. This is why in this project it is necessary to create "DrillGeometry" and "ContourGeometry" objects.
