@@ -1,6 +1,7 @@
 import os
 import FreeCAD as App
-import FreeCADGui 
+import FreeCADGui
+
 
 def get_module_path():
     '''
@@ -9,7 +10,8 @@ def get_module_path():
     the module is installed in the app's module directory or the user's app data folder.
     (The second overrides the first.)
     '''
-    return os.path.dirname(__file__)
+    return os.path.dirname(__file__).rstrip("./")
+
 
 def getResourcesPath():
     '''
@@ -17,11 +19,16 @@ def getResourcesPath():
     '''
     return os.path.join(get_module_path(), "resources")
 
+
 def getPanel(panel):
     '''
-    Returns the panel path.
+    Returns the panel path or exception.
     '''
-    return os.path.join(getResourcesPath(), "panels", panel)
+    p = os.path.join(getResourcesPath(), "panels", panel)
+    if not os.path.exists(p):
+        raise Exception(f"Panel {panel} not Found at {p}")
+    return p
+
 
 def getIconPath(icon: str):
     '''
@@ -30,6 +37,7 @@ def getIconPath(icon: str):
     '''
     return os.path.join(getResourcesPath(), "icons", icon)
 
+
 def getPostProPath(postPro: str):
     '''
     Returns the post-processing path.
@@ -37,15 +45,18 @@ def getPostProPath(postPro: str):
     '''
     return os.path.join(get_module_path(), "PostPro", postPro)
 
+
 def getExamplesPath():
     '''
     Returns the examples path.
     '''
-    return os.path.join(get_module_path(),"examples")
+    return os.path.join(get_module_path(), "examples")
+
 
 def getDefaultToolsDbPath():
     """Retourne le chemin par défaut de la base de données d'outils."""
     return os.path.join(App.getUserAppDataDir(), "Bapt", "tools.db")
+
 
 def find_cam_project(o):
     """Remonte les parents (InList) jusqu'à trouver le CamProject."""
@@ -63,9 +74,10 @@ def find_cam_project(o):
 
         if proxy is not None and hasattr(proxy, "Type") and proxy.Type == "CamProject":
             return parent
-        if hasattr(parent, "InList"):   
+        if hasattr(parent, "InList"):
             queue.extend(parent.InList)
     return None
+
 
 def getActiveCamProject():
     """Retourne le projet CAM actif dans l'arborescence. \
@@ -77,11 +89,11 @@ def getActiveCamProject():
     if sel and len(sel) <= 1:
         if hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject":
             return sel[0]
-        
+
     obj = FreeCADGui.activeView().getActiveObject("camproject")
     if obj:
         return obj
-    
+
     cam_projects = []
     for obj in App.ActiveDocument.Objects:
         proxy = getattr(obj, "Proxy", None)
@@ -89,6 +101,5 @@ def getActiveCamProject():
             cam_projects.append(obj)
     if len(cam_projects) == 1:
         return cam_projects[0]
-    
-    
+
     return None

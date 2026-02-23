@@ -27,7 +27,7 @@ class cuttingConditionTaskPanel:
         self.Feed.setValue(obj.FeedRate)
         self.layout.addRow("Feed:", self.Feed.getWidget())
 
-        #lubrification
+        # lubrification
         self.CoolantMode = QtGui.QComboBox()
         self.CoolantMode.addItems(CoolantMode)
         if hasattr(obj, "CoolantMode"):
@@ -44,7 +44,7 @@ class cuttingConditionTaskPanel:
     def getLayout(self):
         """Retourne le layout du panneau de tâche"""
         return self.layout
-    
+
     def getForm(self):
         """Retourne le formulaire du panneau de tâche"""
         return self.form

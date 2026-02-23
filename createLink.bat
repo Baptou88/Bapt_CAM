@@ -7,7 +7,8 @@ echo Creation du lien symbolique pour le dossier examples...
 :: set "SOURCE_DIR=%~dp0examples"
 set "SOURCE_DIR=%~dp0"
 set "SOURCE_DIR=%SOURCE_DIR:~0,-1%"
-set "TARGET_DIR=%APPDATA%\FreeCAD\v1-1\Mod\Bapt"
+::set "TARGET_DIR=%APPDATA%\FreeCAD\v1-2\Mod\Bapt_CAM"
+set "TARGET_DIR=%APPDATA%\FreeCAD\Mod\Bapt_CAM"
 
 :: Vérifier que le dossier source existe
 if not exist "%SOURCE_DIR%" (

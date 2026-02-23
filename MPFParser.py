@@ -18,34 +18,34 @@ class abstractParser:
 
     def isEnd(self):
         return self.cursor >= len(self.content) - 1
-    
+
     def hasNext(self):
-        return self.cursor < len(self.content) -1
+        return self.cursor < len(self.content) - 1
 
     def get(self):
         return self.content[self.cursor]
 
     def exceptFloat(self):
-        if not (self.char.isdigit() or self.char in ['+','-','.',',']):
+        if not (self.char.isdigit() or self.char in ['+', '-', '.', ',']):
             raise Exception(f"Invalid number, Number Excepted got {self.char}")
         start = self.cursor
-        while self.hasNext() and (self.char.isdigit() or self.char in ['+','-','.',',']):
+        while self.hasNext() and (self.char.isdigit() or self.char in ['+', '-', '.', ',']):
             self.cursor += 1
             self.char = self.content[self.cursor]
         end = self.cursor
         return float(self.content[start:end])
-    
+
     def exceptInt(self):
         """
         Extrait un entier (avec signe) à partir de la position courante,
         même si le nombre est à la fin de la chaîne.
         """
         char = self.get()
-        if not (char.isdigit() or char in ['+','-']):
+        if not (char.isdigit() or char in ['+', '-']):
             raise Exception(f"Invalid number, Number Excepted got {char}")
         start = self.cursor
         # Avance sur le signe si présent
-        if char in ['+','-']:
+        if char in ['+', '-']:
             char = self.next()
         # Avance sur tous les chiffres
         while not self.isEnd() and char.isdigit():
@@ -58,18 +58,18 @@ class abstractParser:
         print(f"'{value_str}'")
         return int(value_str)
 
-
     def getLineFromCursor(self):
         lignes = self.content.split('\n')
         debut = 0
         for i in range(len(lignes)):
             l = len(lignes[i])
             fin = debut + l
-            if self.cursor >= debut and self.cursor <= fin :
-                return {"Line":lignes[i], "Number":i+1, 'start':debut, 'end':fin}
+            if self.cursor >= debut and self.cursor <= fin:
+                return {"Line": lignes[i], "Number": i+1, 'start': debut, 'end': fin}
             debut += len(lignes[i]) + 1
         return None
-        
+
+
 class MPFParser(abstractParser):
     def __init__(self, content):
         super().__init__(content)
@@ -81,7 +81,7 @@ class MPFParser(abstractParser):
         while self.hasNext() and char != '\n':
             char = self.next()
         end = self.cursor
-        return {"Type":"commentaire","Commentaire":self.content[start:end]}
+        return {"Type": "commentaire", "Commentaire": self.content[start:end]}
 
     def numLine(self):
         self.char = self.content[self.cursor]
@@ -100,9 +100,9 @@ class MPFParser(abstractParser):
             self.char = self.content[self.cursor]
         end = self.cursor
         spindle = int(self.content[start:end])
-        #self.cursor += 1
-        a= self.content[self.cursor]
-        a=0
+        # self.cursor += 1
+        a = self.content[self.cursor]
+        a = 0
         return spindle
 
     def tool(self):
@@ -117,32 +117,32 @@ class MPFParser(abstractParser):
             self.char = self.content[self.cursor]
         end = self.cursor
         toolNumber = int(self.content[start:end])
-        
+
         while self.cursor < len(self.content) and self.content[self.cursor] != '\n':
             self.cursor += 1
             char = self.content[self.cursor]
-            
+
             if char == 'S':
                 spindle = self.toolSpindle()
-                a= self.content[self.cursor]
-                a=0
+                a = self.content[self.cursor]
+                a = 0
         self.cursor += 1
-        a= self.content[self.cursor]
-        a=0
-        return {"Type":"toolCall","T":toolNumber, "S":spindle}
-        
+        a = self.content[self.cursor]
+        a = 0
+        return {"Type": "toolCall", "T": toolNumber, "S": spindle}
+
     def gcode(self):
         """Parse a G-code command, return a dictionary with command number and coordinates (X, Y, Z)"""
         command = self.exceptInt()
-        gCommand = {"Type":"gcode", "G":command}
-        
+        gCommand = {"Type": "gcode", "G": command}
+
         while self.hasNext() and self.get() != '\n':
             char = self.next()
             if char == ' ':
                 pass
             elif char == ';':
                 raise Exception("Unimplemented commentaire in line")
-            elif char in ['X','Y','Z']:
+            elif char in ['X', 'Y', 'Z']:
                 c = self.coordinate()
                 gCommand.update(c)
             else:
@@ -150,7 +150,7 @@ class MPFParser(abstractParser):
         self.next()
         return gCommand
 
-    def coordinate(self)->dict[str,float]:
+    def coordinate(self) -> dict[str, float]:
         """
         Parse coordinate values from the content string at the current cursor 
         position. This function updates cursor position and collects coordinate 
@@ -161,7 +161,7 @@ class MPFParser(abstractParser):
         char = self.next()
 
         numb = self.exceptFloat()
-        
+
         coordinate = {key: numb}
         while self.hasNext() and self.char != '\n':
             char = self.next()
@@ -171,14 +171,14 @@ class MPFParser(abstractParser):
                 pass
             elif char in ['X', 'Y', 'Z', 'I', 'J', 'K']:
                 c = self.coordinate()
-                
+
                 if any(k == c for k in coordinate):
                     raise Exception(f"Invalid coordinate, Duplicate key {char}")
                 coordinate.update(c)
             elif char in ['M']:
                 self.next()
                 m = self.mcode()
-                
+
                 coordinate.update(m)
             else:
                 raise Exception(f"Invalid coordinate, Invalid key {char}")
@@ -188,7 +188,7 @@ class MPFParser(abstractParser):
         char = self.get()
         code = self.exceptInt()
         mCommand = ["M" + str(code)]
-        #self.cursor += 1
+        # self.cursor += 1
         char = self.get()
         while self.hasNext() and char != '\n':
             if char == 'M':
@@ -198,14 +198,14 @@ class MPFParser(abstractParser):
                 if m in mCommand:
                     raise Exception(f"Invalid M-code, Duplicate key '{m}'")
                 mCommand.append(m)
-            elif char in [';',' ']:
+            elif char in [';', ' ']:
                 char = self.next()
                 pass
-                
+
             else:
                 raise Exception(f"Invalid M-code, Invalid key '{char}'")
-            #char = self.next()
-        #self.next()
+            # char = self.next()
+        # self.next()
         return mCommand
 
     def parse(self):
@@ -225,19 +225,18 @@ class MPFParser(abstractParser):
                 self.operations.append(self.tool())
             elif char == 'G':
                 self.operations.append(self.gcode())
-            elif char in ['X','Y','Z']:
+            elif char in ['X', 'Y', 'Z']:
                 self.cursor -= 1
                 self.operations.append(self.coordinate())
             elif char == 'M':
-                a = {"Type":"mcode","M":self.mcode()}
+                a = {"Type": "mcode", "M": self.mcode()}
                 self.operations.append(a)
                # self.next()
             else:
                 raise Exception(f"Invalid character '{char}' at position {self.cursor}\n line: {self.getLineFromCursor()}")
-                
-            
 
         return self.operations
+
 
 if __name__ == "__main__":
     with open("FAO/test.MPF", "r") as file:
