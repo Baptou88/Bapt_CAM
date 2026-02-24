@@ -91,9 +91,6 @@ class ContournageCycle(baseOp):
 
         super().installToolProp(obj)
 
-        if int(App.Version()[0]) >= 1 and int(App.Version()[1]) >= 1:
-            obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
-
         obj.Proxy = self
 
     def onDocumentRestored(self, obj):

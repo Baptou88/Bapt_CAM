@@ -272,6 +272,8 @@ class BaptPreferencesPage(QtGui.QWidget):
         self.rapidColor = self.prefs.DefaultRapidColor
         self.feedColor = self.prefs.DefaultFeedColor
 
+        self.debug_gcode_checkbox.setChecked(self.prefs.debugGcode)
+
         self.rapidColorButton.setStyleSheet(f"background-color: rgb({int(self.rapidColor[0]*255)}, {int(self.rapidColor[1]*255)}, {int(self.rapidColor[2]*255)})")
         self.feedColorButton.setStyleSheet(f"background-color: rgb({int(self.feedColor[0]*255)}, {int(self.feedColor[1]*255)}, {int(self.feedColor[2]*255)})")
 

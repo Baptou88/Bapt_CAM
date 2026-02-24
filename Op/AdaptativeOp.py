@@ -1,7 +1,10 @@
 import math
+from BaptPath import GcodeEditorTaskPanel
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
+import PySide.QtGui as QtGui
+import PySide.QtCore as QtCore
 
 import BaptPreferences
 import BaptUtilities
@@ -33,6 +36,7 @@ class AdaptativeOp(BaseOp.baseOp):
 
     def __init__(self, obj):
         super().__init__(obj)
+
         self.initProperties(obj)
         obj.Proxy = self
 
@@ -71,6 +75,19 @@ class AdaptativeOp(BaseOp.baseOp):
                             "Type de plongée").PlungeType = Plongee
             obj.PlungeType = Plongee[0]
 
+        if not hasattr(obj, "Entree"):
+            obj.addProperty("App::PropertyLength", "Entree", "Adaptive",
+                            "Longueur de la ligne d'entrée (mm)").Entree = 5.0
+
+        if not hasattr(obj, "Sortie"):
+            obj.addProperty("App::PropertyLength", "Sortie", "Adaptive",
+                            "Longueur de la ligne de sortie (mm)").Sortie = 2.0
+
+        if not hasattr(obj, "BaseGeometry"):
+            obj.addProperty("App::PropertyLink", "BaseGeometry", "Adaptive",
+                            "Géométrie de référence pour les opérations de contour")
+            obj.BaseGeometry = None
+
         if not hasattr(obj, "debugMode"):
             obj.addProperty("App::PropertyBool", "debugMode", "General",
                             "Activer le mode debug").debugMode = False
@@ -80,7 +97,7 @@ class AdaptativeOp(BaseOp.baseOp):
     def onChanged(self, obj, prop):
         if prop in ["Contour", "ToolDiameter", "StepDown", "EngagementRadial",
                     "SurepAxiale", "SurepRadiale", "Direction", "PlungeType",
-                    "debugMode"]:
+                    "Entree", "Sortie", "BaseGeometry", "debugMode"]:
             self.execute(obj)
 
     def onDocumentRestored(self, obj):
@@ -97,12 +114,7 @@ class AdaptativeOp(BaseOp.baseOp):
                 obj.Shape = Part.Shape()
                 return
 
-            # Récupérer le stock (bounding box)
-            stock_shape = self._getStockShape(obj)
-            if stock_shape is None:
-                App.Console.PrintWarning("AdaptativeOp: Aucun stock trouvé.\n")
-                obj.Shape = Part.Shape()
-                return
+            base_shape = self._getBaseGeometryShape(obj)
 
             tool_diam = obj.ToolDiameter
             tool_radius = tool_diam / 2.0
@@ -133,23 +145,13 @@ class AdaptativeOp(BaseOp.baseOp):
                 obj.Shape = Part.Shape()
                 return
 
-            # Wire du stock (rectangle de la bounding box en XY)
-            bb = stock_shape.BoundBox
-            stock_wire = Part.makePolygon([
-                App.Vector(bb.XMin, bb.YMin, 0),
-                App.Vector(bb.XMax, bb.YMin, 0),
-                App.Vector(bb.XMax, bb.YMax, 0),
-                App.Vector(bb.XMin, bb.YMax, 0),
-                App.Vector(bb.XMin, bb.YMin, 0),
-            ])
-
             # Sens de rotation — usinage extérieur :
             # Avalant (Climb) = CW, Opposition (Conventional) = CCW
             want_ccw = (obj.Direction != Direction[0])
 
             # Générer le parcours pelure
-            path_shapes = self._generate_path(
-                finish_wire, stock_wire, tool_radius, ae, want_ccw)
+            path_shapes = self._generate_path(obj,
+                                              finish_wire, base_shape, ae, want_ccw)
 
             if not path_shapes:
                 App.Console.PrintWarning("AdaptativeOp: Aucun parcours généré.\n")
@@ -275,9 +277,39 @@ class AdaptativeOp(BaseOp.baseOp):
             obj.Gcode = "\n".join(gcodeWriter.lines)
             Log.baptDebug(f"G-code adaptatif: {len(obj.Gcode)} caractères\n")
 
-            # Shape de visualisation
-            compound = Part.makeCompound(path_shapes)
-            obj.Shape = compound
+            # Shape de visualisation : matière restante après usinage.
+            # On offsette finish_wire (centre outil) vers l'intérieur de
+            # tool_radius. L'aller-retour d'offset arrondit les coins
+            # inaccessibles à l'outil (zones trop étroites).
+            # Le signe dépend de l'orientation du wire (CCW/CW) :
+            # on teste comme dans _generate_path.
+            try:
+                fw = finish_wire.Wires[0] if finish_wire.Wires else finish_wire
+                fw_diag = fw.BoundBox.DiagonalLength
+
+                # Tester si +tool_radius va vers l'extérieur ou l'intérieur
+                test_wire = fw.makeOffset2D(tool_radius, join=0,
+                                            fill=False, openResult=False)
+                if test_wire and test_wire.Edges:
+                    test_diag = test_wire.BoundBox.DiagonalLength
+                    # On veut réduire → aller vers l'intérieur
+                    if test_diag < fw_diag:
+                        # + réduit déjà → utiliser +tool_radius
+                        inward_offset = tool_radius
+                    else:
+                        # + agrandit → utiliser -tool_radius
+                        inward_offset = -tool_radius
+                else:
+                    inward_offset = -tool_radius
+                Log.baptDebug(f"Inward offset: {inward_offset}\n")
+                remaining_wire = fw.makeOffset2D(
+                    inward_offset, join=0, fill=False, openResult=False)
+                obj.Shape = remaining_wire
+            except Exception as e:
+                Log.baptDebug(
+                    f"Offset matière restante échoué: {e}, "
+                    f"fallback sur contour_wire\n")
+                obj.Shape = contour_wire
 
         except Exception as e:
             import sys
@@ -290,6 +322,30 @@ class AdaptativeOp(BaseOp.baseOp):
     # ==========================================================================
     # Méthodes internes
     # ==========================================================================
+
+    def _getBaseGeometryShape(self, obj):
+        """Récupère la shape de la géométrie de référence (BaseGeometry) si définie."""
+        if obj.BaseGeometry and hasattr(obj.BaseGeometry, "Shape"):
+            return obj.BaseGeometry.Shape
+
+        elif obj.BaseGeometry is None:
+            # Récupérer le stock (bounding box)
+            stock_shape = self._getStockShape(obj)
+            if stock_shape is None:
+                App.Console.PrintWarning("AdaptativeOp: Aucun stock trouvé.\n")
+                obj.Shape = Part.Shape()
+                return None
+            # Wire du stock (rectangle de la bounding box en XY)
+            bb = stock_shape.BoundBox
+            stock_wire = Part.makePolygon([
+                App.Vector(bb.XMin, bb.YMin, 0),
+                App.Vector(bb.XMax, bb.YMin, 0),
+                App.Vector(bb.XMax, bb.YMax, 0),
+                App.Vector(bb.XMin, bb.YMax, 0),
+                App.Vector(bb.XMin, bb.YMin, 0),
+            ])
+            return stock_wire
+        return None
 
     def _getStockShape(self, obj):
         """Récupère la shape du stock depuis le projet CAM."""
@@ -318,8 +374,8 @@ class AdaptativeOp(BaseOp.baseOp):
         param = last_edge.LastParameter
         return last_edge.valueAt(param), last_edge.tangentAt(param)
 
-    def _generate_path(self, finish_wire, stock_wire,
-                       tool_radius, ae, want_ccw):
+    def _generate_path(self, obj, finish_wire, stock_wire,
+                       ae, want_ccw):
         """
         Algorithme de pelure (peel milling).
 
@@ -341,11 +397,46 @@ class AdaptativeOp(BaseOp.baseOp):
         fw = finish_wire.Wires[0] if hasattr(finish_wire, 'Wires') \
             and finish_wire.Wires else finish_wire
 
-        # BoundBox du stock pour les tests d'appartenance
-        bb = stock_wire.BoundBox
+        # Extraire le wire du stock
+        sw = stock_wire.Wires[0] if hasattr(stock_wire, 'Wires') \
+            and stock_wire.Wires else stock_wire
         margin = 0.01  # tolérance
 
-        # Distance max pour savoir quand s'arrêter
+        # ---- Alignement Z unique + création face stock ------------------
+        # Le stock polygon est souvent à Z=0 alors que les offsets sont
+        # au Z du contour. On aligne une seule fois au lieu de copier/
+        # translater à chaque appel de _clip_wire_to_stock.
+        fw_z = fw.Vertexes[0].Point.z if fw.Vertexes else 0.0
+        sw_z = sw.Vertexes[0].Point.z if sw.Vertexes else 0.0
+        if abs(fw_z - sw_z) > 1e-6:
+            sw = sw.copy()
+            sw.translate(App.Vector(0, 0, fw_z - sw_z))
+            Log.baptDebug(
+                f"Alignement Z stock {sw_z:.3f} → {fw_z:.3f}\n")
+
+        # Créer la face une seule fois pour tous les appels de clip
+        stock_face = None
+        face_ok = False
+        try:
+            stock_face = Part.Face(sw)
+            center = sw.BoundBox.Center
+            center_z = App.Vector(center.x, center.y, fw_z)
+            face_ok = stock_face.isInside(center_z, margin, True)
+            if not face_ok:
+                try:
+                    stock_face = stock_face.complement()
+                    face_ok = stock_face.isInside(center_z, margin, True)
+                except Exception:
+                    face_ok = False
+            if not face_ok:
+                Log.baptDebug(
+                    "WARNING: stock face isInside échoue, "
+                    "fallback BoundBox\n")
+        except Exception as e:
+            Log.baptDebug(f"Création face stock échouée: {e}\n")
+
+        # BoundBox pour les logs
+        bb = sw.BoundBox
         bb_finish = fw.BoundBox
 
         Log.baptDebug(
@@ -358,21 +449,6 @@ class AdaptativeOp(BaseOp.baseOp):
             f"Finish wire: isClosed={fw.isClosed()}, "
             f"isCCW={self._is_ccw(fw) if fw.isClosed() else 'N/A'}, "
             f"Length={fw.Length:.2f}, Edges={len(fw.Edges)}\n")
-
-        # Distance max : demi-diagonale du stock (couvre tous les cas,
-        # même contours circulaires ou complexes).
-        # Le compteur consecutive_empty arrêtera la boucle quand tous
-        # les offsets seront hors stock.
-        max_dist = bb.DiagonalLength / 2.0
-
-        if max_dist < 0.1:
-            App.Console.PrintWarning("AdaptativeOp: Pas de matière à enlever.\n")
-            return []
-
-        num_passes = max(1, math.ceil(max_dist / ae)) + 2
-        Log.baptDebug(
-            f"Pelure: max {num_passes} passes, "
-            f"dist_max={max_dist:.2f}, ae={ae:.2f}\n")
 
         # Déterminer le signe correct pour que l'offset aille vers l'extérieur
         # (vers le stock). makeOffset2D(+) va à gauche du wire:
@@ -399,31 +475,25 @@ class AdaptativeOp(BaseOp.baseOp):
             Log.baptDebug(f"Test d'offset échoué: {e}\n")
 
         # ---- 1. Générer les offsets et les classifier --------------------
-        # Chaque entrée : (wire, is_complete, [sub_wires si clippé])
+        # Boucle while : on s'arrête quand l'offset est entièrement
+        # hors du stock (aucune portion clippée à l'intérieur).
         pass_data = []
-        consecutive_empty = 0  # compteur d'offsets vides consécutifs
+        i = 0
 
-        for i in range(num_passes):
+        while True:
             offset = (i + 1) * ae * offset_sign
+            i += 1
 
             try:
                 ow = fw.makeOffset2D(offset, join=0,
                                      fill=False, openResult=False)
             except Exception as e:
                 Log.baptDebug(f"Offset {i} (d={offset:.2f}) échoué: {e}\n")
-                consecutive_empty += 1
-                if consecutive_empty >= 3:
-                    Log.baptDebug("3 offsets vides consécutifs, arrêt\n")
-                    break
-                continue
+                break
 
             if not ow or not ow.Edges:
                 Log.baptDebug(f"Offset {i} vide\n")
-                consecutive_empty += 1
-                if consecutive_empty >= 3:
-                    Log.baptDebug("3 offsets vides consécutifs, arrêt\n")
-                    break
-                continue
+                break
 
             offset_wire = ow.Wires[0] if ow.Wires else ow
 
@@ -437,20 +507,15 @@ class AdaptativeOp(BaseOp.baseOp):
             # car les edges reversées cassent edge.Curve.toShape(p1, p2).
             # La direction sera appliquée après dans l'étape 3.
 
-            # Classifier en clippant directement (robuste pour arcs/cercles)
-            clipped = self._clip_wire_to_stock(offset_wire, bb, margin)
+            # Classifier en clippant directement avec le shape du stock
+            clipped = self._clip_wire_to_stock(
+                offset_wire, sw, margin, stock_face, face_ok, fw_z)
 
             if not clipped:
-                # Rien dans le stock
+                # Rien dans le stock → l'offset est entièrement dehors, on arrête
                 Log.baptDebug(
-                    f"Offset {i} (d={offset:.2f}): hors stock\n")
-                consecutive_empty += 1
-                if consecutive_empty >= 3:
-                    Log.baptDebug("3 offsets vides consécutifs, arrêt\n")
-                    break
-                continue
-
-            consecutive_empty = 0
+                    f"Offset {i} (d={offset:.2f}): entièrement hors stock, arrêt\n")
+                break
 
             # Vérifier si le wire est entièrement dans le stock
             # en comparant la longueur clippée vs originale
@@ -552,6 +617,7 @@ class AdaptativeOp(BaseOp.baseOp):
                 # Passe clippée : segments disjoints avec Z retract entre eux
                 for seg_idx, seg_wire in enumerate(effective_wires):
                     seg_start = self._wire_start_point(seg_wire)
+                    seg_end = self._wire_end_point(seg_wire)
 
                     # Marquer un dégagement Z avant ce segment
                     if prev_end is not None:
@@ -559,9 +625,35 @@ class AdaptativeOp(BaseOp.baseOp):
                         if d > 0.01:
                             self._pass_transitions.append('z_retract')
 
+                    # Mouvement d'entrée (ligne droite tangente)
+                    entry_dir = self._wire_tangent_at_start(seg_wire)
+                    entry_edge = self._build_entry_move(
+                        seg_start, entry_dir, length=obj.Entree)
+                    if entry_edge is not None:
+                        path.append(Part.Wire([entry_edge]))
+
+                    # Segment usiné
                     path.append(seg_wire)
 
-                    prev_end = self._wire_end_point(seg_wire)
+                    # Mouvement de sortie : on le supprime uniquement si
+                    # la passe suivante est complète (transition perpendiculaire).
+                    # Sinon (autre passe clippée ou fin du parcours), on prolonge.
+                    is_last_seg = (seg_idx == len(effective_wires) - 1)
+                    next_is_perp = False
+                    if is_last_seg and pass_idx + 1 < len(pass_data):
+                        next_is_perp = pass_data[pass_idx + 1][1]  # is_complete
+
+                    if not is_last_seg or not next_is_perp:
+                        exit_dir = self._wire_tangent_at_end(seg_wire)
+                        exit_edge = self._build_exit_move(
+                            seg_end, exit_dir, length=obj.Sortie)
+                        if exit_edge is not None:
+                            path.append(Part.Wire([exit_edge]))
+                            prev_end = exit_edge.Vertexes[-1].Point
+                        else:
+                            prev_end = seg_end
+                    else:
+                        prev_end = seg_end
 
                 prev_wire = None
 
@@ -571,108 +663,131 @@ class AdaptativeOp(BaseOp.baseOp):
 
         return path
 
-    def _clip_wire_to_stock(self, wire, bb, margin):
+    def _clip_wire_to_stock(self, wire, stock_wire, margin,
+                            stock_face=None, face_ok=False, wire_z=None):
         """
         Découpe un wire en ne gardant que les portions à l'intérieur
-        de la bounding box du stock.
-        Les edges qui traversent la frontière sont coupées aux points
-        d'intersection exacts.
-        Retourne une liste de Part.Wire (segments continus à l'intérieur).
+        du stock_wire (forme quelconque : rectangle, contour arrondi, etc.).
+
+        Stratégie optimisée :
+        - Pré-test BoundBox par wire entier (court-circuit rapide)
+        - Pré-test BoundBox par edge (skip les edges triviales)
+        - Bisection fiable pour les intersections (section() est
+          trop peu fiable pour des shapes coplanaires)
+
+        Paramètres optionnels (pré-calculés par _generate_path) :
+            stock_face : Part.Face déjà alignée en Z
+            face_ok    : True si isInside fonctionne sur stock_face
+            wire_z     : coordonnée Z commune pour les tests isInside
         """
         tol = 1e-6
 
+        # Si pas de face pré-calculée, en créer une (appel autonome)
+        if stock_face is None:
+            wire_z = wire.Vertexes[0].Point.z if wire.Vertexes else 0.0
+            stock_z = stock_wire.Vertexes[0].Point.z \
+                if stock_wire.Vertexes else 0.0
+            if abs(wire_z - stock_z) > tol:
+                stock_wire = stock_wire.copy()
+                stock_wire.translate(App.Vector(0, 0, wire_z - stock_z))
+            try:
+                stock_face = Part.Face(stock_wire)
+                center = stock_wire.BoundBox.Center
+                face_ok = stock_face.isInside(
+                    App.Vector(center.x, center.y, wire_z), margin, True)
+                if not face_ok:
+                    try:
+                        stock_face = stock_face.complement()
+                        face_ok = stock_face.isInside(
+                            App.Vector(center.x, center.y, wire_z),
+                            margin, True)
+                    except Exception:
+                        face_ok = False
+            except Exception:
+                face_ok = False
+
+        if wire_z is None:
+            wire_z = wire.Vertexes[0].Point.z if wire.Vertexes else 0.0
+
+        # BoundBox du stock (réutilisée partout, évite de recalculer)
+        sbb = stock_wire.BoundBox
+        sx_min = sbb.XMin - margin
+        sx_max = sbb.XMax + margin
+        sy_min = sbb.YMin - margin
+        sy_max = sbb.YMax + margin
+
         def point_inside(pt):
-            return (bb.XMin - margin <= pt.x <= bb.XMax + margin
-                    and bb.YMin - margin <= pt.y <= bb.YMax + margin)
+            """Test si un point est à l'intérieur du stock."""
+            # Pré-filtre BoundBox ultra-rapide (pas d'appel OCCT)
+            if pt.x < sx_min or pt.x > sx_max \
+                    or pt.y < sy_min or pt.y > sy_max:
+                return False
+            if face_ok and stock_face is not None:
+                return stock_face.isInside(
+                    App.Vector(pt.x, pt.y, wire_z), margin, True)
+            # Fallback BoundBox pur (quand face OCCT indisponible)
+            return True
+
+        # ---- Court-circuit : wire entièrement dans le stock ? ------------
+        wbb = wire.BoundBox
+        if (wbb.XMin >= sx_min and wbb.XMax <= sx_max
+                and wbb.YMin >= sy_min and wbb.YMax <= sy_max):
+            if not (face_ok and stock_face is not None):
+                # Stock rectangulaire → BBox suffit
+                return [wire]
+            # Face non-rectangulaire → vérifier vertices ET milieux d'edges
+            all_in = True
+            for edge in wire.Edges:
+                mid = edge.valueAt(
+                    (edge.FirstParameter + edge.LastParameter) / 2.0)
+                if not point_inside(mid):
+                    all_in = False
+                    break
+            if all_in:
+                return [wire]
+
+        # ---- Court-circuit : wire entièrement hors du stock ? ------------
+        if (wbb.XMax < sx_min or wbb.XMin > sx_max
+                or wbb.YMax < sy_min or wbb.YMin > sy_max):
+            return []
 
         def find_intersection_params(edge):
-            """Trouve les paramètres où l'edge croise les frontières du stock."""
-            params = []
+            """Trouve les paramètres où l'edge croise la frontière du stock.
+
+            Bisection pure : échantillonnage régulier + dichotomie
+            pour localiser précisément chaque transition in/out.
+            """
             fp = edge.FirstParameter
             lp = edge.LastParameter
-            curve = edge.Curve
-            boundaries_x = [bb.XMin, bb.XMax]
-            boundaries_y = [bb.YMin, bb.YMax]
 
-            if curve.TypeId == 'Part::GeomLine':
-                p1 = edge.valueAt(fp)
-                p2 = edge.valueAt(lp)
-                dx = p2.x - p1.x
-                dy = p2.y - p1.y
+            # Pré-test rapide : edge entièrement dans la BBox du stock ?
+            ebb = edge.BoundBox
+            edge_in_bbox = (ebb.XMin >= sx_min and ebb.XMax <= sx_max
+                            and ebb.YMin >= sy_min and ebb.YMax <= sy_max)
 
-                for val in boundaries_x:
-                    if abs(dx) > tol:
-                        t = (val - p1.x) / dx
-                        if tol < t < 1.0 - tol:
-                            param = fp + t * (lp - fp)
-                            params.append(param)
+            if edge_in_bbox and not (face_ok and stock_face is not None):
+                # Stock rectangulaire + edge dans la BBox → pas d'intersection
+                return []
 
-                for val in boundaries_y:
-                    if abs(dy) > tol:
-                        t = (val - p1.y) / dy
-                        if tol < t < 1.0 - tol:
-                            param = fp + t * (lp - fp)
-                            params.append(param)
+            N = 32  # résolution fiable pour tous types d'edges
 
-            elif curve.TypeId == 'Part::GeomCircle':
-                center = curve.Center
-                radius = curve.Radius
-
-                for val in boundaries_x:
-                    d = val - center.x
-                    if abs(d) < radius - tol:
-                        sq = max(0, radius ** 2 - d ** 2)
-                        dy_val = math.sqrt(sq)
-                        for y in [center.y + dy_val, center.y - dy_val]:
-                            pt = App.Vector(val, y, 0)
-                            try:
-                                p = curve.parameter(pt)
-                                # Ajuster p dans [fp, lp] pour les arcs
-                                while p < fp - tol:
-                                    p += 2 * math.pi
-                                while p > lp + tol:
-                                    p -= 2 * math.pi
-                                if fp + tol < p < lp - tol:
-                                    params.append(p)
-                            except Exception:
-                                pass
-
-                for val in boundaries_y:
-                    d = val - center.y
-                    if abs(d) < radius - tol:
-                        sq = max(0, radius ** 2 - d ** 2)
-                        dx_val = math.sqrt(sq)
-                        for x in [center.x + dx_val, center.x - dx_val]:
-                            pt = App.Vector(x, val, 0)
-                            try:
-                                p = curve.parameter(pt)
-                                while p < fp - tol:
-                                    p += 2 * math.pi
-                                while p > lp + tol:
-                                    p -= 2 * math.pi
-                                if fp + tol < p < lp - tol:
-                                    params.append(p)
-                            except Exception:
-                                pass
-
-            else:
-                # Fallback pour les autres types de courbe : bisection
-                N = 50
-                prev_inside = point_inside(edge.valueAt(fp))
-                for j in range(1, N + 1):
-                    t = fp + (lp - fp) * j / N
-                    curr_inside = point_inside(edge.valueAt(t))
-                    if curr_inside != prev_inside:
-                        lo = fp + (lp - fp) * (j - 1) / N
-                        hi = t
-                        for _ in range(50):
-                            mid = (lo + hi) / 2
-                            if point_inside(edge.valueAt(mid)) == prev_inside:
-                                lo = mid
-                            else:
-                                hi = mid
-                        params.append((lo + hi) / 2)
-                    prev_inside = curr_inside
+            params = []
+            prev_inside = point_inside(edge.valueAt(fp))
+            for j in range(1, N + 1):
+                t = fp + (lp - fp) * j / N
+                curr_inside = point_inside(edge.valueAt(t))
+                if curr_inside != prev_inside:
+                    # Transition détectée — bisection pour localiser
+                    lo = fp + (lp - fp) * (j - 1) / N
+                    hi = t
+                    for _ in range(30):
+                        mid = (lo + hi) / 2
+                        if point_inside(edge.valueAt(mid)) == prev_inside:
+                            lo = mid
+                        else:
+                            hi = mid
+                    params.append((lo + hi) / 2)
+                prev_inside = curr_inside
 
             # Trier et dédupliquer
             params.sort()
@@ -682,31 +797,25 @@ class AdaptativeOp(BaseOp.baseOp):
                     unique.append(p)
             return unique
 
-        # Traiter chaque edge : couper aux frontières et garder les parties intérieures
+        # ---- Traiter chaque edge -----------------------------------------
         all_inside_edges = []
 
-        for edge_idx, edge in enumerate(wire.Edges):
+        for edge in wire.Edges:
             fp = edge.FirstParameter
             lp = edge.LastParameter
-            start_pt = edge.Vertexes[0].Point
-            end_pt = edge.Vertexes[-1].Point
-            params = find_intersection_params(edge)
 
-            Log.baptDebug(
-                f"  Edge {edge_idx}: {edge.Curve.TypeId} "
-                f"start=({start_pt.x:.2f},{start_pt.y:.2f}) "
-                f"end=({end_pt.x:.2f},{end_pt.y:.2f}) "
-                f"params=[{fp:.4f},{lp:.4f}] "
-                f"intersections={len(params)}\n")
+            # Pré-test BoundBox par edge : si entièrement hors stock, skip
+            ebb = edge.BoundBox
+            if (ebb.XMax < sx_min or ebb.XMin > sx_max
+                    or ebb.YMax < sy_min or ebb.YMin > sy_max):
+                continue
+
+            params = find_intersection_params(edge)
 
             if not params:
                 # Pas d'intersection : tester le milieu
                 mid_pt = edge.valueAt((fp + lp) / 2.0)
-                inside = point_inside(mid_pt)
-                Log.baptDebug(
-                    f"    Pas d'intersection, milieu=({mid_pt.x:.2f},"
-                    f"{mid_pt.y:.2f}), inside={inside}\n")
-                if inside:
+                if point_inside(mid_pt):
                     all_inside_edges.append(edge)
             else:
                 # Diviser l'edge aux paramètres d'intersection
@@ -721,20 +830,13 @@ class AdaptativeOp(BaseOp.baseOp):
                         try:
                             sub_edge = edge.Curve.toShape(p1, p2)
                             all_inside_edges.append(sub_edge)
-                        except Exception as e:
-                            Log.baptDebug(
-                                f"Clip sub-edge échoué: {e}\n")
+                        except Exception:
+                            pass
 
         if not all_inside_edges:
-            Log.baptDebug(f"  Clip result: aucune edge à l'intérieur\n")
             return []
 
-        Log.baptDebug(
-            f"  Clip result: {len(all_inside_edges)} edge(s) à l'intérieur\n")
-
-        # Regrouper les edges consécutives en wires continus
-        # Vérifier toutes les combinaisons de vertices pour la connexion,
-        # car les edges peuvent avoir une orientation quelconque.
+        # ---- Regrouper les edges consécutives en wires continus ----------
         result = []
         current_edges = [all_inside_edges[0]]
 
@@ -814,6 +916,94 @@ class AdaptativeOp(BaseOp.baseOp):
             # e_last commence à Vertexes[-1] → fin = Vertexes[0]
             return e_last.Vertexes[0].Point
 
+    def _wire_tangent_at_start(self, wire):
+        """Retourne le vecteur tangent unitaire au début du wire,
+        orienté dans le sens de parcours du wire."""
+        edges = wire.Edges
+        e0 = edges[0]
+        start_pt = self._wire_start_point(wire)
+        d0 = (e0.Vertexes[0].Point - start_pt).Length
+        if d0 < 0.01:
+            # Le wire commence par Vertexes[0] de la 1ère edge
+            tangent = e0.tangentAt(e0.FirstParameter)
+        else:
+            # Le wire commence par Vertexes[-1] → sens inversé
+            tangent = e0.tangentAt(e0.LastParameter) * -1.0
+        tangent.normalize()
+        return tangent
+
+    def _wire_tangent_at_end(self, wire):
+        """Retourne le vecteur tangent unitaire à la fin du wire,
+        orienté dans le sens de parcours du wire."""
+        edges = wire.Edges
+        e_last = edges[-1]
+        end_pt = self._wire_end_point(wire)
+        d_last = (e_last.Vertexes[-1].Point - end_pt).Length
+        if d_last < 0.01:
+            # Le wire finit par Vertexes[-1] de la dernière edge
+            tangent = e_last.tangentAt(e_last.LastParameter)
+        else:
+            # Le wire finit par Vertexes[0] → sens inversé
+            tangent = e_last.tangentAt(e_last.FirstParameter) * -1.0
+        tangent.normalize()
+        return tangent
+
+    def _build_entry_move(self, entry_point, direction, length=2.0):
+        """
+        Construit le mouvement d'entrée dans un segment clippé.
+
+        Pour l'instant, génère une ligne droite d'approche le long de
+        la direction d'usinage (en amont du point d'entrée).
+
+        Parameters:
+            entry_point : App.Vector
+                Point d'entrée sur le contour (à la frontière du stock).
+            direction : App.Vector
+                Vecteur direction tangent au contour au point d'entrée
+                (dans le sens d'usinage).
+            length : float
+                Longueur du mouvement d'entrée (mm).
+
+        Returns:
+            Part.Edge – ligne d'approche menant au point d'entrée,
+            ou None si length <= 0.
+        """
+        if length <= 1e-9:
+            return None
+        d = App.Vector(direction)
+        if d.Length > 1e-9:
+            d.normalize()
+        approach_point = entry_point - d * length
+        return Part.makeLine(approach_point, entry_point)
+
+    def _build_exit_move(self, exit_point, direction, length=2.0):
+        """
+        Construit le mouvement de sortie d'un segment clippé.
+
+        Pour l'instant, génère une ligne droite de dégagement le long de
+        la direction d'usinage (en aval du point de sortie).
+
+        Parameters:
+            exit_point : App.Vector
+                Point de sortie du contour (à la frontière du stock).
+            direction : App.Vector
+                Vecteur direction tangent au contour au point de sortie
+                (dans le sens d'usinage).
+            length : float
+                Longueur du mouvement de sortie (mm).
+
+        Returns:
+            Part.Edge – ligne de dégagement partant du point de sortie,
+            ou None si length <= 0.
+        """
+        if length <= 1e-9:
+            return None
+        d = App.Vector(direction)
+        if d.Length > 1e-9:
+            d.normalize()
+        depart_point = exit_point + d * length
+        return Part.makeLine(exit_point, depart_point)
+
     def _nearest_point_on_wire(self, wire, point):
         """
         Trouve le point le plus proche sur un wire depuis un point donné.
@@ -881,6 +1071,19 @@ class ViewProviderAdaptiveOp(BaseOp.baseOpViewProviderProxy):
             return BaptUtilities.getIconPath("operation_disabled.svg")
         return BaptUtilities.getIconPath("AdaptativeOp.svg")
 
+    def setupContextMenu(self, vobj, menu):
+        super().setupContextMenu(vobj, menu)
+
+        viewGcode = QtGui.QAction(Gui.getIcon("Std_TransformManip.svg"), "View G-code", menu)
+        QtCore.QObject.connect(viewGcode, QtCore.SIGNAL("triggered()"), lambda: self.viewGcode(vobj))
+        menu.addAction(viewGcode)
+        return True
+
+    def viewGcode(self, vobj):
+        """Afficher le G-code dans une boîte de dialogue"""
+        taskPanel = GcodeEditorTaskPanel(vobj.Object)
+        Gui.Control.showDialog(taskPanel)
+
     def __getstate__(self):
         return None
 
@@ -919,6 +1122,8 @@ class AdaptativeOpTaskPanel():
             self.aeSpin = BQuantitySpinBox(obj, "EngagementRadial", self.ui1.aeSpin)
             self.surepAxialeSpin = BQuantitySpinBox(obj, "SurepAxiale", self.ui1.surepAxialeSpin)
             self.surepRadialeSpin = BQuantitySpinBox(obj, "SurepRadiale", self.ui1.surepRadialeSpin)
+            self.entreeSpin = BQuantitySpinBox(obj, "Entree", self.ui1.entreeSpin)
+            self.sortieSpin = BQuantitySpinBox(obj, "Sortie", self.ui1.sortieSpin)
 
             for d in Direction:
                 self.ui1.directionCombo.addItem(d)

@@ -51,8 +51,8 @@ class baseOp:
         if not hasattr(obj, "Tool"):
             obj.addProperty("App::PropertyLink", "Tool", "Op", "Tool")
 
-        if int(App.Version()[0]) >= 1 and int(App.Version()[1]) >= 1:
-            obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
+            if int(App.Version()[0]) >= 1 and int(App.Version()[1]) >= 1:
+                obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
 
     def onChanged(self, fp, prop):
         self.execute(fp)
