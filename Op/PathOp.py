@@ -12,9 +12,9 @@ class pathOp(baseOp):
         super().__init__(obj)
         self.Type = "Path"
 
-        obj.Proxy = self
-
         self.installToolProp(obj)
+
+        obj.Proxy = self
 
     def installAttachment(self, obj):
         obj.addProperty("App::PropertyPlacement", "Placement", "Base", "Description for tooltip")
@@ -22,6 +22,9 @@ class pathOp(baseOp):
         obj.addExtension('Part::AttachExtensionPython')
 
     def execute(self, obj):
+        if App.ActiveDocument.Restoring:
+            return
+        super().execute(obj)  # Appelle la logique de base (vérifications, etc.)
 
         if hasattr(obj, "AttachmentSupport"):
             pass

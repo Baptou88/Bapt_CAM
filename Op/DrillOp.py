@@ -150,6 +150,10 @@ class DrillOperation(baseOp):
 
     def execute(self, obj):
         """Mettre à jour la représentation visuelle"""
+        if App.ActiveDocument.Restoring:
+            return
+        super().execute(obj)  # Appelle la logique de base (vérifications, etc.)
+
         if not obj.DrillGeometryName or not hasattr(App.ActiveDocument.getObject(obj.DrillGeometryName), "DrillPositions"):
             obj.Shape = Part.Shape()  # Shape vide
             return

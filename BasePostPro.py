@@ -26,6 +26,8 @@ class BasePostPro:
 
     def writeFooter(self):
         f = []
+        f.append("M9 (coolant off)")
+        f.append("M5 (stop spindle)")
         f.append("M30 ")
         return '\n'.join(f)
 
@@ -47,6 +49,16 @@ class BasePostPro:
             gcode_lines.append(f"S{spindle} M3")
             current_spindle = spindle
         return '\n'.join(gcode_lines)
+
+    def coolantChange(self, coolantMode):
+        if coolantMode == "Off":
+            return "M9 (Coolant Off)"
+        elif coolantMode == "Flood":
+            return "M8 (Coolant Flood On)"
+        elif coolantMode == "Mist":
+            return "M7 (Coolant Mist On)"
+        else:
+            return "M9 (Coolant Off)"  # Default to Off if unknown mode
 
     def G81(self, obj):
         doc = App.ActiveDocument

@@ -122,6 +122,9 @@ class PocketOperation(BaseOp.baseOp):
     def execute(self, obj):
         if App.ActiveDocument.Restoring:
             return
+
+        super().execute(obj)  # Appelle la logique de base (vérifications, etc.)
+
         # Chercher le parent ContourGeometry dans l'arborescence
         # if not self.initialized:
         #     Log.baptDebug("execute ignored")

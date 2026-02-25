@@ -107,6 +107,8 @@ class AdaptativeOp(BaseOp.baseOp):
         if App.ActiveDocument.Restoring:
             return
 
+        super().execute(obj)  # Appelle la logique de base (vérifications, etc.)
+
         try:
             shape = obj.Contour.Shape if obj.Contour and hasattr(obj.Contour, "Shape") else None
             if not shape:

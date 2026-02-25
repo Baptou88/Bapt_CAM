@@ -19,6 +19,8 @@ class Surfacage(baseOp):
         super().__init__(obj)
 
         self.initProperties(obj)
+        self.installToolProp(obj)
+
         obj.Proxy = self
 
     def initProperties(self, obj):
@@ -40,6 +42,8 @@ class Surfacage(baseOp):
     def execute(self, obj):
         if App.ActiveDocument.Restoring:
             return
+        super().execute(obj)  # Appelle la logique de base (vérifications, etc.)
+
         if not hasattr(obj, "Tool") or obj.Tool is None:
             return
         # obj.Shape = Part.Shape()

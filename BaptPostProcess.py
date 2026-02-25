@@ -65,6 +65,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
     current_tool = None
     current_spindle = None
     current_feed = None
+    current_Coolant = None
 
     blockForm = Postpro.blockForm(cam_project.Proxy.getStock(cam_project))
     gcode_lines.append(blockForm)
@@ -87,6 +88,12 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             gcode_lines.append(tool_change_code)
 
             current_tool = tool
+
+        coolantMode = getattr(obj, 'CoolantMode', 'Off')
+        if current_Coolant != coolantMode:
+            coolant_change_code = Postpro.coolantChange(coolantMode)
+            gcode_lines.append(coolant_change_code)
+            current_Coolant = coolantMode
 
         # --- Surfacage ---
         if isinstance(obj.Proxy, OpSurfacage.Surfacage) and hasattr(obj, 'Shape'):
