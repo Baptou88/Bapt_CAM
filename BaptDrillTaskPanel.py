@@ -2,6 +2,7 @@ from tkinter.filedialog import Open
 import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
+from Op import DrillOp
 from PySide import QtCore, QtGui
 
 
@@ -141,7 +142,7 @@ class DrillGeometryTaskPanel:
         if not ops and not hasattr(ops, "Group"):
             return
         for op in ops.Group:
-            if hasattr(op, "Proxy") and hasattr(op.Proxy, "Type") and op.Proxy.Type == "DrillOperation":
+            if hasattr(op, "Proxy") and isinstance(op.Proxy, DrillOp.DrillOperation):
                 row = self.optable.rowCount()
                 self.optable.insertRow(row)
                 self.optable.setItem(row, 0, QtGui.QTableWidgetItem(op.Label))
@@ -388,7 +389,7 @@ class DrillGeometryTaskPanel:
         """Mettre à jour les opérations de perçage enfants"""
         # Parcourir tous les objets enfants de type DrillOperation
         for child in self.obj.Group:
-            if hasattr(child, "Proxy") and hasattr(child.Proxy, "Type") and child.Proxy.Type == "DrillOperation":
+            if hasattr(child, "Proxy") and isinstance(child.Proxy, DrillOp.DrillOperation):
                 # Forcer la mise à jour de l'opération
                 if hasattr(child, "touch"):
                     child.touch()

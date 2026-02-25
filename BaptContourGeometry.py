@@ -1,5 +1,6 @@
 import FreeCAD as App
 import FreeCADGui as Gui
+from Op import OpContournage
 import Part
 
 import sys
@@ -814,7 +815,7 @@ class ViewProviderContourGeometry:
 
             for obj in doc.Objects:
                 # Vérifier si l'objet est un cycle de contournage
-                if hasattr(obj, "Proxy") and hasattr(obj.Proxy, "Type") and obj.Proxy.Type == "ContournageCycle":
+                if hasattr(obj, "Proxy") and isinstance(obj.Proxy, OpContournage.ContournageCycle):
                     # Vérifier si l'objet référence cette géométrie
                     if hasattr(obj, "ContourGeometryName") and obj.ContourGeometryName == self.Object.Name:
                         children.append(obj)

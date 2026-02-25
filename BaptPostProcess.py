@@ -5,11 +5,12 @@ Génère un programme G-code à partir des opérations du projet CAM
 """
 import importlib
 import os
+from BaptCamProject import CamProject
 from BaptPreferences import BaptPreferences
 from CamProjectTaskPanel import PostProcessorTaskPanel
 from BasePostPro import BasePostPro
 import FreeCAD as App  # type: ignore
-from Op import AdaptativeOp
+from Op import AdaptativeOp, BaptPocketOp, BaseOp, DrillOp, OpContournage, OpSurfacage
 from Op.PathOp import pathOp
 from PySide import QtGui, QtCore  # type: ignore
 import BaptUtilities as BaptUtils
@@ -19,8 +20,10 @@ def isOp(obj) -> bool:
     """
     Retourne True si obj est une opération d'usinage (ContournageCycle, DrillOperation, etc.).
     """
-    if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type in [
-            'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path', 'PocketOperation', 'AdaptativeOperation']:
+    # if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type in [
+    #         'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path', 'PocketOperation', 'AdaptativeOperation']:
+    #     return True
+    if hasattr(obj, 'Proxy') and isinstance(obj.Proxy, BaseOp.baseOp):
         return True
     return False
 
@@ -86,14 +89,14 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             current_tool = tool
 
         # --- Surfacage ---
-        if obj.Proxy.Type == 'Surfacage' and hasattr(obj, 'Shape'):
+        if isinstance(obj.Proxy, OpSurfacage.Surfacage) and hasattr(obj, 'Shape'):
 
             gcode_lines.append(Postpro.writeComment(f"Surfacage: {obj.Label}"))
 
             gcode_lines.append(obj.Gcode)
 
         # --- Contournage ---
-        if obj.Proxy.Type == 'ContournageCycle' and hasattr(obj, 'Shape'):
+        if isinstance(obj.Proxy, OpContournage.ContournageCycle) and hasattr(obj, 'Shape'):
             transformed = Postpro.transformGCode(obj.Gcode)
             gcode_lines.append(Postpro.writeComment(f"Contournage operation: {obj.Label}"))
 
@@ -101,7 +104,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             # gcode_lines.append(obj.Gcode)
 
         # --- Perçage ---
-        elif obj.Proxy.Type == 'DrillOperation':
+        elif isinstance(obj.Proxy, DrillOp.DrillOperation):
             tool_id = getattr(obj, 'ToolId', None)
             tool_name = getattr(obj, 'ToolName', None)
             spindle = getattr(obj, 'SpindleSpeed', None)
@@ -161,8 +164,12 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             gcode_lines.append(Postpro.writeComment(f"Path operation: {obj.Label}"))
             gcode_lines.append(Postpro.transformGCode(obj.Gcode))
 
-        elif isinstance(obj.Proxy, AdaptativeOp):
+        elif isinstance(obj.Proxy, AdaptativeOp.AdaptativeOp):
             gcode_lines.append(Postpro.writeComment(f"Adaptative operation: {obj.Label}"))
+            gcode_lines.append(Postpro.transformGCode(obj.Gcode))
+
+        elif isinstance(obj.Proxy, BaptPocketOp.PocketOperation):
+            gcode_lines.append(Postpro.writeComment(f"Pocket operation: {obj.Label}"))
             gcode_lines.append(Postpro.transformGCode(obj.Gcode))
 
         else:
@@ -182,7 +189,7 @@ def postprocess_gcode():
     # Chercher le projet CAM principal
     cam_project = None
     for obj in doc.Objects:
-        if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type == 'CamProject':
+        if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and isinstance(obj.Proxy, CamProject):
             cam_project = obj
             break
     if not cam_project:

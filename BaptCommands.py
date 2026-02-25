@@ -61,7 +61,7 @@ class CreateAdaptativeOperationCommand:
 
     def IsActive(self):
         sel = Gui.Selection.getSelection()
-        return sel and hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
+        return sel and hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, BaptContourGeometry.ContourGeometry)
 
     def Activated(self):
         doc = App.ActiveDocument
@@ -84,7 +84,7 @@ class CreatePocketOperationCommand:
 
     def IsActive(self):
         sel = Gui.Selection.getSelection()
-        return sel and hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
+        return sel and hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, BaptContourGeometry.ContourGeometry)
 
     def Activated(self):
         doc = App.ActiveDocument
@@ -112,8 +112,8 @@ class CreateContourCommand:
         sel = Gui.Selection.getSelection()
         if not sel:
             return False
-        # return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
-        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "ContourGeometry"
+
+        return hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, BaptContourGeometry.ContourGeometry)
 
     def Activated(self):
         """Créer un nouveau contournage"""
@@ -414,7 +414,8 @@ class CreateContourEditableGeometryCommand:
         sel = Gui.Selection.getSelection()
         if not sel:
             return False
-        return hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject"
+
+        return hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, BaptCamProject.CamProject)
 
     def Activated(self):
         """Créer une nouvelle géométrie de contour"""
@@ -563,9 +564,7 @@ class CreateDrillOperationCommand:
         if not sel:
             return False
 
-        # Vérifier si l'objet sélectionné est une géométrie de perçage
-        # en vérifiant directement le type de Proxy.Type
-        return hasattr(sel[0], "Proxy") and hasattr(sel[0].Proxy, "Type") and sel[0].Proxy.Type == "DrillGeometry"
+        return hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, DrillOp.DrillOperation)
 
     def Activated(self):
         """Créer une nouvelle opération de perçage"""

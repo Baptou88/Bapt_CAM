@@ -1,4 +1,5 @@
 import os
+from BaptCamProject import CamProject
 import FreeCAD as App
 import FreeCADGui
 
@@ -72,7 +73,7 @@ def find_cam_project(o):
 
         proxy = getattr(parent, "Proxy", None)
 
-        if proxy is not None and hasattr(proxy, "Type") and proxy.Type == "CamProject":
+        if proxy is not None and isinstance(proxy, CamProject):
             return parent
         if hasattr(parent, "InList"):
             queue.extend(parent.InList)
@@ -87,7 +88,7 @@ def getActiveCamProject():
 
     sel = FreeCADGui.Selection.getSelection()
     if sel and len(sel) <= 1:
-        if hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject":
+        if hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, CamProject):
             return sel[0]
 
     obj = FreeCADGui.activeView().getActiveObject("camproject")
@@ -97,7 +98,7 @@ def getActiveCamProject():
     cam_projects = []
     for obj in App.ActiveDocument.Objects:
         proxy = getattr(obj, "Proxy", None)
-        if proxy is not None and hasattr(proxy, "Type") and proxy.Type == "CamProject":
+        if proxy is not None and isinstance(proxy, CamProject):
             cam_projects.append(obj)
     if len(cam_projects) == 1:
         return cam_projects[0]

@@ -1,5 +1,6 @@
 import FreeCAD as App
 import FreeCADGui as Gui
+from Op import DrillOp
 import Part
 import BaptUtilities
 
@@ -319,7 +320,7 @@ class ViewProviderDrillGeometry:
 
             for obj in doc.Objects:
                 # Vérifier si l'objet est un cycle de contournage
-                if hasattr(obj, "Proxy") and hasattr(obj.Proxy, "Type") and obj.Proxy.Type == "DrillOperation":
+                if hasattr(obj, "Proxy") and isinstance(obj.Proxy, DrillOp.DrillOperation):
                     # Vérifier si l'objet référence cette géométrie
                     if hasattr(obj, "DrillGeometryName") and obj.DrillGeometryName == self.Object.Name:
                         children.append(obj)

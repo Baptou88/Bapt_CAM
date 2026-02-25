@@ -309,7 +309,7 @@ class DrillOperationTaskPanel:
 
         # Parcourir tous les objets du document
         for obj in App.ActiveDocument.Objects:
-            if hasattr(obj, "Proxy") and hasattr(obj.Proxy, "Type") and obj.Proxy.Type == "DrillGeometry":
+            if hasattr(obj, "Proxy") and isinstance(obj.Proxy, DrillOp.DrillOperation):
                 self.geometryCombo.addItem(obj.Label, obj.Name)
 
         # Sélectionner la géométrie actuelle si elle existe
