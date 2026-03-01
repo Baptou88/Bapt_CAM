@@ -232,6 +232,7 @@ class ContournageTaskPanel:
 
     def setFields(self, obj):
         self.toolDiameter.updateWidget()
+        self.cuttingConditionPanel.setFields(obj)
 
     def updateData(self, obj, prop):
         """Forwards property changes from the object to the active TaskPanel."""
@@ -247,6 +248,7 @@ class ContournageTaskPanel:
             self.obj.Tool.Visibility = False
 
         Gui.Control.closeDialog()
+        self.obj.recompute()
         return True
 
     def reject(self):

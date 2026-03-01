@@ -30,7 +30,7 @@ class pathOp(baseOp):
             pass
             # obj.positionBySupport()
 
-        return super().execute(obj)
+        return True
 
     def onChanged(self, fp, prop):
         return
@@ -38,20 +38,17 @@ class pathOp(baseOp):
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
-        App.Console.PrintMessage("Restoring document for object: {}\n".format(obj.Name))
         self.__init__(obj)
 
 
 class pathOpViewProviderProxy(baseOpViewProviderProxy):
     def __init__(self, vobj):
-        App.Console.PrintMessage("Initializing path view provider proxy for: {}\n".format(__class__.__name__))
         super().__init__(vobj)
 
         self.Object = vobj.Object
         vobj.Proxy = self
 
     def attach(self, vobj):
-        App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
         self.Object = vobj.Object
         return super().attach(vobj)
 

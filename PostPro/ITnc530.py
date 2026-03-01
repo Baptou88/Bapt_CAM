@@ -126,7 +126,7 @@ class PostPro(BasePostPro):
 
     def G81(self, obj):
         doc = App.ActiveDocument
-        geom = doc.getObject(obj.DrillGeometryName)
+        geom = obj.DrillGeometry
         if geom and hasattr(geom, 'DrillPositions'):
             points = geom.DrillPositions
         safe_z = getattr(obj, 'SafeHeight', 5.0).Value

@@ -14,7 +14,7 @@ import BaptUtilities
 from Tool.ToolTaskPannel import ToolTaskPanel
 from utils import BQuantitySpinBox, GcodeWriter
 from utils import Log as Log
-from utils.Contour import getFirstPoint, getLastPoint, shiftWire, edgeToGcode
+from utils.Contour import getFirstPoint, edgeToGcode
 
 if True:
     Log.setLevel(Log.Level.DEBUG, Log.thisModule())

@@ -7,10 +7,9 @@ Module pour la reconnaissance automatique de trous cylindriques perpendiculaires
 
 import FreeCAD as App
 import FreeCADGui as Gui
-import Part
 import math
-from PySide import QtCore, QtGui
 from pivy import coin  # type: ignore
+from Gui.HoleRecognitionTaskPanel import HoleRecognitionTaskPanel
 
 
 class HoleInfo:
@@ -435,7 +434,7 @@ class ViewProviderHoleRecognition:
 
     def setEdit(self, vobj, mode=0):
         """Ouvrir le TaskPanel"""
-        from BaptHoleRecognitionTaskPanel import HoleRecognitionTaskPanel
+
         panel = HoleRecognitionTaskPanel(vobj.Object)
         Gui.Control.showDialog(panel)
         return True

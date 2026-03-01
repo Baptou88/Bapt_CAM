@@ -1,6 +1,6 @@
 import FreeCAD as App
 import FreeCADGui as Gui
-from Op import OpContournage
+
 import Part
 
 import sys
@@ -12,7 +12,7 @@ try:
 except ImportError:
     App.Console.PrintError("Impossible d'importer le module coin. La mise en surbrillance des arêtes ne fonctionnera pas correctement.\n")
 
-DEBUG = True
+DEBUG = False
 if DEBUG:
     Log.setLevel(Log.Level.DEBUG, Log.thisModule())
 else:
@@ -128,7 +128,7 @@ class ContourGeometry:
                 for sub_name in sub_names:
                     element = obj_ref.Shape.getElement(sub_name)
                     element_type = getattr(element, "ShapeType", "Inconnu")
-                    Log.baptDebug(f"Traitement de l'objet {obj_ref.Name} avec les sous-éléments {sub_names}, type:{element_type}\n")
+                    # Log.baptDebug(f"Traitement de l'objet {obj_ref.Name} avec les sous-éléments {sub_names}, type:{element_type}\n")
                     if element_type == "Edge":
                         edge = obj_ref.Shape.getElement(sub_name)
                         edges.append(edge)
@@ -802,32 +802,9 @@ class ViewProviderContourGeometry:
 
     def claimChildren(self):
         """Retourne les enfants de cet objet"""
-        children = []
-        # Récupérer tous les objets de contournage qui référencent cette géométrie par son nom
-        if self.Object:
-            doc = self.Object.Document
-            if not doc:
-                return children
-
-            # Vérifier que l'objet a un nom valide
-            if not hasattr(self.Object, "Name") or not self.Object.Name:
-                return children
-
-            for obj in doc.Objects:
-                # Vérifier si l'objet est un cycle de contournage
-                if hasattr(obj, "Proxy") and isinstance(obj.Proxy, OpContournage.ContournageCycle):
-                    # Vérifier si l'objet référence cette géométrie
-                    if hasattr(obj, "ContourGeometryName") and obj.ContourGeometryName == self.Object.Name:
-                        children.append(obj)
-
-            # Vérifier si l'objet a un groupe
-            if hasattr(self.Object, "Group"):
-                # Ajouter tous les objets du groupe qui ne sont pas déjà dans la liste
-                for obj in self.Object.Group:
-                    if obj not in children:
-                        children.append(obj)
-
-        return children
+        if self.Object and hasattr(self.Object, "Group"):
+            return list(self.Object.Group)
+        return []
 
     def getDisplayModes(self, vobj):
         """Retourne les modes d'affichage disponibles"""
@@ -887,11 +864,11 @@ class ViewProviderContourGeometry:
         """Appelé lorsque l'objet est édité"""
         try:
             import importlib
-            import BaptContourTaskPanel
+            import Gui.ContourTaskPanel as ContourTaskPanel
             # Recharger le module pour prendre en compte les modifications
-            importlib.reload(BaptContourTaskPanel)
+            importlib.reload(ContourTaskPanel)
             # Créer et afficher le panneau
-            panel = BaptContourTaskPanel.ContourTaskPanel(vobj.Object, self.setDeleteObjectsOnReject())
+            panel = ContourTaskPanel.ContourTaskPanel(vobj.Object, self.setDeleteObjectsOnReject())
             Gui.Control.showDialog(panel)
             self.deleteOnReject = False
             return True

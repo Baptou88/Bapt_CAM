@@ -4,11 +4,12 @@ from Op.BaseOp import baseOpViewProviderProxy
 import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
-from Op.BaseOp import baseOp
 import Part
 from utils import Contour, GcodeWriter
 import PySide.QtGui as QtGui
 import PySide.QtCore as QtCore
+import Op.Gui.ContournageTaskPanel as ContournageTaskPanel
+from Op.BaseOp import baseOp
 
 import math
 import sys
@@ -57,9 +58,16 @@ class ContournageCycle(baseOp):
             obj.Direction = ["Climb", "Conventional"]
             obj.Direction = "Climb"
 
-        # Utiliser PropertyString au lieu de PropertyLink pour éviter la dépendance circulaire
-        if not hasattr(obj, "ContourGeometryName"):
-            obj.addProperty("App::PropertyString", "ContourGeometryName", "Contour", "Nom de la géométrie du contour")
+        # Lien vers la géométrie du contour
+        if not hasattr(obj, "ContourGeometry"):
+            obj.addProperty("App::PropertyLink", "ContourGeometry", "Contour", "Géométrie du contour")
+        # Migration : convertir l'ancien PropertyString en PropertyLink
+        if hasattr(obj, "ContourGeometryName"):
+            if obj.ContourGeometryName and not obj.ContourGeometry:
+                old_geom = obj.Document.getObject(obj.ContourGeometryName)
+                if old_geom:
+                    obj.ContourGeometry = old_geom
+            obj.removeProperty("ContourGeometryName")
 
         # Ajout des types d'approche et de sortie
         if not hasattr(obj, "ApproachType"):
@@ -99,7 +107,7 @@ class ContournageCycle(baseOp):
 
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        if prop in ["ToolDiameter", "CutDepth", "StepDown", "Direction", "ContourGeometryName", "ApproachType", "RetractType", "ApproachRetractLength", "ApproachRetractLength", "desactivated", "Compensation", "SurepAxiale", "SurepRadiale"]:
+        if prop in ["ToolDiameter", "CutDepth", "StepDown", "Direction", "ContourGeometry", "ApproachType", "RetractType", "ApproachRetractLength", "ApproachRetractLength", "desactivated", "Compensation", "SurepAxiale", "SurepRadiale"]:
             self.execute(obj)
 
     def execute(self, obj):
@@ -162,7 +170,7 @@ class ContournageCycle(baseOp):
         rapid_traverse_z = contour_zref + 2.0
 
         for p, pass_z in enumerate(passes_z_values):
-            App.Console.PrintMessage(f"Processing pass at Z = {pass_z}\n")
+            # App.Console.PrintMessage(f"Processing pass at Z = {pass_z}\n")
             # current_pass_toolpath_segments list is removed as segments are added directly to all_pass_shapes_collected
 
             # 1. Create wire at current pass_z by transforming zref_wire_from_contour
@@ -218,7 +226,7 @@ class ContournageCycle(baseOp):
                 import FreeCAD
                 translate = FreeCAD.Qt.translate
 
-                App.Console.PrintMessage(translate("op_Contournage", "Closed contour detected, adjusting first edge for continuity.") + "\n")
+                # App.Console.PrintMessage(translate("op_Contournage", "Closed contour detected, adjusting first edge for continuity.") + "\n")
                 first_edge = offset_toolpath_edges[0]
                 mid_param = (first_edge.FirstParameter + first_edge.LastParameter) / 2.0
 
@@ -247,7 +255,7 @@ class ContournageCycle(baseOp):
             core_toolpath_start_pt = first_toolpath_edge.Vertexes[indexOfFirstPoint].Point
             core_toolpath_end_pt = last_toolpath_edge.Vertexes[indexOfLastPoint].Point
 
-            App.Console.PrintMessage(f"first point: {core_toolpath_start_pt}, last point: {core_toolpath_end_pt}\n")
+            # App.Console.PrintMessage(f"first point: {core_toolpath_start_pt}, last point: {core_toolpath_end_pt}\n")
 
             gcodeWriter.comment(f"Pass at Z={pass_z}")
 
@@ -383,7 +391,7 @@ class ContournageCycle(baseOp):
         if all_pass_shapes_collected:
             try:
                 obj.Shape = Part.makeCompound(all_pass_shapes_collected)
-                App.Console.PrintMessage(f"Multi-pass toolpath generated with {len(passes_z_values)} passes.\n")
+                # App.Console.PrintMessage(f"Multi-pass toolpath generated with {len(passes_z_values)} passes.\n")
             except Exception as e_compound:
                 App.Console.PrintError(f"Failed to create final compound shape: {e_compound}\n")
                 obj.Shape = Part.Shape()  # Fallback to empty shape
@@ -537,33 +545,25 @@ class ContournageCycle(baseOp):
 
     def getContourGeometry(self, obj):
         """Récupérer la géométrie du contour associée"""
-        if not hasattr(obj, "ContourGeometryName") or not obj.ContourGeometryName:
-            # App.Console.PrintError("Aucune géométrie de contour associée.\n")
+        if not hasattr(obj, "ContourGeometry") or not obj.ContourGeometry:
             return None
+        return obj.ContourGeometry
 
-        doc = obj.Document
-        for o in doc.Objects:
-            if o.Name == obj.ContourGeometryName:
-                return o
+    # def __getstate__(self):
+    #     """Appelé lors de la sauvegarde"""
+    #     return None
+    #     # return {
+    #     #     "Type": self.Type,
+    #     #     "ContourGeometryName": getattr(self.Object, "ContourGeometryName", "")
+    #     # }
 
-        App.Console.PrintError(f"Impossible de trouver la géométrie du contour '{obj.ContourGeometryName}'.\n")
-        return None
+    # def __setstate__(self, state):
+    #     """Appelé lors du chargement"""
+    #     return None
 
-    def __getstate__(self):
-        """Appelé lors de la sauvegarde"""
-        return None
-        # return {
-        #     "Type": self.Type,
-        #     "ContourGeometryName": getattr(self.Object, "ContourGeometryName", "")
-        # }
-
-    def __setstate__(self, state):
-        """Appelé lors du chargement"""
-        return None
-
-        # if state:
-        #     self.Type = state.get("Type", "ContournageCycle")
-        # return None
+    #     # if state:
+    #     #     self.Type = state.get("Type", "ContournageCycle")
+    #     # return None
 
 
 class ViewProviderContournageCycle(baseOpViewProviderProxy):
@@ -575,7 +575,7 @@ class ViewProviderContournageCycle(baseOpViewProviderProxy):
 
         vobj.Proxy = self
         self.Object = vobj.Object
-
+        self.panel = None
         # Ajouter des propriétés pour l'affichage
         if not hasattr(vobj, "ShowToolPath"):
             vobj.addProperty("App::PropertyBool", "ShowToolPath", "Display", "Afficher la trajectoire d'outil")
@@ -599,7 +599,7 @@ class ViewProviderContournageCycle(baseOpViewProviderProxy):
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""
         self.Object = vobj.Object
-
+        self.panel = None
         # Configuration de l'affichage
         vobj.LineColor = (0.0, 0.0, 1.0)  # Bleu
         vobj.PointColor = (0.0, 0.0, 1.0)  # Bleu
@@ -619,6 +619,7 @@ class ViewProviderContournageCycle(baseOpViewProviderProxy):
 
     def onChanged(self, vobj, prop):
         """Appelé lorsqu'une propriété du ViewProvider est modifiée"""
+        super().onChanged(vobj, prop)
         # Mettre à jour l'affichage si une propriété d'affichage change
         if prop in ["ShowToolPath", "PathColor", "PathWidth"]:
             # Appliquer les nouvelles propriétés d'affichage
@@ -628,11 +629,11 @@ class ViewProviderContournageCycle(baseOpViewProviderProxy):
             if hasattr(vobj, "LineWidth") and hasattr(vobj, "PathWidth"):
                 vobj.LineWidth = vobj.PathWidth
 
-    def claimChildren(self):
-        """Retourne les enfants de cet objet"""
-        # Ne pas réclamer la géométrie du contour comme enfant
-        # car c'est le contour qui doit être l'enfant de la géométrie
-        return []
+    # def claimChildren(self):
+    #     """Retourne les enfants de cet objet"""
+    #     # Ne pas réclamer la géométrie du contour comme enfant
+    #     # car c'est le contour qui doit être l'enfant de la géométrie
+    #     return []
 
     def setupContextMenu(self, vobj, menu):
         super().setupContextMenu(vobj, menu)
@@ -649,27 +650,37 @@ class ViewProviderContournageCycle(baseOpViewProviderProxy):
 
     def setEdit(self, vobj, mode=0):
         """Ouvre le panneau de tâche pour l'édition"""
-        import BaptContournageTaskPanel
-        taskd = BaptContournageTaskPanel.ContournageTaskPanel(self.Object)
-        Gui.Control.showDialog(taskd)
-        return True
+        if mode == 0:
+            self.panel = ContournageTaskPanel.ContournageTaskPanel(self.Object)
+            Gui.Control.showDialog(self.panel)
+            # self.panel.setupUi()
+            return True
+        return False
 
     def unsetEdit(self, vobj, mode=0):
         """Ferme le panneau de tâche"""
+        if self.panel:
+            self.panel.reject()
+            self.panel = None
         Gui.Control.closeDialog()
         return True
 
-    def getDisplayModes(self, vobj):
-        """Retourne les modes d'affichage disponibles"""
-        return ["Flat Lines", "Shaded", "Wireframe", "Path"]
+    # def getDisplayModes(self, vobj):
+    #     """Retourne les modes d'affichage disponibles"""
+    #     return ["Flat Lines", "Shaded", "Wireframe", "Path"]
 
-    def getDefaultDisplayMode(self):
-        """Retourne le mode d'affichage par défaut"""
-        return "Flat Lines"
+    # def getDefaultDisplayMode(self):
+    #     """Retourne le mode d'affichage par défaut"""
+    #     return "Flat Lines"
 
-    def setDisplayMode(self, mode):
-        """Définit le mode d'affichage"""
-        return mode
+    # def setDisplayMode(self, mode):
+    #     """Définit le mode d'affichage"""
+    #     return mode
+    def updateData(self, fp_object, prop):
+        """Forwards property changes from the object to the active TaskPanel."""
+        super().updateData(fp_object, prop)
+        if self.panel:
+            self.panel.updateData(fp_object, prop)
 
     def __getstate__(self):
         """Appelé lors de la sauvegarde"""

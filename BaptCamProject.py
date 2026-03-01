@@ -8,7 +8,7 @@ from PySide import QtWidgets
 import PySide.QtCore as QtCore
 import PySide.QtGui as QtGui
 import Draft
-import CamProjectTaskPanel
+import Gui.CamProjectTaskPanel as CamProjectTaskPanel
 
 
 class Stock:
@@ -166,17 +166,18 @@ class Stock:
         if hasattr(obj, "Length") and hasattr(obj, "Width") and hasattr(obj, "Height"):
             # Créer la boîte en fonction du plan de travail
             # App.Console.PrintMessage(f'plac 1 {obj.Placement}\n')
-            if obj.WorkPlane == "XY":
-                box = Part.makeBox(obj.Length, obj.Width, obj.Height)
-            elif obj.WorkPlane == "XZ":
-                box = Part.makeBox(obj.Length, obj.Height, obj.Width)
-            else:  # YZ
-                box = Part.makeBox(obj.Height, obj.Length, obj.Width)
+            if obj.Length > 0 and obj.Width > 0 and obj.Height > 0:
+                if obj.WorkPlane == "XY":
+                    box = Part.makeBox(obj.Length, obj.Width, obj.Height)
+                elif obj.WorkPlane == "XZ":
+                    box = Part.makeBox(obj.Length, obj.Height, obj.Width)
+                else:  # YZ
+                    box = Part.makeBox(obj.Height, obj.Length, obj.Width)
 
-            # Assigner la forme
-            obj.Shape = box
-            # App.Console.PrintMessage(f'plac 2 {obj.Placement}\n')
-            obj.Placement = placement
+                # Assigner la forme
+                obj.Shape = box
+                # App.Console.PrintMessage(f'plac 2 {obj.Placement}\n')
+                obj.Placement = placement
         elif hasattr(obj, "XNeg") and hasattr(obj, "YNeg") and hasattr(obj, "ZNeg") and hasattr(obj, "XPos") and hasattr(obj, "YPos") and hasattr(obj, "ZPos"):
             # Créer la boîte centrée sur le modèle avec les extensions
             xMin = modelBbox.XMin - obj.XNeg
@@ -190,6 +191,16 @@ class Stock:
                                App.Vector(xMin, yMin, zMin))
             obj.Shape = box
             # obj.Placement =  App.Placement(App.Vector(modelBbox.XMin, modelBbox.YMin, modelBbox.ZMin), App.Rotation(App.Vector(0,0,1),0))
+        elif hasattr(obj, "Diam") and hasattr(obj, "CylHeight"):
+            # Créer un cylindre centré sur le modèle
+            radius = obj.Diam.Value / 2.0
+            height = obj.CylHeight.Value
+            if radius > 0 and height > 0 and modelBbox is not None:
+                cx = modelBbox.Center.x
+                cy = modelBbox.Center.y
+                zMin = modelBbox.ZMin
+                cyl = Part.makeCylinder(radius, height, App.Vector(cx, cy, zMin))
+                obj.Shape = cyl
         obj.testShape = obj.Shape
 
     def onChanged(self, obj, prop):
@@ -200,6 +211,8 @@ class Stock:
         if prop in ["Length", "Width", "Height", "WorkPlane"]:
             self.updateShape(obj)
         elif prop in ["XNeg", "YNeg", "ZNeg", "XPos", "YPos", "ZPos"]:
+            self.updateShape(obj)
+        elif prop in ["Diam", "CylHeight"]:
             self.updateShape(obj)
 
     def __getstate__(self):
@@ -609,6 +622,12 @@ class CamProject:
 
     def __setstate__(self, state):
         """Désérialisation"""
+        return None
+
+    def dumps(self):
+        return None
+
+    def loads(self, state):
         return None
 
     def onDelete(self, obj, subelements):

@@ -1,6 +1,5 @@
 import FreeCAD as App
 import FreeCADGui as Gui
-from Op import DrillOp
 import Part
 import BaptUtilities
 
@@ -285,8 +284,8 @@ class ViewProviderDrillGeometry:
 
     def setEdit(self, vobj, mode=0):
         """Ouvrir l'éditeur"""
-        import BaptDrillTaskPanel
-        panel = BaptDrillTaskPanel.DrillGeometryTaskPanel(vobj.Object)
+        import Gui.DrillGeomTaskPanel as DrillGeomTaskPanel
+        panel = DrillGeomTaskPanel.DrillGeometryTaskPanel(vobj.Object)
         Gui.Control.showDialog(panel)
         return True
 
@@ -306,33 +305,9 @@ class ViewProviderDrillGeometry:
 
     def claimChildren(self):
         """Retourne les enfants de cet objet"""
-
-        children = []
-        # Récupérer tous les objets de contournage qui référencent cette géométrie par son nom
-        if self.Object:
-            doc = self.Object.Document
-            if not doc:
-                return children
-
-            # Vérifier que l'objet a un nom valide
-            if not hasattr(self.Object, "Name") or not self.Object.Name:
-                return children
-
-            for obj in doc.Objects:
-                # Vérifier si l'objet est un cycle de contournage
-                if hasattr(obj, "Proxy") and isinstance(obj.Proxy, DrillOp.DrillOperation):
-                    # Vérifier si l'objet référence cette géométrie
-                    if hasattr(obj, "DrillGeometryName") and obj.DrillGeometryName == self.Object.Name:
-                        children.append(obj)
-
-            # Vérifier si l'objet a un groupe
-            if hasattr(self.Object, "Group"):
-                # Ajouter tous les objets du groupe qui ne sont pas déjà dans la liste
-                for obj in self.Object.Group:
-                    if obj not in children:
-                        children.append(obj)
-
-        return children
+        if self.Object and hasattr(self.Object, "Group"):
+            return list(self.Object.Group)
+        return []
 
     def onDelete(self, feature, subelements):  # subelements is a tuple of strings
 

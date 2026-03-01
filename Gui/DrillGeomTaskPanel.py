@@ -1,4 +1,3 @@
-from tkinter.filedialog import Open
 import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -257,7 +256,7 @@ class DrillGeometryTaskPanel:
         # Mettre à jour les positions
         if not self.updateDrillPositions():
             return False
-
+        self.obj.recompute()
         self.obj.SelectedPosition = -1
         App.ActiveDocument.commitTransaction()
         # Fermer la tâche

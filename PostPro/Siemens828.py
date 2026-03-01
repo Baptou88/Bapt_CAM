@@ -49,7 +49,7 @@ class PostPro(BasePostPro.BasePostPro):
 
     def G81(self, obj):
         doc = App.ActiveDocument
-        geom = doc.getObject(obj.DrillGeometryName)
+        geom = obj.DrillGeometry
         if geom and hasattr(geom, 'DrillPositions'):
             points = geom.DrillPositions
 
@@ -75,7 +75,7 @@ class PostPro(BasePostPro.BasePostPro):
 
     def G84(self, obj):
         doc = App.ActiveDocument
-        geom = doc.getObject(obj.DrillGeometryName)
+        geom = obj.DrillGeometry
         if geom and hasattr(geom, 'DrillPositions'):
             points = geom.DrillPositions
 

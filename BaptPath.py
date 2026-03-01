@@ -110,16 +110,35 @@ class GcodeEditorTaskPanel:
 
         self.textEdit = QtGui.QPlainTextEdit()
         self.textEdit.setPlainText(self.obj.Gcode)
+        self.textEdit.cursorPositionChanged.connect(self.onCursorPositionChanged)
+        # self.textEdit.selectionChanged.connect(self.onSelectionChanged)
         layout.addWidget(self.textEdit)
 
         # Activer le highlighter
         self.highlighter = GCodeHighlighter(self.textEdit.document())
 
+    def onSelectionChanged(self):
+        # Appelé quand la sélection change dans le QTextEdit
+        cursor = self.textEdit.textCursor()
+        selected_text = cursor.selectedText()
+        App.Console.PrintMessage(f"Selected text: '{selected_text}'\n")
+
+    def onCursorPositionChanged(self):
+        # Appelé quand le curseur change de position dans le QTextEdit
+        # pos est un QPoint avec les coordonnées du curseur
+        cursor = self.textEdit.textCursor()
+        line = cursor.blockNumber() + 1  # blockNumber est 0-based
+        col = cursor.columnNumber() + 1    # columnNumber est 0-based
+        # App.Console.PrintMessage(f"Cursor position: Line {line}, Column {col}\n")
+        self.obj.ViewObject.Cursor = line  # Mettre à jour la propriété Cursor de l'objet avec le numéro de ligne (1-based)
+
     def accept(self):
+        self.obj.ViewObject.Cursor = -1
         self.obj.Gcode = self.textEdit.toPlainText()
         FreeCADGui.Control.closeDialog()
 
     def reject(self):
+        self.obj.ViewObject.Cursor = -1
         FreeCADGui.Control.closeDialog()
 
     def clicked(self, button):
@@ -159,6 +178,7 @@ class GcodeAnimator:
         self.timer.setInterval(30)  # ms, ~33 FPS default
         self.timer.timeout.connect(self._on_timer)
         self.speed = 20.0  # mm / sec
+        self.rapidSpeed = 100.0  # mm / sec for rapid moves
         self.include_rapid = True
 
         self.tool = None
@@ -328,23 +348,24 @@ class GcodeAnimator:
             for typ, a, b in vp.ordered_segments:
                 if typ == "rapid" and not include_rapid:
                     continue
-                segs.append((a, b))
+                segs.append((typ, a, b))
         else:
             # fallback: keep previous behavior (rapid then feed)
             if include_rapid and hasattr(vp, "rapid_coords"):
                 rc = getattr(vp, "rapid_coords") or []
                 for i in range(0, len(rc), 2):
                     if i+1 < len(rc):
-                        segs.append((rc[i], rc[i+1]))
+                        segs.append(("rapid", rc[i], rc[i+1]))
             if hasattr(vp, "feed_coords"):
                 fc = getattr(vp, "feed_coords") or []
                 for i in range(0, len(fc), 2):
                     if i+1 < len(fc):
-                        segs.append((fc[i], fc[i+1]))
+                        segs.append(("feed", fc[i], fc[i+1]))
         return segs
 
-    def start(self, speed_mm_s=20.0):
+    def start(self, speed_mm_s=20.0, rapid_speed_mm_s=100.0):
         self.speed = float(speed_mm_s)
+        self.rapid_speed = float(rapid_speed_mm_s)
         if not self.segments:
             self.load_paths(self.include_rapid)
         if not self.segments:
@@ -377,14 +398,16 @@ class GcodeAnimator:
             return
         self._on_timer()
 
-    def set_speed(self, speed_mm_s):
+    def set_speed(self, speed_mm_s, rapid_speed_mm_s=None):
         self.speed = float(speed_mm_s)
+        if rapid_speed_mm_s is not None:
+            self.rapid_speed = float(rapid_speed_mm_s)
 
     def _prepare_segment(self, idx):
         if idx < 0 or idx >= len(self.segments):
             self.seg_len = 0.0
             return
-        p0, p1 = self.segments[idx]
+        _typ, p0, p1 = self.segments[idx]
         dx = p1[0] - p0[0]
         dy = p1[1] - p0[1]
         dz = p1[2] - p0[2]
@@ -439,13 +462,12 @@ class GcodeAnimator:
             return
 
         interval_s = max(0.001, self.timer.interval() / 1000.0)
-        distance = self.speed * interval_s
 
         # ensure current segment prepared
         if self.seg_len <= 0.0:
             self._prepare_segment(self.seg_index)
 
-        while distance > 0 and self.seg_index < len(self.segments):
+        while self.seg_index < len(self.segments):
             # Mettre à jour l'index de l'opération en cours
             if self.segment_to_operation and self.seg_index < len(self.segment_to_operation):
                 new_op_idx = self.segment_to_operation[self.seg_index]
@@ -453,7 +475,11 @@ class GcodeAnimator:
                     self.current_operation_index = new_op_idx
                     Log.baptDebug(f"Passage à l'opération {self.current_operation_index + 1}/{len(self.operations)}")
 
-            p0, p1 = self.segments[self.seg_index]
+            seg_type, p0, p1 = self.segments[self.seg_index]
+            # Vitesse adaptée au type de segment
+            current_speed = self.rapidSpeed if seg_type == "rapid" else self.speed
+            distance = current_speed * interval_s
+
             if self.seg_len <= 1e-12:
                 # zero-length segment -> advance
                 self.seg_index += 1
@@ -470,11 +496,10 @@ class GcodeAnimator:
                 z = p0[2] + (p1[2]-p0[2]) * t
                 self.seg_pos += distance
                 self._set_marker_position((x, y, z))
-                distance = 0
+                break  # un seul tick par appel timer
             else:
                 # jump to end of segment
                 self._set_marker_position(p1)
-                distance -= remaining
                 self.seg_index += 1
                 if self.seg_index < len(self.segments):
                     self._prepare_segment(self.seg_index)
@@ -548,15 +573,25 @@ class GcodeAnimationControl():
         self.stepBtn.setToolTip("Single Step")
         self.stepBtn.clicked.connect(self.step)
 
-        # Contrôle de vitesse
+        # Contrôle de vitesse feed
         speedLayout = QtGui.QHBoxLayout()
-        speedLayout.addWidget(QtGui.QLabel("Speed:"))
+        speedLayout.addWidget(QtGui.QLabel("Feed Speed:"))
         self.speedSpinBox = QtGui.QDoubleSpinBox()
         self.speedSpinBox.setRange(0.1, 1000.0)
         self.speedSpinBox.setValue(self.animator.speed)
         self.speedSpinBox.setSuffix(" mm/s")
         self.speedSpinBox.valueChanged.connect(self.speedChanged)
         speedLayout.addWidget(self.speedSpinBox)
+
+        # Contrôle de vitesse rapid
+        rapidSpeedLayout = QtGui.QHBoxLayout()
+        rapidSpeedLayout.addWidget(QtGui.QLabel("Rapid Speed:"))
+        self.rapidSpeedSpinBox = QtGui.QDoubleSpinBox()
+        self.rapidSpeedSpinBox.setRange(0.1, 10000.0)
+        self.rapidSpeedSpinBox.setValue(self.animator.rapidSpeed)
+        self.rapidSpeedSpinBox.setSuffix(" mm/s")
+        self.rapidSpeedSpinBox.valueChanged.connect(self.rapidSpeedChanged)
+        rapidSpeedLayout.addWidget(self.rapidSpeedSpinBox)
 
         # Contrôle de frequence
         frequenceLayout = QtGui.QHBoxLayout()
@@ -580,6 +615,7 @@ class GcodeAnimationControl():
 
         layout.addLayout(btnLayout)
         layout.addLayout(speedLayout)
+        layout.addLayout(rapidSpeedLayout)
         layout.addLayout(frequenceLayout)
         layout.addWidget(self.rapidCheckBox)
 
@@ -621,7 +657,7 @@ class GcodeAnimationControl():
     def play(self):
         """Démarre ou reprend l'animation"""
         if not self.animator.is_running():
-            self.animator.start(self.speedSpinBox.value())
+            self.animator.start(self.speedSpinBox.value(), self.rapidSpeedSpinBox.value())
         self.updateButtons()
 
     def pause(self):
@@ -640,8 +676,12 @@ class GcodeAnimationControl():
         self.updateButtons()
 
     def speedChanged(self, value):
-        """Appelé quand la vitesse change"""
+        """Appelé quand la vitesse feed change"""
         self.animator.set_speed(value)
+
+    def rapidSpeedChanged(self, value):
+        """Appelé quand la vitesse rapid change"""
+        self.animator.rapidSpeed = float(value)
 
     def frequenceChanged(self, value):
         self.animator.frequence_cut = value

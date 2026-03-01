@@ -60,7 +60,13 @@
     </widget>
    </item>
    <item row="2" column="0">
-    <widget class="QGroupBox" name="groupBox_3">
+    <widget class="QGroupBox" name="groupBox_StockPlacement">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
      <property name="title">
       <string>Stock Placement</string>
      </property>
@@ -78,9 +84,9 @@
       <item row="1" column="0" colspan="2">
        <widget class="QStackedWidget" name="stackedWidget">
         <property name="currentIndex">
-         <number>0</number>
+         <number>1</number>
         </property>
-        <widget class="QWidget" name="page_2">
+        <widget class="QWidget" name="box">
          <layout class="QGridLayout" name="gridLayout">
           <item row="4" column="0" colspan="2">
            <widget class="QGroupBox" name="StockPos">
@@ -174,22 +180,9 @@
             </property>
            </widget>
           </item>
-          <item row="5" column="0">
-           <spacer name="verticalSpacer">
-            <property name="orientation">
-             <enum>Qt::Orientation::Vertical</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
-             <size>
-              <width>20</width>
-              <height>40</height>
-             </size>
-            </property>
-           </spacer>
-          </item>
          </layout>
         </widget>
-        <widget class="QWidget" name="page">
+        <widget class="QWidget" name="extendBoundingBox">
          <layout class="QGridLayout" name="gridLayout_2">
           <item row="2" column="1">
            <widget class="Gui::QuantitySpinBox" name="stockYNeg" native="true">
@@ -324,6 +317,44 @@
             </property>
             <property name="maximum" stdset="0">
              <double>999999999.000000000000000</double>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="cyl">
+         <layout class="QGridLayout" name="gridLayout_5">
+          <item row="0" column="0">
+           <widget class="QLabel" name="label_12">
+            <property name="maximumSize">
+             <size>
+              <width>50</width>
+              <height>16777215</height>
+             </size>
+            </property>
+            <property name="text">
+             <string>Diameter</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="Gui::QuantitySpinBox" name="stockDiam" native="true">
+            <property name="unit" stdset="0">
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="label_11">
+            <property name="text">
+             <string>Height</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="Gui::QuantitySpinBox" name="stockHeight_2" native="true">
+            <property name="unit" stdset="0">
+             <string/>
             </property>
            </widget>
           </item>

@@ -25,9 +25,16 @@ class DrillOperation(baseOp):
         obj.Proxy = self
         self.Type = "DrillOperation"
 
-        # Référence à la géométrie de perçage (utiliser le nom au lieu d'un lien direct)
-        if not hasattr(obj, "DrillGeometryName"):
-            obj.addProperty("App::PropertyString", "DrillGeometryName", "Base", "Name of drill geometry to machine")
+        # Référence à la géométrie de perçage (PropertyLink)
+        if not hasattr(obj, "DrillGeometry"):
+            obj.addProperty("App::PropertyLink", "DrillGeometry", "Base", "Drill geometry to machine")
+        # Migration : convertir l'ancien PropertyString en PropertyLink
+        if hasattr(obj, "DrillGeometryName"):
+            if obj.DrillGeometryName and not obj.DrillGeometry:
+                old_geom = obj.Document.getObject(obj.DrillGeometryName)
+                if old_geom:
+                    obj.DrillGeometry = old_geom
+            obj.removeProperty("DrillGeometryName")
 
         # Outil sélectionné
         if not hasattr(obj, "ToolId"):
@@ -101,7 +108,7 @@ class DrillOperation(baseOp):
             self.updateToolInfo(obj)
         elif prop == "CycleType":
             self.updateVisibleProperties(obj)
-        elif prop == "DrillGeometryName" and obj.DrillGeometryName:
+        elif prop == "DrillGeometry" and obj.DrillGeometry:
             self.updateFromGeometry(obj)
         elif prop == "Diam":
             self.execute()
@@ -133,20 +140,16 @@ class DrillOperation(baseOp):
 
     def updateFromGeometry(self, obj):
         """Met à jour les paramètres en fonction de la géométrie sélectionnée"""
-        if not obj.DrillGeometryName:
+        if not obj.DrillGeometry:
             return
 
-        # Récupérer le diamètre et la profondeur depuis la géométrie
-        for geom in App.ActiveDocument.Objects:
-            if geom.Name == obj.DrillGeometryName:
-                if hasattr(geom, "DrillDiameter"):
-                    # Mettre à jour le message dans la console
-                    App.Console.PrintMessage(f"Diamètre détecté: {geom.DrillDiameter.Value}mm\n")
+        geom = obj.DrillGeometry
+        if hasattr(geom, "DrillDiameter"):
+            App.Console.PrintMessage(f"Diamètre détecté: {geom.DrillDiameter.Value}mm\n")
 
-                if hasattr(geom, "DrillDepth"):
-                    # Utiliser la profondeur détectée comme profondeur finale
-                    obj.FinalDepth = geom.DrillDepth.Value
-                    App.Console.PrintMessage(f"Profondeur détectée: {obj.FinalDepth}mm\n")
+        if hasattr(geom, "DrillDepth"):
+            obj.FinalDepth = geom.DrillDepth.Value
+            App.Console.PrintMessage(f"Profondeur détectée: {obj.FinalDepth}mm\n")
 
     def execute(self, obj):
         """Mettre à jour la représentation visuelle"""
@@ -154,12 +157,12 @@ class DrillOperation(baseOp):
             return
         super().execute(obj)  # Appelle la logique de base (vérifications, etc.)
 
-        if not obj.DrillGeometryName or not hasattr(App.ActiveDocument.getObject(obj.DrillGeometryName), "DrillPositions"):
+        if not obj.DrillGeometry or not hasattr(obj.DrillGeometry, "DrillPositions"):
             obj.Shape = Part.Shape()  # Shape vide
             return
         # App.Console.PrintMessage(f'{BaptUtilities.find_cam_project(obj).Label}\n')
         # Obtenir les positions de perçage
-        drill_geometry = App.ActiveDocument.getObject(obj.DrillGeometryName)
+        drill_geometry = obj.DrillGeometry
         positions = drill_geometry.DrillPositions
 
         if not positions:
@@ -389,7 +392,7 @@ class DrillOperation(baseOp):
 
     def onChanged(self, obj, prop):
         """Appelé quand une propriété change"""
-        if prop == "DrillGeometryName":
+        if prop == "DrillGeometry":
             self.updateFromGeometry(obj)
         elif prop in ["ShowPathLine", "SafeHeight", "FinalDepth"]:
             self.execute(obj)
@@ -448,7 +451,7 @@ class ViewProviderDrillOperation(baseOpViewProviderProxy):
 
     def setEdit(self, vobj, mode=0):
         """Ouvrir l'éditeur"""
-        from BaptDrillOperationTaskPanel import DrillOperationTaskPanel
+        from Op.Gui.DrillOpTaskPanel import DrillOperationTaskPanel
         panel = DrillOperationTaskPanel(vobj.Object)
         Gui.Control.showDialog(panel)
         return True

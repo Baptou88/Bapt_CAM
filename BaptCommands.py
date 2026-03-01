@@ -13,22 +13,19 @@ from BaptHighlight import CreateHighlightCommand
 import BaptMpfReader
 import BaptPath
 import Op.AdaptativeOp as AdaptativeOp
-import Op.BaptPocketOp as BaptPocketOp
+import Op.PocketOp as PocketOp
 import BaptPostProcess
 import BaptPreferences
 import BaptTools
 import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
-import os
+
 
 import BaptOrigin
 
 from Op import DrillOp, OpContournage, OpSurfacage, PathOp
 from Probe import probeFace
-from PySide import QtCore, QtGui
-
-from utils import BQuantitySpinBox
 
 
 class CreateOriginCommand:
@@ -90,7 +87,7 @@ class CreatePocketOperationCommand:
         doc = App.ActiveDocument
         doc.openTransaction('Create Pocket Operation')
         contour_geometry = Gui.Selection.getSelection()[0]
-        obj = BaptPocketOp.createPocketOperation(contour=contour_geometry)
+        obj = PocketOp.createPocketOperation(contour=contour_geometry)
         # if obj.ViewObject:
         #     BaptPocketOperation.ViewProviderPocketOperation(obj.ViewObject)
         #     obj.ViewObject.Proxy.setEdit(obj.ViewObject)
@@ -126,6 +123,13 @@ class CreateContourCommand:
         # Créer l'objet de contournage
         obj = doc.addObject("Part::FeaturePython", "Contournage")
 
+        # Ajouter la fonctionnalité
+        contour = OpContournage.ContournageCycle(obj)
+
+        # Ajouter le ViewProvider
+        if obj.ViewObject:
+            OpContournage.ViewProviderContournageCycle(obj.ViewObject)
+
         pref = BaptPreferences.BaptPreferences()
         modeAjout = pref.getModeAjout()
 
@@ -152,34 +156,8 @@ class CreateContourCommand:
                     operations_group.addObject(link)
                     operations_group.Group.append(link)
 
-        # Ajouter la fonctionnalité
-        contour = OpContournage.ContournageCycle(obj)
-
-        # Ajouter le ViewProvider
-        if obj.ViewObject:
-            OpContournage.ViewProviderContournageCycle(obj.ViewObject)
-
-        # Lier à la géométrie du contour par son nom
-        obj.ContourGeometryName = contour_geometry.Name
-
-        # # Ajouter le contournage comme enfant de la géométrie du contour
-        # # Vérifier si la géométrie du contour est un groupe (a l'extension Group)
-        # if hasattr(contour_geometry, "Group") and hasattr(contour_geometry, "addObject"):
-        #     # Ajouter directement à la géométrie du contour
-        #     contour_geometry.addObject(obj)
-        #     App.Console.PrintMessage(f"Contournage ajouté comme enfant de {contour_geometry.Label}\n")
-        # else:
-        #     # Si la géométrie n'est pas un groupe, essayer de l'ajouter au document
-        #     App.Console.PrintWarning(f"La géométrie {contour_geometry.Label} n'est pas un groupe, impossible d'ajouter le contournage comme enfant\n")
-
-        #     # Trouver le groupe parent de la géométrie du contour
-        #     for parent in App.ActiveDocument.Objects:
-        #         if hasattr(parent, "Group") and contour_geometry in parent.Group:
-        #             parent.addObject(obj)
-        #             App.Console.PrintMessage(f"Contournage ajouté comme enfant de {parent.Label}\n")
-        #             break
-
-        # Recomputer
+        # Lier à la géométrie du contour
+        obj.ContourGeometry = contour_geometry
 
         doc.recompute()
 
@@ -479,16 +457,16 @@ class CreateHotReloadCommand:
             reload(BaptCamProject)
             import BaptContourGeometry
             reload(BaptContourGeometry)
-            import BaptContournageTaskPanel
-            reload(BaptContournageTaskPanel)
-            import BaptContourTaskPanel
-            reload(BaptContourTaskPanel)
+            import Op.Gui.ContournageTaskPanel as ContournageTaskPanel
+            reload(ContournageTaskPanel)
+            import Gui.ContourTaskPanel as ContourTaskPanel
+            reload(ContourTaskPanel)
             reload(DrillOp)
             reload(BaptTools)  # Ajouter le module BaptTools
             reload(OpContournage)
             reload(BaptPath)
-            import BaptDrillTaskPanel
-            reload(BaptDrillTaskPanel)
+            import Gui.DrillGeomTaskPanel as DrillGeomTaskPanel
+            reload(DrillGeomTaskPanel)
             import BaptPreferences
             reload(BaptPreferences)
             from Op import OpSurfacage
@@ -497,18 +475,18 @@ class CreateHotReloadCommand:
             reload(BaptPostProcess)
             from Probe import probeFace
             reload(probeFace)
-            import BaptDrillOperationTaskPanel
-            reload(BaptDrillOperationTaskPanel)
+            import Op.Gui.DrillOpTaskPanel as DrillOpTaskPanel
+            reload(DrillOpTaskPanel)
             import utils.BQuantitySpinBox as BQuantitySpinBox
             reload(BQuantitySpinBox)
             import Tool.ToolTaskPannel as ToolTaskPannel
             reload(ToolTaskPannel)
             import BaptHoleRecognition
             reload(BaptHoleRecognition)
-            import BaptHoleRecognitionTaskPanel
-            reload(BaptHoleRecognitionTaskPanel)
-            import Op.BaptPocketOp as BaptPocketOp
-            reload(BaptPocketOp)
+            import Gui.HoleRecognitionTaskPanel as HoleRecognitionTaskPanel
+            reload(HoleRecognitionTaskPanel)
+            import Op.PocketOp as PocketOp
+            reload(PocketOp)
 
             # dossier = BaptUtilities.get_module_path()
 
@@ -564,7 +542,7 @@ class CreateDrillOperationCommand:
         if not sel:
             return False
 
-        return hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, DrillOp.DrillOperation)
+        return hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, BaptDrillGeometry.DrillGeometry)
 
     def Activated(self):
         """Créer une nouvelle opération de perçage"""
@@ -588,7 +566,7 @@ class CreateDrillOperationCommand:
             obj.ViewObject.Transparency = 70
 
         # Définir le nom de la géométrie de perçage associée (au lieu d'un lien direct)
-        obj.DrillGeometryName = drill_geometry.Name
+        obj.DrillGeometry = drill_geometry
 
         pref = BaptPreferences.BaptPreferences()
         modeAjout = pref.getModeAjout()
@@ -598,7 +576,7 @@ class CreateDrillOperationCommand:
         # 2 = ajouter au groupe opérations du projet CAM
 
         if modeAjout == 1 or modeAjout == 0:
-            App.Console.PrintMessage(f'm10 \n')
+
             # Ajouter le contournage comme enfant de la géométrie du contour
             drill_geometry.addObject(obj)
             drill_geometry.Group.append(obj)
@@ -608,11 +586,9 @@ class CreateDrillOperationCommand:
             if camProject:
                 operations_group = camProject.Proxy.getOperationsGroup(camProject)
                 if modeAjout == 2:
-                    App.Console.PrintMessage(f'm2 \n')
                     operations_group.addObject(obj)
                     operations_group.Group.append(obj)
                 elif modeAjout == 0:
-                    App.Console.PrintMessage(f'm0 \n')
                     link = doc.addObject('App::Link', f'Link_{obj.Label}')
                     link.setLink(obj)
                     operations_group.addObject(link)
@@ -766,21 +742,22 @@ class HoleRecognitionCommand:
 
 
 # Enregistrer les commandes
-Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
-Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
-Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
-Gui.addCommand('Bapt_CreateContourGeometry', CreateContourGeometryCommand())
-Gui.addCommand('Bapt_CreateContourEditableGeometry', CreateContourEditableGeometryCommand())
-Gui.addCommand('Bapt_CreateMachiningCycle', CreateContourCommand())
-Gui.addCommand('Bapt_CreatePocketOperation', CreatePocketOperationCommand())
-Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())
-Gui.addCommand('Bapt_ToolsManager', ToolsManagerCommand())
-Gui.addCommand('Bapt_CreateDrillOperation', CreateDrillOperationCommand())  # Ajouter la nouvelle commande
-Gui.addCommand('ImportMpf', BaptMpfReader.ImportMpfCommand())  # Ajouter la commande d'importation MPF
-Gui.addCommand('Bapt_PostProcessGCode', PostProcessGCodeCommand())
-Gui.addCommand('Bapt_CreateSurfacage', CreateSurfacageCommand())
-Gui.addCommand('Bapt_CreateProbeFace', ProbeFaceCommand())
-Gui.addCommand('Bapt_TestPath', TestPathCommand())
-Gui.addCommand('Bapt_HighlightCollisions', CreateHighlightCommand())
-Gui.addCommand('Bapt_HoleRecognition', HoleRecognitionCommand())
-Gui.addCommand('Bapt_CreateAdaptativeOperation', CreateAdaptativeOperationCommand())
+if App.GuiUp:
+    Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
+    Gui.addCommand('Bapt_CreateCamProject', CreateCamProjectCommand())
+    Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
+    Gui.addCommand('Bapt_CreateContourGeometry', CreateContourGeometryCommand())
+    Gui.addCommand('Bapt_CreateContourEditableGeometry', CreateContourEditableGeometryCommand())
+    Gui.addCommand('Bapt_CreateMachiningCycle', CreateContourCommand())
+    Gui.addCommand('Bapt_CreatePocketOperation', CreatePocketOperationCommand())
+    Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())
+    Gui.addCommand('Bapt_ToolsManager', ToolsManagerCommand())
+    Gui.addCommand('Bapt_CreateDrillOperation', CreateDrillOperationCommand())  # Ajouter la nouvelle commande
+    Gui.addCommand('ImportMpf', BaptMpfReader.ImportMpfCommand())  # Ajouter la commande d'importation MPF
+    Gui.addCommand('Bapt_PostProcessGCode', PostProcessGCodeCommand())
+    Gui.addCommand('Bapt_CreateSurfacage', CreateSurfacageCommand())
+    Gui.addCommand('Bapt_CreateProbeFace', ProbeFaceCommand())
+    Gui.addCommand('Bapt_TestPath', TestPathCommand())
+    Gui.addCommand('Bapt_HighlightCollisions', CreateHighlightCommand())
+    Gui.addCommand('Bapt_HoleRecognition', HoleRecognitionCommand())
+    Gui.addCommand('Bapt_CreateAdaptativeOperation', CreateAdaptativeOperationCommand())

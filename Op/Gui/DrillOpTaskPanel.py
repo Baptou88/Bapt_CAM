@@ -1,11 +1,13 @@
 from Gui.cuttingConditionTaskPanel import cuttingConditionTaskPanel
 import Op.DrillOp as DrillOp
+from BaptUtilities import getIconPath
 import FreeCAD as App
 import FreeCADGui as Gui
 from Op.utils import CoolantMode
 from PySide import QtCore, QtGui
 
-from BaptTools import ToolDatabase
+from BaptTools import ToolDatabase, Tool
+from Tool import ToolSelectorDialog
 from Tool.ToolTaskPannel import ToolTaskPanel
 from utils import BQuantitySpinBox
 

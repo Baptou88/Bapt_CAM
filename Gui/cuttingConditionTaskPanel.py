@@ -63,3 +63,7 @@ class cuttingConditionTaskPanel:
             App.Console.PrintMessage(f'Using tool settings: Speed={self.obj.Tool.Speed}, Feed={self.obj.Tool.Feed}\n')
         else:
             App.Console.PrintMessage('No tool assigned to the operation.\n')
+
+    def setFields(self, obj):
+        self.Speed.updateWidget()
+        self.Feed.updateWidget()

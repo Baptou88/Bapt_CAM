@@ -1,4 +1,5 @@
-from BaptPath import GcodeAnimationControl, GcodeAnimator, absinc, comp, memory
+
+from BaptPath import GcodeAnimationControl, absinc, comp, memory
 from BaptPreferences import BaptPreferences
 import BaptUtilities
 import FreeCAD as App
@@ -52,7 +53,8 @@ class baseOp:
             obj.addProperty("App::PropertyLink", "Tool", "Op", "Tool")
 
             if int(App.Version()[0]) >= 1 and int(App.Version()[1]) >= 1:
-                obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
+                if hasattr(obj, "ToolDiameter"):
+                    obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
 
     def onChanged(self, fp, prop):
         self.execute(fp)
@@ -99,6 +101,10 @@ class baseOpViewProviderProxy:
             obj.addProperty("App::PropertyColor", "Feed", "Gcode", "Color for feed moves")
             obj.Feed = BaptPref.DefaultFeedColor
 
+        if not hasattr(obj, "Cursor"):
+            obj.addProperty("App::PropertyInteger", "Cursor", "Gcode", "Current line index for cursor")
+            obj.Cursor = -1  # -1 means no line highlighted
+
         # self.Object = obj.Object
         # obj.Proxy = self
 
@@ -109,13 +115,17 @@ class baseOpViewProviderProxy:
     def onChanged(self, vp, prop):
         ''' Print the name of the property that has changed '''
         # Log.baptDebug("Change property: " + str(prop))
-        if prop in "Rapid":
+        if prop == "Rapid":
             r = vp.Rapid
             self.rapid_color.rgb.setValues(0, 1, [(r[0], r[1], r[2])])
             return
         if prop == "Feed":
             f = vp.Feed
             self.feed_color.rgb.setValues(0, 1, [(f[0], f[1], f[2])])
+            return
+        if prop == "Cursor":
+            cursor_val = vp.Cursor
+            self._updateCursorHighlight(cursor_val)
             return
 
     def __getstate__(self):
@@ -182,6 +192,22 @@ class baseOpViewProviderProxy:
         self.direction_switch.addChild(self.direction_group)
         self.direction_switch.whichChild = coin.SO_SWITCH_NONE  # Cacher par défaut
 
+        # Groupe de surbrillance pour le curseur Gcode
+        self.highlight_group = coin.SoSeparator()
+        highlight_pick = coin.SoPickStyle()
+        highlight_pick.style = coin.SoPickStyle.UNPICKABLE
+        self.highlight_color = coin.SoBaseColor()
+        self.highlight_color.rgb.setValue(1.0, 1.0, 0.0)  # Jaune
+        self.highlight_style = coin.SoDrawStyle()
+        self.highlight_style.lineWidth = 4.0
+        self.highlight_points = coin.SoCoordinate3()
+        self.highlight_lines = coin.SoIndexedLineSet()
+        self.highlight_group.addChild(highlight_pick)
+        self.highlight_group.addChild(self.highlight_color)
+        self.highlight_group.addChild(self.highlight_style)
+        self.highlight_group.addChild(self.highlight_points)
+        self.highlight_group.addChild(self.highlight_lines)
+
         # Ajouter les événements de souris
         self.mouse_cb = coin.SoEventCallback()
         # self.mouse_cb.setCallback(self.mouse_event_cb)
@@ -191,6 +217,7 @@ class baseOpViewProviderProxy:
         self.Path.addChild(self.rapid_group)
         self.Path.addChild(self.feed_group)
 
+        self.Path.addChild(self.highlight_group)
         self.Path.addChild(self.direction_switch)
         self.Path.addChild(self.mouse_cb)
 
@@ -305,6 +332,48 @@ class baseOpViewProviderProxy:
             self.updatePathGeometry(fp)
             return
 
+    def _updateCursorHighlight(self, cursor_line):
+        """Met à jour la surbrillance pour la ligne Gcode indiquée par cursor_line.
+
+        cursor_line: index 0-based dans self.lines (lignes non-vides du Gcode).
+        Si < 0 ou aucun segment ne correspond, efface la surbrillance.
+        """
+        if not hasattr(self, "highlight_points"):
+            App.Console.PrintWarning("[Cursor] highlight_points n'existe pas encore (attach non appelé?)\n")
+            return
+
+        # Si le mapping n'existe pas, tenter de le reconstruire
+        gcode_map = getattr(self, "_gcode_line_segments", None)
+        if gcode_map is None:
+            App.Console.PrintMessage("[Cursor] _gcode_line_segments absent, reconstruction...\n")
+            # Forcer un re-traitement du Gcode si l'objet existe
+            data_obj = getattr(self, "Object", None)
+            if data_obj is not None and hasattr(data_obj, "Gcode"):
+                self.updatePathGeometry(data_obj)
+                gcode_map = getattr(self, "_gcode_line_segments", {})
+            else:
+                gcode_map = {}
+
+        segments = gcode_map.get(cursor_line, []) if cursor_line >= 0 else []
+
+        if not segments:
+            # Effacer la surbrillance
+            self.highlight_lines.coordIndex.setValue(0)
+            self.highlight_points.point.setValues(0, 0, [])
+            return
+
+        coords = []
+        idx = []
+        for (a, b) in segments:
+            i = len(coords)
+            coords.append(a)
+            coords.append(b)
+            idx.extend([i, i + 1, -1])
+
+        self.highlight_lines.coordIndex.setValue(0)
+        self.highlight_points.point.setValues(0, len(coords), coords)
+        self.highlight_lines.coordIndex.setValues(0, len(idx), idx)
+
     def updatePathGeometry(self, fp):
         # if no Gcode property, nothing to do
         if not hasattr(self.Object, "Gcode"):
@@ -354,6 +423,7 @@ class baseOpViewProviderProxy:
 
         self.ordered_segments = []
         self.segment_metadata = {"rapid": [], "feed": []}
+        self._gcode_line_segments = {}  # gcode_line_index → [(pt1, pt2), ...]
 
         self.comp_mode = comp.G40  # default cutter compensation off
         self.absinc_mode = absinc.G90  # default absolute mode
@@ -473,6 +543,9 @@ class baseOpViewProviderProxy:
             group = "rapid" if coords_list is rapid_coords else "feed"
             self.ordered_segments.append((group, a, b))
             self.segment_metadata[group].append((a, b))
+            # Associer ce segment à la ligne Gcode courante (1-based)
+            gcode_line = self.line
+            self._gcode_line_segments.setdefault(gcode_line, []).append((a, b))
 
         def _create_chamfer(coords_list, idx_list, p0, p1, chf_dist):
             """

@@ -330,7 +330,7 @@ class ContourTaskPanel:
         for sel in selection:
 
             if sel.SubElementNames:
-                App.Console.PrintMessage(f"Objet: {sel.ObjectName}, Sous-éléments: {sel.SubElementNames}\n")
+                # App.Console.PrintMessage(f"Objet: {sel.ObjectName}, Sous-éléments: {sel.SubElementNames}\n")
                 edges.append((sel.Object, sel.SubElementNames))
 
         # Mettre à jour l'objet
@@ -520,9 +520,7 @@ class ContourTaskPanel:
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
-        # return int(QtGui.QDialogButtonBox.Ok |
-        #            QtGui.QDialogButtonBox.Apply|
-        #            QtGui.QDialogButtonBox.Cancel)
+
         return (
             QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Apply | QtGui.QDialogButtonBox.Cancel
         )

@@ -7,10 +7,10 @@ import importlib
 import os
 from BaptCamProject import CamProject
 from BaptPreferences import BaptPreferences
-from CamProjectTaskPanel import PostProcessorTaskPanel
+from Gui.CamProjectTaskPanel import PostProcessorTaskPanel
 from BasePostPro import BasePostPro
 import FreeCAD as App  # type: ignore
-from Op import AdaptativeOp, BaptPocketOp, BaseOp, DrillOp, OpContournage, OpSurfacage
+from Op import AdaptativeOp, BaseOp, DrillOp, OpContournage, OpSurfacage, PocketOp
 from Op.PathOp import pathOp
 from PySide import QtGui, QtCore  # type: ignore
 import BaptUtilities as BaptUtils
@@ -125,9 +125,9 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
 
             gcode_lines.append(Postpro.writeComment(f"Perçage: {obj.Label}"))
             points = []
-            if hasattr(obj, 'DrillGeometryName'):
+            if hasattr(obj, 'DrillGeometry'):
                 doc = App.ActiveDocument
-                geom = doc.getObject(obj.DrillGeometryName)
+                geom = obj.DrillGeometry
                 if geom and hasattr(geom, 'DrillPositions'):
                     points = geom.DrillPositions
             if cycle == "Simple":
@@ -175,7 +175,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             gcode_lines.append(Postpro.writeComment(f"Adaptative operation: {obj.Label}"))
             gcode_lines.append(Postpro.transformGCode(obj.Gcode))
 
-        elif isinstance(obj.Proxy, BaptPocketOp.PocketOperation):
+        elif isinstance(obj.Proxy, PocketOp.PocketOperation):
             gcode_lines.append(Postpro.writeComment(f"Pocket operation: {obj.Label}"))
             gcode_lines.append(Postpro.transformGCode(obj.Gcode))
 
