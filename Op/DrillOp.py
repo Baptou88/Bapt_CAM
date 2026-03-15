@@ -36,16 +36,6 @@ class DrillOperation(baseOp):
                     obj.DrillGeometry = old_geom
             obj.removeProperty("DrillGeometryName")
 
-        # Outil sélectionné
-        if not hasattr(obj, "ToolId"):
-            obj.addProperty("App::PropertyInteger", "ToolId", "Tool", "Selected tool ID")
-            obj.ToolId = -1  # Valeur par défaut (aucun outil sélectionné)
-
-        # Nom de l'outil (affiché en lecture seule)
-        if not hasattr(obj, "ToolName"):
-            obj.addProperty("App::PropertyString", "ToolName", "Tool", "Selected tool name")
-            obj.setEditorMode("ToolName", 1)  # en lecture seule
-
         # Type de cycle
         if not hasattr(obj, "CycleType"):
             obj.addProperty("App::PropertyEnumeration", "CycleType", "Cycle", "Type of drilling cycle")
@@ -76,10 +66,17 @@ class DrillOperation(baseOp):
             obj.addProperty("App::PropertyLength", "SafeHeight", "Safety", "Safe height for rapid moves")
             obj.SafeHeight = 2  # 10mm par défaut
 
-        # Paramètres de profondeur
+        # Paramètres de profondeur — PropertyDistance accepte les valeurs négatives
         if not hasattr(obj, "FinalDepth"):
-            obj.addProperty("App::PropertyLength", "FinalDepth", "Depth", "Final depth of drilling")
-            obj.FinalDepth = 10.0  # 10mm par défaut
+            obj.addProperty("App::PropertyDistance", "FinalDepth", "Depth", "Final depth of drilling")
+            obj.FinalDepth = -10.0  # -10mm par défaut (coordonnée Z absolue)
+        else:
+            # Migration : ancien PropertyFloat → PropertyDistance
+            if obj.getTypeIdOfProperty("FinalDepth") == "App::PropertyFloat":
+                old_val = obj.FinalDepth
+                obj.removeProperty("FinalDepth")
+                obj.addProperty("App::PropertyDistance", "FinalDepth", "Depth", "Final depth of drilling")
+                obj.FinalDepth = old_val
 
         # Mode de profondeur (absolu ou relatif)
         if not hasattr(obj, "DepthMode"):
@@ -102,10 +99,10 @@ class DrillOperation(baseOp):
 
     def onChanged(self, obj, prop):
         """Appelé quand une propriété est modifiée"""
-        if prop == "ToolId" and obj.ToolId >= 0:
-            self.updateToolInfo(obj)
+        # super().onChanged(obj, prop)
         if prop == "Tool" and obj.Tool:
-            self.updateToolInfo(obj)
+            pass
+            # self.updateToolInfo(obj)
         elif prop == "CycleType":
             self.updateVisibleProperties(obj)
         elif prop == "DrillGeometry" and obj.DrillGeometry:
@@ -148,8 +145,15 @@ class DrillOperation(baseOp):
             App.Console.PrintMessage(f"Diamètre détecté: {geom.DrillDiameter.Value}mm\n")
 
         if hasattr(geom, "DrillDepth"):
-            obj.FinalDepth = geom.DrillDepth.Value
-            App.Console.PrintMessage(f"Profondeur détectée: {obj.FinalDepth}mm\n")
+            obj.FinalDepth = -abs(geom.DrillDepth.Value)
+            App.Console.PrintMessage(f"Profondeur détectée: {obj.FinalDepth.Value}mm\n")
+
+    def _computeFinalZ(self, obj):
+        """Retourne la coordonnée Z absolue du fond du trou."""
+        if obj.DepthMode == "Absolute":
+            return obj.FinalDepth.Value
+        else:
+            return obj.ZReference.Value + obj.FinalDepth.Value
 
     def execute(self, obj):
         """Mettre à jour la représentation visuelle"""
@@ -173,17 +177,21 @@ class DrillOperation(baseOp):
         tool_shapes = []
 
         # Récupérer les informations sur l'outil sélectionné
-        tool_info = self.getToolInfo(obj)
-        if tool_info is None:
+        # tool_info = self.getToolInfo(obj)
+        final_z = self._computeFinalZ(obj)
+
+        if obj.Tool is None:
             # Aucun outil sélectionné, utiliser une représentation par défaut
             for pos in positions:
-                # Créer un cylindre simple comme représentation par défaut
-                cylinder = Part.makeCylinder(2.0, pos.z - obj.FinalDepth.Value, pos, App.Vector(0, 0, -1))
+                depth = abs(pos.z - final_z)
+                if depth < 0.01:
+                    continue
+                cylinder = Part.makeCylinder(2.0, depth, pos, App.Vector(0, 0, -1))
                 tool_shapes.append(cylinder)
         else:
             # Créer une représentation réaliste de l'outil pour chaque position
             for pos in positions:
-                tool_shape = self.createToolShape(pos, obj)
+                tool_shape = self.createToolShape(obj, pos)
                 tool_shapes.append(tool_shape)
 
         strGcode = ""
@@ -201,13 +209,11 @@ class DrillOperation(baseOp):
                 strGcode += f"G84 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z} \n"
 
             elif obj.CycleType == "Contournage":
-                d = obj.Diam - tool_info.diameter
+                d = obj.Diam - obj.Tool.Radius.Value * 2
                 r = d / 2
-                profTotale = 0
-                if obj.DepthMode == "Absolute":
-                    profTotale = -(obj.FinalDepth.Value - (positions[0].z + obj.SafeHeight.Value))
-                else:
-                    profTotale = (positions[0].z + obj.SafeHeight.Value) + obj.FinalDepth.Value
+                # profTotale = distance verticale du plan R au fond (toujours positive)
+                r_plane_z = positions[0].z + obj.SafeHeight.Value
+                profTotale = abs(r_plane_z - final_z)
 
                 nbTour = math.ceil(profTotale / obj.Ap)
 
@@ -246,6 +252,8 @@ class DrillOperation(baseOp):
             strGcode += "G80\n"
 
         obj.Gcode = strGcode
+        # obj.TimeEstimate = gcodeWriter.time_estimate
+        # obj.LastCoordinate = App.Vector(gcodeWriter.current_position['X'], gcodeWriter.current_position['Y'], gcodeWriter.current_position['Z'])
 
         # # Créer un fil qui relie tous les trous
         # wires = []
@@ -266,82 +274,128 @@ class DrillOperation(baseOp):
             compound = Part.makeCompound(shapes)
             obj.Shape = compound
 
-    def getToolInfo(self, obj):
-        """Récupère les informations sur l'outil sélectionné"""
-        if not hasattr(obj, "Tool") or obj.Tool is None:
-            return None
+    # def getToolInfo(self, obj):
+    #     """Récupère les informations sur l'outil sélectionné"""
+    #     if not hasattr(obj, "Tool") or obj.Tool is None:
+    #         return None
 
-        if obj.Tool.Id < 0:
-            return None
+    #     # Récupérer l'outil depuis la base de données #TODO à modifier pour prendre en compte l'objet lien
+    #     db = ToolDatabase()
+    #     tool = db.get_tool_by_id(obj.Tool.Id)
+    #     return tool
 
-        # Récupérer l'outil depuis la base de données #TODO à modifier pour prendre en compte l'objet lien
-        db = ToolDatabase()
-        tool = db.get_tool_by_id(obj.Tool.Id)
-        return tool
-
-    def createToolShape(self, position, obj):
+    def createToolShape(self, obj, position):
         """Crée une représentation visuelle de l'outil en fonction de son type"""
-        # Calculer la profondeur finale en fonction du mode (absolu ou relatif)
-        tool = self.getToolInfo(obj)
+        tool = obj.Tool
 
-        if obj.DepthMode == "Absolute":
-            final_depth = obj.FinalDepth.Value
-        else:  # Relatif
-            final_depth = obj.ZReference.Value + obj.FinalDepth.Value
+        # Coordonnée Z absolue du fond du trou
+        final_z = self._computeFinalZ(obj)
 
         # Position du fond du trou
-        bottom_pos = App.Vector(position.x, position.y, position.z - final_depth)
+        bottom_pos = App.Vector(position.x, position.y, final_z)
 
         # Diamètre de l'outil
-        diameter = tool.diameter
+        diameter = obj.Tool.Radius.Value * 2
 
-        # Longueur de l'outil (utiliser une valeur par défaut si non définie)
-        # tool_length = tool.length if tool.length > 0 else 50.0
-        depth = position.z - bottom_pos.z
+        # Profondeur de perçage (toujours positive)
+        depth = abs(position.z - final_z)
+        if depth < 0.01 or diameter < 0.01:
+            # Profondeur ou diamètre nul → rien à dessiner
+            return Part.Shape()
 
         if obj.CycleType == "Contournage":
             diameter = obj.Diam
             return Part.makeCylinder(diameter / 2, depth, bottom_pos, App.Vector(0, 0, 1))
 
+        # Type d'outil (fallback pour anciens outils sans ToolType)
+        tool_type = getattr(tool, "ToolType", "Fraise").lower()
+
         # Créer une forme différente selon le type d'outil
-        if tool.type.lower() == "foret":
-            # Créer un foret avec une pointe conique
-            return self.createDrillBit(position, bottom_pos, diameter, depth, tool.point_angle)
-        elif tool.type.lower() == "taraud":
-            # Créer un taraud
-            return self.createTapBit(position, bottom_pos, diameter, depth, tool.thread_pitch)
-        elif tool.type.lower() == "fraise" or tool.type.lower() == "fraise torique":
-            # Créer une fraise
-            return self.createEndMill(position, bottom_pos, diameter, depth, tool.torus_radius)
+        try:
+            if tool_type == "foret":
+                point_angle = getattr(tool, "PointAngle", 118.0)
+                if point_angle <= 0 or point_angle >= 180:
+                    point_angle = 118.0
+                return self.createDrillBit(position, bottom_pos, diameter, depth, point_angle)
+            elif tool_type == "taraud":
+                thread_pitch = getattr(tool, "ThreadPitch", 1.0)
+                return self.createTapBit(position, bottom_pos, diameter, depth, thread_pitch)
+            elif tool_type in ("fraise", "fraise torique"):
+                torus_radius = getattr(tool, "TorusRadius", 0.0)
+                return self.createEndMill(position, bottom_pos, diameter, depth, torus_radius)
+            else:
+                return self.createSimpleTool(position, bottom_pos, diameter, depth)
+        except Exception as e:
+            App.Console.PrintError(f"[DrillOp] Error creating tool shape for '{tool_type}' "
+                                   f"(D={diameter}, depth={depth}): {e}\n")
+            import traceback
+            App.Console.PrintError(traceback.format_exc() + "\n")
+            # Fallback : cylindre simple
+            return Part.makeCylinder(diameter / 2, depth, bottom_pos, App.Vector(0, 0, 1))
+
+    def createDrillBit(self, top_pos, bottom_pos, diameter, depth, point_angle):
+        """Crée une représentation d'un foret avec une pointe conique.
+
+        La forme va de top_pos (surface) vers le bas jusqu'à bottom_pos.
+        Le foret se compose d'un cylindre + un cône dont la pointe est en bas.
+
+        Géométrie (vue en coupe) :
+
+            top_pos (Z haut)
+            ┌───────────┐
+            │ cylindre  │  body_height = depth - tip_height
+            │  R=radius │
+            └─────┬─────┘  Z = bottom_pos.z + tip_height
+                  ╲   ╱
+                   ╲ ╱     tip_height
+                    V
+            bottom_pos (Z bas)
+        """
+        radius = diameter / 2.0
+        half_angle_rad = math.radians(point_angle / 2.0)
+        # Hauteur théorique de la pointe conique complète
+        tip_height = radius / math.tan(half_angle_rad)
+
+        if depth < 0.01:
+            return Part.Shape()
+
+        if depth <= tip_height:
+            # Le trou est moins profond que la pointe → cône tronqué
+            top_radius = math.tan(half_angle_rad) * depth
+            # Construire le profil et le révolver pour éviter les problèmes
+            # avec makeCone et rayon nul
+            p1 = App.Vector(0, 0, 0)              # pointe (centre bas)
+            p2 = App.Vector(top_radius, 0, depth)  # bord haut
+            p3 = App.Vector(0, 0, depth)           # centre haut
+            e1 = Part.makeLine(p1, p2)
+            e2 = Part.makeLine(p2, p3)
+            e3 = Part.makeLine(p3, p1)
+            wire = Part.Wire([e1, e2, e3])
+            face = Part.Face(wire)
+            shape = face.revolve(App.Vector(0, 0, 0), App.Vector(0, 0, 1), 360)
+            # Déplacer à la position bottom_pos
+            shape.translate(bottom_pos)
+            return shape
         else:
-            # Type d'outil inconnu, créer un cylindre simple
-            return self.createSimpleTool(position, bottom_pos, diameter, depth)
+            # Partie cylindrique + cône
+            body_height = depth - tip_height
 
-    def createDrillBit(self, top_pos, bottom_pos, diameter, length, point_angle):
-        """Crée une représentation d'un foret avec une pointe conique"""
-        # Calculer la hauteur de la pointe conique
-        point_height = diameter / (2 * math.tan(math.radians(point_angle / 2)))
-
-        # profondeur du percage
-        depth = math.fabs(bottom_pos.z - top_pos.z)
-        if depth <= point_height:
-            # - calcul du rayon
-            radius = math.tan(math.radians(point_angle / 2)) * depth
-            # Créer la pointe du foret (cône)
-            drill_bit = Part.makeCone(radius, 0, depth, top_pos, App.Vector(0, 0, -1))
-
-        else:
-            # Créer le corps du foret (cylindre)
-            body_length = depth - point_height
-            body = Part.makeCylinder(diameter / 2, body_length, top_pos, App.Vector(0, 0, -1))
-
-            # Créer la pointe du foret (cône)
-            tip = Part.makeCone(diameter / 2, 0, point_height, bottom_pos + App.Vector(0, 0, point_height), App.Vector(0, 0, -1))
-
-            # Fusionner le corps et la pointe
-            drill_bit = body.fuse(tip)
-
-        return drill_bit
+            # Construire le profil complet en une seule pièce :
+            # triangle de la pointe + rectangle du cylindre → révolution
+            p1 = App.Vector(0, 0, 0)                   # pointe (centre bas)
+            p2 = App.Vector(radius, 0, tip_height)     # jonction cône/cylindre (bord)
+            p3 = App.Vector(radius, 0, depth)           # bord haut
+            p4 = App.Vector(0, 0, depth)                # centre haut
+            e1 = Part.makeLine(p1, p2)  # flanc du cône
+            e2 = Part.makeLine(p2, p3)  # paroi cylindrique
+            e3 = Part.makeLine(p3, p4)  # face supérieure
+            e4 = Part.makeLine(p4, p1)  # axe central
+            wire = Part.Wire([e1, e2, e3, e4])
+            face = Part.Face(wire)
+            shape = face.revolve(App.Vector(0, 0, 0), App.Vector(0, 0, 1), 360)
+            # Déplacer à la position bottom_pos
+            shape.translate(bottom_pos)
+            return shape
 
     def createTapBit(self, top_pos, bottom_pos, diameter, length, thread_pitch):
         """Crée une représentation d'un taraud"""
@@ -417,6 +471,8 @@ class ViewProviderDrillOperation(baseOpViewProviderProxy):
         super().__init__(vobj)
         vobj.Proxy = self
         self.Object = vobj.Object
+        vobj.ShapeColor = (0.0, 0.0, 1.0)  # Bleu
+        vobj.Transparency = 70
 
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""

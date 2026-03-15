@@ -256,8 +256,8 @@ class DrillGeometryTaskPanel:
         # Mettre à jour les positions
         if not self.updateDrillPositions():
             return False
-        self.obj.recompute()
         self.obj.SelectedPosition = -1
+        self.obj.recompute()
         App.ActiveDocument.commitTransaction()
         # Fermer la tâche
         Gui.Control.closeDialog()
@@ -266,15 +266,24 @@ class DrillGeometryTaskPanel:
     def reject(self):
         """Appelé quand l'utilisateur clique sur Cancel"""
 
-        self.obj.SelectedPosition = -1
         App.ActiveDocument.abortTransaction()
+        self.obj.SelectedPosition = -1
         Gui.Control.closeDialog()
         return False
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
         return (QtGui.QDialogButtonBox.Ok
+                | QtGui.QDialogButtonBox.Apply
                 | QtGui.QDialogButtonBox.Cancel)
+
+    def clicked(self, button):
+        """clicked(button) ... callback invoked when the user presses any of the task panel buttons."""
+        if button == QtGui.QDialogButtonBox.Apply:
+            # self.panelGetFields()
+            # self.setClean()
+            self.obj.recompute()
+            # App.ActiveDocument.recompute()
 
     def moveUp(self):
         """Déplacer la position sélectionnée vers le haut"""

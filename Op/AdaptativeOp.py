@@ -101,7 +101,8 @@ class AdaptativeOp(BaseOp.baseOp):
             self.execute(obj)
 
     def onDocumentRestored(self, obj):
-        self.initProperties(obj)
+        self.__init__(obj)  # Réinitialiser les propriétés et le proxy après restauration
+        # self.initProperties(obj)
 
     def execute(self, obj):
         if App.ActiveDocument.Restoring:
@@ -277,7 +278,10 @@ class AdaptativeOp(BaseOp.baseOp):
                 gcodeWriter.linearMove({'Z': safe_z}, rapid=True)
 
             obj.Gcode = "\n".join(gcodeWriter.lines)
-            Log.baptDebug(f"G-code adaptatif: {len(obj.Gcode)} caractères\n")
+            obj.TimeEstimate = gcodeWriter.time_estimate
+            obj.LastCoordinate = App.Vector(gcodeWriter.current_position['X'], gcodeWriter.current_position['Y'], gcodeWriter.current_position['Z'])
+
+            Log.baptDebug(f"G-code adaptatif: {len(obj.Gcode)} caractères")
 
             # Shape de visualisation : matière restante après usinage.
             # On offsette finish_wire (centre outil) vers l'intérieur de
@@ -303,14 +307,14 @@ class AdaptativeOp(BaseOp.baseOp):
                         inward_offset = -tool_radius
                 else:
                     inward_offset = -tool_radius
-                Log.baptDebug(f"Inward offset: {inward_offset}\n")
+                Log.baptDebug(f"Inward offset: {inward_offset}")
                 remaining_wire = fw.makeOffset2D(
                     inward_offset, join=0, fill=False, openResult=False)
                 obj.Shape = remaining_wire
             except Exception as e:
                 Log.baptDebug(
                     f"Offset matière restante échoué: {e}, "
-                    f"fallback sur contour_wire\n")
+                    f"fallback sur contour_wire")
                 obj.Shape = contour_wire
 
         except Exception as e:
@@ -414,7 +418,7 @@ class AdaptativeOp(BaseOp.baseOp):
             sw = sw.copy()
             sw.translate(App.Vector(0, 0, fw_z - sw_z))
             Log.baptDebug(
-                f"Alignement Z stock {sw_z:.3f} → {fw_z:.3f}\n")
+                f"Alignement Z stock {sw_z:.3f} → {fw_z:.3f}")
 
         # Créer la face une seule fois pour tous les appels de clip
         stock_face = None
@@ -433,9 +437,9 @@ class AdaptativeOp(BaseOp.baseOp):
             if not face_ok:
                 Log.baptDebug(
                     "WARNING: stock face isInside échoue, "
-                    "fallback BoundBox\n")
+                    "fallback BoundBox")
         except Exception as e:
-            Log.baptDebug(f"Création face stock échouée: {e}\n")
+            Log.baptDebug(f"Création face stock échouée: {e}")
 
         # BoundBox pour les logs
         bb = sw.BoundBox
@@ -443,14 +447,14 @@ class AdaptativeOp(BaseOp.baseOp):
 
         Log.baptDebug(
             f"Stock BB: X[{bb.XMin:.2f}, {bb.XMax:.2f}] "
-            f"Y[{bb.YMin:.2f}, {bb.YMax:.2f}]\n")
+            f"Y[{bb.YMin:.2f}, {bb.YMax:.2f}]")
         Log.baptDebug(
             f"Finish BB: X[{bb_finish.XMin:.2f}, {bb_finish.XMax:.2f}] "
-            f"Y[{bb_finish.YMin:.2f}, {bb_finish.YMax:.2f}]\n")
+            f"Y[{bb_finish.YMin:.2f}, {bb_finish.YMax:.2f}]")
         Log.baptDebug(
             f"Finish wire: isClosed={fw.isClosed()}, "
             f"isCCW={self._is_ccw(fw) if fw.isClosed() else 'N/A'}, "
-            f"Length={fw.Length:.2f}, Edges={len(fw.Edges)}\n")
+            f"Length={fw.Length:.2f}, Edges={len(fw.Edges)}")
 
         # Déterminer le signe correct pour que l'offset aille vers l'extérieur
         # (vers le stock). makeOffset2D(+) va à gauche du wire:
@@ -469,12 +473,12 @@ class AdaptativeOp(BaseOp.baseOp):
                     offset_sign = -1.0
                     Log.baptDebug(
                         "Offset positif va vers l'intérieur, "
-                        "inversion du signe\n")
+                        "inversion du signe")
                 else:
                     Log.baptDebug(
                         "Offset positif va vers l'extérieur (OK)\n")
         except Exception as e:
-            Log.baptDebug(f"Test d'offset échoué: {e}\n")
+            Log.baptDebug(f"Test d'offset échoué: {e}")
 
         # ---- 1. Générer les offsets et les classifier --------------------
         # Boucle while : on s'arrête quand l'offset est entièrement
@@ -490,11 +494,11 @@ class AdaptativeOp(BaseOp.baseOp):
                 ow = fw.makeOffset2D(offset, join=0,
                                      fill=False, openResult=False)
             except Exception as e:
-                Log.baptDebug(f"Offset {i} (d={offset:.2f}) échoué: {e}\n")
+                Log.baptDebug(f"Offset {i} (d={offset:.2f}) échoué: {e}")
                 break
 
             if not ow or not ow.Edges:
-                Log.baptDebug(f"Offset {i} vide\n")
+                Log.baptDebug(f"Offset {i} vide")
                 break
 
             offset_wire = ow.Wires[0] if ow.Wires else ow
@@ -503,7 +507,7 @@ class AdaptativeOp(BaseOp.baseOp):
             Log.baptDebug(
                 f"Offset {i} (d={offset:.2f}): BB X[{ow_bb.XMin:.2f}, "
                 f"{ow_bb.XMax:.2f}] Y[{ow_bb.YMin:.2f}, {ow_bb.YMax:.2f}] "
-                f"Edges={len(offset_wire.Edges)}\n")
+                f"Edges={len(offset_wire.Edges)}")
 
             # NE PAS appliquer _ensure_wire_direction avant le clipping
             # car les edges reversées cassent edge.Curve.toShape(p1, p2).
@@ -516,7 +520,7 @@ class AdaptativeOp(BaseOp.baseOp):
             if not clipped:
                 # Rien dans le stock → l'offset est entièrement dehors, on arrête
                 Log.baptDebug(
-                    f"Offset {i} (d={offset:.2f}): entièrement hors stock, arrêt\n")
+                    f"Offset {i} (d={offset:.2f}): entièrement hors stock, arrêt")
                 break
 
             # Vérifier si le wire est entièrement dans le stock
@@ -528,14 +532,14 @@ class AdaptativeOp(BaseOp.baseOp):
             if is_complete:
                 pass_data.append((offset_wire, True, [offset_wire]))
                 Log.baptDebug(
-                    f"Offset {i} (d={offset:.2f}): complet (dans stock)\n")
+                    f"Offset {i} (d={offset:.2f}): complet (dans stock)")
             else:
                 pass_data.append((offset_wire, False, clipped))
                 Log.baptDebug(
                     f"Offset {i} (d={offset:.2f}): "
-                    f"clippé en {len(clipped)} segment(s)\n")
+                    f"clippé en {len(clipped)} segment(s)")
 
-        Log.baptDebug(f"Passes générées: {len(pass_data)}\n")
+        Log.baptDebug(f"Passes générées: {len(pass_data)}")
 
         if not pass_data:
             return []
@@ -571,7 +575,7 @@ class AdaptativeOp(BaseOp.baseOp):
                             wire = shiftWire(wire, nearest_pt)
                         except Exception as e:
                             Log.baptDebug(
-                                f"shiftWire échoué passe {pass_idx}: {e}\n")
+                                f"shiftWire échoué passe {pass_idx}: {e}")
 
                         # Transition perpendiculaire (ligne courte)
                         d = (prev_end - nearest_pt).Length
@@ -592,7 +596,7 @@ class AdaptativeOp(BaseOp.baseOp):
                 prev_wire = wire
 
                 Log.baptDebug(
-                    f"Passe {pass_idx}: complet, L={wire.Length:.1f}\n")
+                    f"Passe {pass_idx}: complet, L={wire.Length:.1f}")
 
             else:
                 # Déterminer si les segments clippés doivent être inversés
@@ -661,7 +665,7 @@ class AdaptativeOp(BaseOp.baseOp):
 
                 Log.baptDebug(
                     f"Passe {pass_idx}: clippé, "
-                    f"{len(effective_wires)} segment(s)\n")
+                    f"{len(effective_wires)} segment(s)")
 
         return path
 
@@ -1050,7 +1054,7 @@ class AdaptativeOp(BaseOp.baseOp):
             reversed_edges = [e.reversed() for e in reversed(wire.Edges)]
             new_wire = Part.Wire(reversed_edges)
             direction_str = 'CCW' if want_ccw else 'CW'
-            Log.baptDebug(f'Wire inversé pour {direction_str}\n')
+            Log.baptDebug(f'Wire inversé pour {direction_str}')
             return new_wire
         except Exception as e:
             App.Console.PrintWarning(
@@ -1063,10 +1067,19 @@ class ViewProviderAdaptiveOp(BaseOp.baseOpViewProviderProxy):
         super().__init__(vobj)
         self.Object = vobj.Object
         vobj.Proxy = self
+        self.panel = None
+        self.deleteOnReject = True
 
     def attach(self, vobj):
         self.Object = vobj.Object
+        self.panel = None
         return super().attach(vobj)
+
+    def updateData(self, fp, prop):
+        # Log.baptDebug(f"updateData VP : prop={prop}")
+        if self.panel:
+            self.panel.updateData(fp, prop)
+        return super().updateData(fp, prop)
 
     def getIcon(self):
         if not self.Object.Active:
@@ -1076,15 +1089,13 @@ class ViewProviderAdaptiveOp(BaseOp.baseOpViewProviderProxy):
     def setupContextMenu(self, vobj, menu):
         super().setupContextMenu(vobj, menu)
 
-        viewGcode = QtGui.QAction(Gui.getIcon("Std_TransformManip.svg"), "View G-code", menu)
+        viewGcode = QtGui.QAction(QtGui.QIcon(BaptUtilities.getIconPath("GcodeFile.svg")), "View G-code", menu)
         QtCore.QObject.connect(viewGcode, QtCore.SIGNAL("triggered()"), lambda: self.viewGcode(vobj))
         menu.addAction(viewGcode)
         return True
 
-    def viewGcode(self, vobj):
-        """Afficher le G-code dans une boîte de dialogue"""
-        taskPanel = GcodeEditorTaskPanel(vobj.Object)
-        Gui.Control.showDialog(taskPanel)
+    def deleteObjectOnReject(self):
+        return hasattr(self, "deleteOnReject") and self.deleteOnReject
 
     def __getstate__(self):
         return None
@@ -1094,13 +1105,26 @@ class ViewProviderAdaptiveOp(BaseOp.baseOpViewProviderProxy):
 
     def setEdit(self, vobj, mode=0):
         """Ouvre le panneau de tâches pour l'opération adaptive."""
-        try:
-            tp = AdaptativeOpTaskPanel(vobj.Object)
-            Gui.Control.showDialog(tp)
-        except Exception as e:
-            App.Console.PrintError(f"AdaptativeOp setEdit: {e}\n")
-            return False
+        if mode == 0:
+
+            self.panel = AdaptativeOpTaskPanel(vobj.Object, self.deleteObjectOnReject())
+            Gui.Control.showDialog(self.panel)
+            self.deleteOnReject = False
+            return True
+        return False
+
+    def unsetEdit(self, vobj, mode=0):
+        """Ferme le panneau de tâche"""
+        if self.panel:
+            self.panel.reject()
+            self.panel = None
+        Gui.Control.closeDialog()
         return True
+
+    def closeTaskPanel(self):
+        """Ferme le panneau de tâche si ouvert."""
+        if self.panel:
+            self.panel = None
 
     def doubleClicked(self, vobj):
         self.setEdit(vobj)
@@ -1110,47 +1134,67 @@ class ViewProviderAdaptiveOp(BaseOp.baseOpViewProviderProxy):
 class AdaptativeOpTaskPanel():
     """Panneau de tâches pour l'opération de fraisage Adaptatif."""
 
-    def __init__(self, obj):
+    def __init__(self, obj, deleteOnReject):
 
-        try:
-            self.obj = obj
-            self.ui1 = Gui.PySideUic.loadUi(
-                BaptUtilities.getPanel("AdaptativeOp.ui"))
-            self.uiTool = ToolTaskPanel(obj)
-            self.form = [self.ui1, self.uiTool.getForm()]
+        self.obj = obj
+        self.deleteOnReject = deleteOnReject
+        App.activeDocument().openTransaction("Edit Adaptative Parameters")
+        self.ui1 = Gui.PySideUic.loadUi(
+            BaptUtilities.getPanel("AdaptativeOp.ui"))
+        self.uiTool = ToolTaskPanel(obj)
+        self.form = [self.ui1, self.uiTool.getForm()]
+        self.toolDiamSpin = BQuantitySpinBox(obj, "ToolDiameter", self.ui1.toolDiamSpin)
+        self.stepDownSpin = BQuantitySpinBox(obj, "StepDown", self.ui1.stepDownSpin)
+        self.aeSpin = BQuantitySpinBox(obj, "EngagementRadial", self.ui1.aeSpin)
+        self.surepAxialeSpin = BQuantitySpinBox(obj, "SurepAxiale", self.ui1.surepAxialeSpin)
+        self.surepRadialeSpin = BQuantitySpinBox(obj, "SurepRadiale", self.ui1.surepRadialeSpin)
+        self.entreeSpin = BQuantitySpinBox(obj, "Entree", self.ui1.entreeSpin)
+        self.sortieSpin = BQuantitySpinBox(obj, "Sortie", self.ui1.sortieSpin)
 
-            self.toolDiamSpin = BQuantitySpinBox(obj, "ToolDiameter", self.ui1.toolDiamSpin)
-            self.stepDownSpin = BQuantitySpinBox(obj, "StepDown", self.ui1.stepDownSpin)
-            self.aeSpin = BQuantitySpinBox(obj, "EngagementRadial", self.ui1.aeSpin)
-            self.surepAxialeSpin = BQuantitySpinBox(obj, "SurepAxiale", self.ui1.surepAxialeSpin)
-            self.surepRadialeSpin = BQuantitySpinBox(obj, "SurepRadiale", self.ui1.surepRadialeSpin)
-            self.entreeSpin = BQuantitySpinBox(obj, "Entree", self.ui1.entreeSpin)
-            self.sortieSpin = BQuantitySpinBox(obj, "Sortie", self.ui1.sortieSpin)
+        for d in Direction:
+            self.ui1.directionCombo.addItem(d)
+        self.ui1.directionCombo.setCurrentText(
+            obj.Direction if hasattr(obj, 'Direction') else Direction[0])
 
-            for d in Direction:
-                self.ui1.directionCombo.addItem(d)
-            self.ui1.directionCombo.setCurrentText(
-                obj.Direction if hasattr(obj, 'Direction') else Direction[0])
+        for p in Plongee:
+            self.ui1.plungeCombo.addItem(p)
+        self.ui1.plungeCombo.setCurrentText(
+            obj.PlungeType if hasattr(obj, 'PlungeType') else Plongee[0])
 
-            for p in Plongee:
-                self.ui1.plungeCombo.addItem(p)
-            self.ui1.plungeCombo.setCurrentText(
-                obj.PlungeType if hasattr(obj, 'PlungeType') else Plongee[0])
+        # Connexions
 
-            # Connexions
-            # self.ui1.toolDiamSpin.valueChanged.connect(self.updateObj)
-            # self.ui1.stepDownSpin.valueChanged.connect(self.updateObj)
-            # self.ui1.aeSpin.valueChanged.connect(self.updateObj)
-            # self.ui1.surepAxialeSpin.valueChanged.connect(self.updateObj)
-            # self.ui1.surepRadialeSpin.valueChanged.connect(self.updateObj)
-            # self.ui1.directionCombo.currentTextChanged.connect(self.updateObj)
-            # self.ui1.plungeCombo.currentTextChanged.connect(self.updateObj)
+        self.ui1.toolDiamSpin.editingFinished.connect(lambda: self.getFields(obj))
+        self.ui1.stepDownSpin.editingFinished.connect(lambda: self.getFields(obj))
+        self.ui1.aeSpin.editingFinished.connect(lambda: self.getFields(obj))
+        self.ui1.surepAxialeSpin.editingFinished.connect(lambda: self.getFields(obj))
+        self.ui1.surepRadialeSpin.editingFinished.connect(lambda: self.getFields(obj))
 
-        except Exception as e:
-            App.Console.PrintError(f"AdaptativeOpTaskPanel init: {e}\n")
-            import sys
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            App.Console.PrintMessage(f'ligne {exc_tb.tb_lineno}\n')
+        self.ui1.directionCombo.currentTextChanged.connect(self.updateObj)
+        self.ui1.plungeCombo.currentTextChanged.connect(self.updateObj)
+
+    def setFields(self, obj):
+        self.toolDiamSpin.updateWidget()
+        self.stepDownSpin.updateWidget()
+        self.aeSpin.updateWidget()
+        self.surepAxialeSpin.updateWidget()
+        self.surepRadialeSpin.updateWidget()
+        self.entreeSpin.updateWidget()
+        self.sortieSpin.updateWidget()
+
+    def getFields(self, obj):
+        self.toolDiamSpin.updateProperty()
+        self.stepDownSpin.updateProperty()
+        self.aeSpin.updateProperty()
+        self.surepAxialeSpin.updateProperty()
+        self.surepRadialeSpin.updateProperty()
+        self.entreeSpin.updateProperty()
+        self.sortieSpin.updateProperty()
+
+    def updateData(self, obj, prop):
+        Log.baptDebug(f"updateData TP : prop={prop}")
+        if prop in ["ToolDiameter", "StepDown", "EngagementRadial", "SurepAxiale",
+                    "SurepRadiale", "Entree", "Sortie", "Direction", "PlungeType"]:
+            self.setFields(obj)
 
     def updateObj(self):
         try:
@@ -1166,43 +1210,64 @@ class AdaptativeOpTaskPanel():
         except Exception as e:
             App.Console.PrintError(f"AdaptativeOp updateObj: {e}\n")
 
+    def accept(self):
+        self.preCleanup()
+        Gui.Control.closeDialog()
+        self.obj.recompute()
+        App.activeDocument().commitTransaction()
+
+    def reject(self):
+        self.preCleanup()
+        App.ActiveDocument().abortTransaction()
+
+        if self.deleteOnReject():
+            pass
+            # App.ActiveDocument.removeObject(self.obj.Name)
+
+        Gui.Control.closeDialog()
+
+    def preCleanup(self):
+        if self.obj.Tool:
+            self.obj.Tool.Visibility = False
+        self.obj.ViewObject.Proxy.closeTaskPanel()
+
 
 def createAdaptativeOperation(contour=None) -> Part.Feature:
     doc = App.ActiveDocument
     obj = doc.addObject("Part::FeaturePython", "AdaptativeOperation")
 
     AdaptativeOp(obj)
-    ViewProviderAdaptiveOp(obj.ViewObject)
 
-    if contour:
+    if contour is not None:
+
         obj.Contour = contour
 
-        pref = BaptPreferences.BaptPreferences()
-        modeAjout = pref.getModeAjout()
+    pref = BaptPreferences.BaptPreferences()
+    modeAjout = pref.getModeAjout()
 
-        # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
-        # 1 = ajouter à la géométrie comme enfant (pas conseillé)
-        # 2 = ajouter au groupe opérations du projet CAM
+    # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
+    # 1 = ajouter à la géométrie comme enfant (pas conseillé)
+    # 2 = ajouter au groupe opérations du projet CAM
 
-        if modeAjout == 1 or modeAjout == 0:
+    if modeAjout == 1 or modeAjout == 0:
 
-            # Ajouter le contournage comme enfant de la géométrie du contour
-            contour.addObject(obj)
-            contour.Group.append(obj)
+        # Ajouter le contournage comme enfant de la géométrie du contour
+        contour.addObject(obj)
+        contour.Group.append(obj)
 
-        if modeAjout == 2 or modeAjout == 0:
-            camProject = BaptUtilities.find_cam_project(contour)
-            if camProject:
-                operations_group = camProject.Proxy.getOperationsGroup(camProject)
-                if modeAjout == 2:
-                    operations_group.addObject(obj)
-                    operations_group.Group.append(obj)
-                elif modeAjout == 0:
-                    link = doc.addObject('App::Link', f'Link_{obj.Label}')
-                    link.setLink(obj)
-                    operations_group.addObject(link)
-                    operations_group.Group.append(link)
-
+    if modeAjout == 2 or modeAjout == 0:
+        camProject = BaptUtilities.find_cam_project(contour)
+        if camProject:
+            operations_group = camProject.Proxy.getOperationsGroup(camProject)
+            if modeAjout == 2:
+                operations_group.addObject(obj)
+                operations_group.Group.append(obj)
+            elif modeAjout == 0:
+                link = doc.addObject('App::Link', f'Link_{obj.Label}')
+                link.setLink(obj)
+                operations_group.addObject(link)
+                operations_group.Group.append(link)
+    ViewProviderAdaptiveOp(obj.ViewObject)
     if hasattr(obj, "ViewObject"):
         obj.ViewObject.Proxy.setEdit(obj.ViewObject)
     return obj

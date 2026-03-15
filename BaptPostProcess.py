@@ -66,6 +66,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
     current_spindle = None
     current_feed = None
     current_Coolant = None
+    last_op = None  # Dernière opération traitée (pour la transition)
 
     blockForm = Postpro.blockForm(cam_project.Proxy.getStock(cam_project))
     gcode_lines.append(blockForm)
@@ -88,6 +89,11 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             gcode_lines.append(tool_change_code)
 
             current_tool = tool
+        elif last_op is not None:
+            # Même outil, transition entre opérations : dégagement Z puis rapide XY
+            retract_z = 100
+            gcode_lines.append(Postpro.writeComment(f"Transition vers {obj.Label}"))
+            gcode_lines.append(f"G0 Z{retract_z}")
 
         coolantMode = getattr(obj, 'CoolantMode', 'Off')
         if current_Coolant != coolantMode:
@@ -183,6 +189,8 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             gcode_lines.append('M30')  # code de fin de programme
             gcode_lines.append(Postpro.writeComment(f"Opération non prise en charge: {obj.Label} (Class: {obj.Proxy.__class__.__name__})"))
 
+        last_op = obj
+
     gcode_lines.append(Postpro.writeFooter())
 
     return '\n'.join(gcode_lines)
@@ -243,9 +251,20 @@ class PostProcessDialog(QtGui.QDialog):
         leftPane = QtGui.QWidget()
         leftLayout = QtGui.QVBoxLayout(leftPane)
 
-        # Liste des opérations avec items checkables
+        # Liste des opérations avec items checkables + drag & drop
         self.listWidget = QtGui.QListWidget(self)
         self.listWidget.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
+        self.listWidget.setDragDropMode(QtGui.QAbstractItemView.InternalMove)
+        self.listWidget.setDefaultDropAction(QtCore.Qt.MoveAction)
+        self.listWidget.setDragEnabled(True)
+        self.listWidget.setAcceptDrops(True)
+        # Intercepter le drop pour mettre à jour l'ordre dans le projet
+        _orig_dropEvent = self.listWidget.dropEvent
+
+        def _on_drop(event):
+            _orig_dropEvent(event)
+            self.updateOrder()
+        self.listWidget.dropEvent = _on_drop
         leftLayout.addWidget(self.listWidget)
 
         # Boutons Up/Down sous la liste
@@ -296,9 +315,9 @@ class PostProcessDialog(QtGui.QDialog):
         for op in ops:
             displayText = f"{op.Label} {self._tool_label(op)}"
             item = QtGui.QListWidgetItem(displayText)
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsDragEnabled)
             item.setCheckState(QtCore.Qt.Checked if op.Active else QtCore.Qt.Unchecked)
-            item.setData(QtCore.Qt.UserRole, op)
+            item.setData(QtCore.Qt.UserRole, op.Name)  # stocke le Name (string) pour survivre au drag & drop
             self.listWidget.addItem(item)
             # set icon for the operation
             try:
@@ -364,13 +383,14 @@ class PostProcessDialog(QtGui.QDialog):
         groupeOps = self.cam_project.Proxy.getOperationsGroup(self.cam_project)
         for r in range(self.listWidget.count()):
             item = self.listWidget.item(r)
-            op = item.data(QtCore.Qt.UserRole)
-            if op in groupeOps.Group:
+            op = App.ActiveDocument.getObject(item.data(QtCore.Qt.UserRole))
+            if op and op in groupeOps.Group:
                 groupeOps.removeObject(op)
         for r in range(self.listWidget.count()):
             item = self.listWidget.item(r)
-            op = item.data(QtCore.Qt.UserRole)
-            groupeOps.addObject(op)
+            op = App.ActiveDocument.getObject(item.data(QtCore.Qt.UserRole))
+            if op:
+                groupeOps.addObject(op)
 
     def move_item_up(self):
         row = self.listWidget.currentRow()
@@ -395,7 +415,9 @@ class PostProcessDialog(QtGui.QDialog):
         for i in range(self.listWidget.count()):
             item = self.listWidget.item(i)
             if item.checkState() == QtCore.Qt.Checked:
-                ops.append(item.data(QtCore.Qt.UserRole))
+                op = App.ActiveDocument.getObject(item.data(QtCore.Qt.UserRole))
+                if op:
+                    ops.append(op)
         return ops
 
     def on_generate(self):

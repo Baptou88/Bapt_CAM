@@ -1,14 +1,18 @@
 import FreeCAD as App
 import FreeCADGui as Gui
+from Op.BaseOp import baseOp, baseOpViewProviderProxy
 from PySide import QtCore, QtGui
 import BaptUtilities
 import Part
 from Tool import ToolSelectorDialog
+from Tool.ToolTaskPannel import ToolTaskPanel
+from utils import GcodeWriter
+from utils.BQuantitySpinBox import BQuantitySpinBox
 
 
-class ProbeFace:
+class ProbeFace(baseOp):
     def __init__(self, obj):
-
+        super().__init__(obj)
         obj.addProperty("App::PropertyLinkSub", "Face", "Base", "Face à mesurer")
         obj.addProperty("App::PropertyVector", "Origin", "Base", "Point d'origine")
         obj.addProperty("App::PropertyVector", "Direction", "Base", "Direction de l'outil")
@@ -16,13 +20,16 @@ class ProbeFace:
         obj.addProperty("App::PropertyLength", "NormalLength", "Base", "Longueur de la normal")
         obj.NormalLength = 10
 
+        self.installToolProp(obj)
+
         obj.Proxy = self
 
     def execute(self, obj):
         if App.ActiveDocument.Restoring:
             return
 
-        obj.Shape = Part.Shape()
+        shape = Part.Shape()
+        gcodeWriter = GcodeWriter.GcodeWriter()
 
         if not obj.Face or not obj.Origin or not obj.Direction:
             return
@@ -37,16 +44,33 @@ class ProbeFace:
         Sphere = Part.makeSphere(1, obj.Origin)
         print(f'obj.Origin: {obj.Origin}')
         print(f'obj.Direction: {obj.Direction}')
-        print(f'obj.Direction * 10: {obj.Origin + (obj.Direction * obj.NormalLength)}')
+        ptApproche = obj.Origin + (obj.Direction * obj.NormalLength)
+        print(f'obj.Direction * 10: {ptApproche}')
+        gcodeWriter.linearMove({'X': ptApproche.x, 'Y': ptApproche.y}, rapid=True)
+        gcodeWriter.linearMove({'Z': ptApproche.z + 10}, rapid=True)
+        gcodeWriter.linearMove({'Z': ptApproche.z}, feed=100)
+
+        gcodeWriter.lines.append(f"G38.2 X{obj.Origin.x:.3f} Y{obj.Origin.y:.3f} Z{obj.Origin.z:.3f} F100")
+        # gcodeWriter.lines.append(f"G92.1 Z{obj.Origin.z:.3f}")
+
+        # return to approach point
+        gcodeWriter.linearMove({'X': ptApproche.x, 'Y': ptApproche.y, 'Z': ptApproche.z}, feed=500, force=True)
+
+        gcodeWriter.lines.append("; #5070 set to 1 to indicate probe success")
+        gcodeWriter.lines.append("; #5061 to #5069 can be used to store the measured position if needed")
+
         Normal = Part.makeLine(obj.Origin, obj.Origin + (obj.Direction * obj.NormalLength))
         normalWire = Part.Wire([Normal])
         compound = Part.makeCompound([Sphere, normalWire])
         obj.Shape = compound
+        obj.Gcode = "\n".join(gcodeWriter.lines)
+        obj.TimeEstimate = gcodeWriter.time_estimate
+        obj.LastCoordinate = App.Vector(gcodeWriter.current_position['X'], gcodeWriter.current_position['Y'], gcodeWriter.current_position['Z'])
 
         pass
 
     def onChanged(self, obj, prop):
-        if prop in ["Face", "Origin", "Direction", "NormalLength"]:
+        if prop in ["Face", "Origin", "Direction", "NormalLength", "UV"]:
             self.execute(obj)
         pass
 
@@ -61,18 +85,27 @@ class ProbeFace:
         return None
 
 
-class ViewProviderProbeFace:
+class ViewProviderProbeFace(baseOpViewProviderProxy):
     def __init__(self, vobj):
+        super().__init__(vobj)
         vobj.Proxy = self
         self.Object = vobj.Object
 
     def getIcon(self):
-        return BaptUtilities.getIconPath("ProbeSurface.svg")
+        if self.Object.Active:
+            return BaptUtilities.getIconPath("ProbeSurface.svg")
+        return BaptUtilities.getIconPath("operation_disabled.svg")
 
     def attach(self, vobj):
+        super().attach(vobj)
         self.Object = vobj.Object
 
     def setupContextMenu(self, vobj, menu):
+        super().setupContextMenu(vobj, menu)
+        action_edit_gcode = QtGui.QAction(QtGui.QIcon(BaptUtilities.getIconPath("GcodeFile.svg")), "edit Gcode", menu)
+        QtCore.QObject.connect(action_edit_gcode, QtCore.SIGNAL("triggered()"), lambda: self.viewGcode(vobj))
+        menu.addAction(action_edit_gcode)
+        return
         action = menu.addAction("Edit")
         action.triggered.connect(lambda: self.setEdit(vobj))
 
@@ -92,27 +125,32 @@ class ViewProviderProbeFace:
         self.setEdit(vobj)
         return True
 
-    def getDisplayModes(self, vobj):
-        """Retourne les modes d'affichage disponibles"""
-        return ["Flat Lines", "Shaded", "Wireframe"]
+    # def getDisplayModes(self, vobj):
+    #     """Retourne les modes d'affichage disponibles"""
+    #     return ["Flat Lines", "Shaded", "Wireframe"]
 
-    def getDefaultDisplayMode(self):
-        """Retourne le mode d'affichage par défaut"""
-        return "Flat Lines"
+    # def getDefaultDisplayMode(self):
+    #     """Retourne le mode d'affichage par défaut"""
+    #     return "Flat Lines"
 
-    def setDisplayMode(self, mode):
-        """Définit le mode d'affichage"""
-        return mode
+    # def setDisplayMode(self, mode):
+    #     """Définit le mode d'affichage"""
+    #     return mode
 
 
 class ProbeFaceTaskPanel:
     def __init__(self, obj):
         self.obj = obj
 
+        ui2 = ToolTaskPanel(obj)
+
         # Créer l'interface utilisateur
-        self.form = QtGui.QWidget()
-        self.form.setWindowTitle("Éditer le cycle")
-        layout = QtGui.QVBoxLayout(self.form)
+        self.ui1 = QtGui.QWidget()
+        self.ui1.setWindowTitle("Éditer le cycle")
+
+        self.form = [self.ui1, ui2.getForm()]
+
+        layout = QtGui.QVBoxLayout(self.ui1)
 
         # bouton pour la selection de la face
         self.selectFaceButton = QtGui.QPushButton("Sélectionner la face")
@@ -127,44 +165,30 @@ class ProbeFaceTaskPanel:
 
         # champ pour la direction
         self.directionLabel = QtGui.QLabel("Direction:")
+        self.direction = QtGui.QLabel()
         layout.addWidget(self.directionLabel)
+        self.direction = QtGui.QLabel()
+        layout.addWidget(self.direction)
 
         # champ pour la longueur de la normal
         self.normalLengthLabel = QtGui.QLabel("Longueur de la normal:")
+        self.normalLengthEdit = BQuantitySpinBox(obj, "NormalLength")
         layout.addWidget(self.normalLengthLabel)
+        layout.addWidget(self.normalLengthEdit.getWidget())
 
-        # Groupe pour l'outil
-        toolGroup = QtGui.QGroupBox("Outil")
-        toolLayout = QtGui.QVBoxLayout()
+        self.updateUI()
 
-        # Informations sur l'outil sélectionné
-        self.toolInfoLayout = QtGui.QFormLayout()
-        self.toolIdLabel = QtGui.QLabel("Aucun outil sélectionné")
-        self.toolNameLabel = QtGui.QLabel("")
-        self.toolTypeLabel = QtGui.QLabel("")
-        self.toolDiameterLabel = QtGui.QLabel("")
+    def updateUI(self):
+        """Mettre à jour l'interface utilisateur avec les valeurs de l'objet"""
+        # if self.obj.Origin:
+        #     self.originEdit.setText(f"{self.obj.Origin.x:.3f}, {self.obj.Origin.y:.3f}, {self.obj.Origin.z:.3f}")
+        # else:
+        #     self.originEdit.setText("")
 
-        self.toolInfoLayout.addRow("ID:", self.toolIdLabel)
-        self.toolInfoLayout.addRow("Nom:", self.toolNameLabel)
-        self.toolInfoLayout.addRow("Type:", self.toolTypeLabel)
-        self.toolInfoLayout.addRow("Diamètre:", self.toolDiameterLabel)
-
-        toolLayout.addLayout(self.toolInfoLayout)
-
-        # Bouton pour sélectionner un outil
-        self.selectToolButton = QtGui.QPushButton("Sélectionner un outil")
-        self.selectToolButton.clicked.connect(self.selectTool)
-        toolLayout.addWidget(self.selectToolButton)
-
-        toolGroup.setLayout(toolLayout)
-        layout.addWidget(toolGroup)
-
-    def selectTool(self):
-        """Sélectionner un outil"""
-        dialog = ToolSelectorDialog.ToolSelectorDialog(self.obj.ToolID)
-        if dialog.exec_():
-            self.obj.ToolID = dialog.selected_tool_id
-            self.updateToolInfo()
+        if self.obj.Direction:
+            self.direction.setText(f"{self.obj.Direction.x:.3f}, {self.obj.Direction.y:.3f}, {self.obj.Direction.z:.3f}")
+        else:
+            self.direction.setText("")
 
     def selectFace(self):
         """Sélectionner la face"""
@@ -198,17 +222,21 @@ class ProbeFaceTaskPanel:
 
         self.surfaceSelectionObserver.disable()
 
+        self.updateUI()
+
     def confirmSelection(self):
         """Confirmer la sélection"""
 
     def reject(self):
         """Rejeter la sélection"""
-        self.surfaceSelectionObserver.disable()
+        if hasattr(self, "surfaceSelectionObserver"):
+            self.surfaceSelectionObserver.disable()
         Gui.Control.closeDialog()
 
     def accept(self):
         """Accepter la sélection"""
-        self.surfaceSelectionObserver.disable()
+        if hasattr(self, "surfaceSelectionObserver"):
+            self.surfaceSelectionObserver.disable()
         Gui.Control.closeDialog()
 
 

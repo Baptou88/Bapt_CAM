@@ -191,6 +191,7 @@ class CamProjectTaskPanel:
         # Garder une référence à l'objet
         self.obj = obj
         self.deleteOnReject = deleteOnReject
+        App.activeDocument().openTransaction("Edit CAM Project Parameters")
         # Obtenir l'objet Stock
         self.stock = self.getStockObject(obj)
 
@@ -428,28 +429,35 @@ class CamProjectTaskPanel:
 
         # Fermer la tâche
         Gui.Control.closeDialog()
+        App.activeDocument().commitTransaction()
         return True
 
     def reject(self):
         """Appelé quand l'utilisateur clique sur Cancel"""
-
+        App.activeDocument().abortTransaction()
         # Nettoyer les sphères de positionnement
         if hasattr(self, 'sphere_manager'):
             self.sphere_manager.clear_spheres()
 
         Gui.Control.closeDialog()
-        self.obj.Document.recompute()
+        App.activeDocument().recompute()
         if self.deleteOnReject:
             # Supprimer l'objet CAM Project
-
-            App.ActiveDocument.removeObject(self.obj.Name)
+            pass
+            # App.ActiveDocument.removeObject(self.obj.Name)
 
         return False
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
         return (QtGui.QDialogButtonBox.Ok
+                | QtGui.QDialogButtonBox.Apply
                 | QtGui.QDialogButtonBox.Cancel)
+
+    def clicked(self, button):
+        """clicked(button) ... callback invoked when the user presses any of the task panel buttons."""
+        if button == QtGui.QDialogButtonBox.Apply:
+            self.obj.recompute()
 
 
 class PostProcessorTaskPanel:

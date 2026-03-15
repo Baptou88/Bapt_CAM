@@ -26,6 +26,7 @@ import BaptOrigin
 
 from Op import DrillOp, OpContournage, OpSurfacage, PathOp
 from Probe import probeFace
+import testFPO
 
 
 class CreateOriginCommand:
@@ -110,7 +111,7 @@ class CreateContourCommand:
         if not sel:
             return False
 
-        return hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, BaptContourGeometry.ContourGeometry)
+        return hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, (BaptContourGeometry.ContourGeometry, BaptContourEditableGeometry.ContourEditableGeometry))
 
     def Activated(self):
         """Créer un nouveau contournage"""
@@ -125,10 +126,6 @@ class CreateContourCommand:
 
         # Ajouter la fonctionnalité
         contour = OpContournage.ContournageCycle(obj)
-
-        # Ajouter le ViewProvider
-        if obj.ViewObject:
-            OpContournage.ViewProviderContournageCycle(obj.ViewObject)
 
         pref = BaptPreferences.BaptPreferences()
         modeAjout = pref.getModeAjout()
@@ -159,10 +156,14 @@ class CreateContourCommand:
         # Lier à la géométrie du contour
         obj.ContourGeometry = contour_geometry
 
+        # Ajouter le ViewProvider
+        if App.GuiUp and obj.ViewObject:
+            OpContournage.ViewProviderContournageCycle(obj.ViewObject)
+
         doc.recompute()
 
         # Ouvrir le panneau de tâches pour l'édition
-        if obj.ViewObject:
+        if App.GuiUp and obj.ViewObject:
             obj.ViewObject.Proxy.setEdit(obj.ViewObject)
 
         doc.commitTransaction()
@@ -205,13 +206,13 @@ class CreateDrillGeometryCommand:
         # Ajouter la fonctionnalité
         BaptDrillGeometry.DrillGeometry(obj)
 
-        # Ajouter le ViewProvider
-        if obj.ViewObject:
-            BaptDrillGeometry.ViewProviderDrillGeometry(obj.ViewObject)
-
         # Ajouter au groupe Geometry
         geometry_group = project.Proxy.getGeometryGroup(project)
         geometry_group.addObject(obj)
+
+        # Ajouter le ViewProvider
+        if App.GuiUp and obj.ViewObject:
+            BaptDrillGeometry.ViewProviderDrillGeometry(obj.ViewObject)
 
         # Recomputer
         doc.recompute()
@@ -257,18 +258,22 @@ class CreateSurfacageCommand:
         obj = doc.addObject("Part::FeaturePython", "Surfacage")
 
         # Ajouter la fonctionnalité
-        OpSurfacage.Surfacage(obj)
+        OpSurfacage.Surfacage(obj, project)
         model = project.Proxy.getModel(project)
         if model is not None:
             obj.Depth = model.Shape.BoundBox.ZMax
 
-        # Ajouter le ViewProvider
-        if obj.ViewObject:
-            OpSurfacage.ViewProviderSurfacage(obj.ViewObject)
+        expr = project.Proxy.getExprSet()
+        if expr is not None:
+            obj.setExpression("safeZ", f"{expr.Name}.safeZ")
 
         # Ajouter au groupe Operations
         operations_group = project.Proxy.getOperationsGroup(project)
         operations_group.addObject(obj)
+
+        # Ajouter le ViewProvider
+        if obj.ViewObject:
+            OpSurfacage.ViewProviderSurfacage(obj.ViewObject)
 
         obj.Stock = project.Proxy.getStock(project)
 
@@ -310,7 +315,7 @@ class CreateCamProjectCommand:
         project = BaptCamProject.CamProject(obj)
 
         # Ajouter le ViewProvider
-        if obj.ViewObject and App.GuiUp:
+        if App.GuiUp and obj.ViewObject:
             BaptCamProject.ViewProviderCamProject(obj.ViewObject)
 
             Gui.activeView().setActiveObject("camproject", obj)
@@ -360,13 +365,13 @@ class CreateContourGeometryCommand:
         # Ajouter la fonctionnalité
         BaptContourGeometry.ContourGeometry(obj)
 
-        # Ajouter le ViewProvider
-        if obj.ViewObject:
-            BaptContourGeometry.ViewProviderContourGeometry(obj.ViewObject)
-
         # Ajouter au groupe Geometry
         geometry_group = project.Proxy.getGeometryGroup(project)
         geometry_group.addObject(obj)
+
+        # Ajouter le ViewProvider
+        if App.GuiUp and obj.ViewObject:
+            BaptContourGeometry.ViewProviderContourGeometry(obj.ViewObject)
 
         # Message de confirmation
         App.Console.PrintMessage("Géométrie de contour créée.\n")
@@ -398,17 +403,17 @@ class CreateContourEditableGeometryCommand:
     def Activated(self):
         """Créer une nouvelle géométrie de contour"""
         doc = App.ActiveDocument
-        doc.openTransaction('Create Contour Geometry')
 
         # Obtenir le projet CAM sélectionné
-        project = Gui.Selection.getSelection()[0]
+        project = BaptUtilities.getActiveCamProject()
         if project is None:
             App.Console.PrintError("Aucun projet CAM actif. Veuillez sélectionner ou activer un projet CAM.\n")
-            doc.abortTransaction()
+
             return
 
+        doc.openTransaction('Create Contour Geometry')
         # Créer l'objet avec le bon type pour avoir une Shape
-        obj = App.ActiveDocument.addObject("Part::FeaturePython", "ContourEditableGeometry")
+        obj = doc.addObject("Part::FeaturePython", "ContourEditableGeometry")
         # obj = App.ActiveDocument.addObject("App::DocumentObjectGroupPython", "ContourGeometry")
         obj.addExtension("App::GroupExtensionPython")
 
@@ -416,7 +421,7 @@ class CreateContourEditableGeometryCommand:
         BaptContourEditableGeometry.ContourEditableGeometry(obj)
 
         # Ajouter le ViewProvider
-        if obj.ViewObject:
+        if App.GuiUp and obj.ViewObject:
             BaptContourEditableGeometry.ViewProviderContourEditableGeometry(obj.ViewObject)
             obj.ViewObject.addExtension("Gui::ViewProviderGroupExtensionPython")
 
@@ -429,16 +434,7 @@ class CreateContourEditableGeometryCommand:
 
         App.ActiveDocument.recompute()
 
-        # Ouvrir le panneau de tâches pour l'édition
-        # Gui.Selection.clearSelection()
-        # Gui.Selection.addSelection(obj)
-        # Gui.ActiveDocument.setEdit(obj.Name)
-
-        # Ouvrir l'éditeur
-        # if obj.ViewObject:
-        #     obj.ViewObject.Proxy.setEdit(obj.ViewObject)
-
-        App.ActiveDocument.commitTransaction()
+        doc.commitTransaction()
 
 
 class CreateHotReloadCommand:
@@ -559,12 +555,6 @@ class CreateDrillOperationCommand:
         # Ajouter la fonctionnalité
         operation = DrillOp.DrillOperation(obj)
 
-        # Ajouter le ViewProvider
-        if obj.ViewObject:
-            DrillOp.ViewProviderDrillOperation(obj.ViewObject)
-            obj.ViewObject.ShapeColor = (0.0, 0.0, 1.0)  # Bleu
-            obj.ViewObject.Transparency = 70
-
         # Définir le nom de la géométrie de perçage associée (au lieu d'un lien direct)
         obj.DrillGeometry = drill_geometry
 
@@ -593,6 +583,10 @@ class CreateDrillOperationCommand:
                     link.setLink(obj)
                     operations_group.addObject(link)
                     operations_group.Group.append(link)
+
+        # Ajouter le ViewProvider
+        if App.GuiUp and obj.ViewObject:
+            DrillOp.ViewProviderDrillOperation(obj.ViewObject)
 
         # Recomputer
         doc.recompute()
@@ -637,9 +631,18 @@ class ProbeFaceCommand:
         # import probe.ProbeFace
 
         doc = App.ActiveDocument
+        project = BaptUtilities.getActiveCamProject()
+        if project is None:
+            App.Console.PrintError("Aucun projet CAM actif. Veuillez sélectionner ou activer un projet CAM.\n")
+            return
+
         doc.openTransaction('Create Probe Face')
 
         obj = doc.addObject("Part::FeaturePython", "ProbeFace")
+
+        # Ajouter au groupe Operations
+        operations_group = project.Proxy.getOperationsGroup(project)
+        operations_group.addObject(obj)
 
         probeFace.ProbeFace(obj)
 
@@ -685,16 +688,13 @@ class TestPathCommand:
 
         obj.Gcode = "R1=10\nG0 X0 Y0 Z10\nG1 Z0 F500\nLABEL1:\nG91\nG1 Z-2\nG90\nG1 X16 Y0\nG3 X20 Y4 I0 J4 \nG1 X20 Y20\nG1 X0 Y20\nG1 X0 Y0\nREPEAT LABEL1 P=R1\nG0 Z10\n"
         obj.Gcode = "G0 X20 Y20 Z2\nG81 Z-20 R2\nG0 X30\nG80\nG0 X40\nG83 Z-30 R2 Q2"
-        PathOp.pathOpViewProviderProxy(obj.ViewObject)
 
         # Ajouter au groupe Operations
         operations_group = project.Proxy.getOperationsGroup(project)
         operations_group.addObject(obj)
 
-        # vp = obj.ViewObject.Proxy
-        # vp.animator = BaptPath.GcodeAnimator(vp)
-        # vp.animator.load_paths(include_rapid=True)
-        # vp.animator.start(speed_mm_s=20)
+        if App.GuiUp:
+            PathOp.pathOpViewProviderProxy(obj.ViewObject)
         doc.commitTransaction()
 
         doc.recompute()
@@ -741,6 +741,66 @@ class HoleRecognitionCommand:
         App.Console.PrintMessage("Objet de reconnaissance de trous créé.\n")
 
 
+class testFPOCommand:
+    def GetResources(self):
+        return {
+            'Pixmap': BaptUtilities.getIconPath("Tree_HoleRecognition.svg"),
+            'MenuText': "test FPO",
+            'ToolTip': "Détecter automatiquement les trous cylindriques perpendiculaires au plan de travail"
+        }
+
+    def IsActive(self):
+        """La commande est active si un document est ouvert"""
+        doc = App.ActiveDocument
+        if doc is None:
+            return False
+
+        return True
+
+    def Activated(self):
+        """Créer un nouvel objet de reconnaissance de trous"""
+
+        doc = App.ActiveDocument
+
+        doc.openTransaction('testFPO')
+        obj = testFPO.create()
+
+        doc.commitTransaction()
+
+
+class rapportProgrammationCommand:
+    def GetResources(self):
+        return {
+            'Pixmap': BaptUtilities.getIconPath("BaptWorkbench.svg"),
+            'MenuText': "Rapport de programmation",
+            'ToolTip': "Générer un rapport de programmation pour le projet CAM actif"
+        }
+
+    def IsActive(self):
+        """La commande est active si un projet CAM est actif"""
+        doc = App.ActiveDocument
+        if doc is None:
+            return False
+        cam_project = BaptUtilities.getActiveCamProject()
+
+        return cam_project is not None
+
+    def Activated(self):
+        """Générer le rapport de programmation"""
+        import RapportProgrammation
+        doc = App.ActiveDocument
+        cam_project = BaptUtilities.getActiveCamProject()
+        if cam_project is None:
+            App.Console.PrintError("Aucun projet CAM actif. Veuillez sélectionner ou activer un projet CAM.\n")
+            return
+
+        doc.openTransaction('Générer Rapport de Programmation')
+        RapportProgrammation.generate_report(cam_project)
+        doc.recompute()
+        doc.commitTransaction()
+        App.Console.PrintMessage("Rapport de programmation généré.\n")
+
+
 # Enregistrer les commandes
 if App.GuiUp:
     Gui.addCommand('Bapt_CreateOrigin', CreateOriginCommand())
@@ -761,3 +821,5 @@ if App.GuiUp:
     Gui.addCommand('Bapt_HighlightCollisions', CreateHighlightCommand())
     Gui.addCommand('Bapt_HoleRecognition', HoleRecognitionCommand())
     Gui.addCommand('Bapt_CreateAdaptativeOperation', CreateAdaptativeOperationCommand())
+    Gui.addCommand('Bapt_createTestFPO', testFPOCommand())
+    Gui.addCommand('Bapt_RapportProgrammation', rapportProgrammationCommand())

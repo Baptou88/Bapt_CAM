@@ -43,7 +43,7 @@ class PocketOperation(BaseOp.baseOp):
         self.initialized = True
         Log.baptDebug("PocketOperation initialized.")
 
-        Log.baptDebug(f"{isinstance(obj.Proxy, PocketOperation)}\n")
+        Log.baptDebug(f"{isinstance(obj.Proxy, PocketOperation)}")
 
         # try:
         #     a = 1/0
@@ -118,6 +118,10 @@ class PocketOperation(BaseOp.baseOp):
                         App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
         # App.Console.PrintMessage(f'nb collecté {len(edges)}\n')
         return edges
+
+    def onDocumentRestored(self, obj):
+        pass
+        # self.__init__(obj)  # Réinitialiser les propriétés et le proxy après restauration
 
     def execute(self, obj):
         if App.ActiveDocument.Restoring:
@@ -253,7 +257,7 @@ class PocketOperation(BaseOp.baseOp):
                                         tp['point_on_source'], tp['point_on_target']))
                                     next_node.shiftWire(tp['point_on_target'])
                                     Log.baptDebug(
-                                        f'Climb {node} → {next_node}\n')
+                                        f'Climb {node} → {next_node}')
                                 else:
                                     App.Console.PrintWarning(
                                         f'Pas de transition climb {node} → {next_node}\n')
@@ -275,7 +279,7 @@ class PocketOperation(BaseOp.baseOp):
 
                 Log.baptDebug(
                     f"Génération G-code: {num_passes} passes, "
-                    f"step={step_down}, final={final_depth}\n")
+                    f"step={step_down}, final={final_depth}")
 
                 # Trouver le premier point du parcours
                 if path:
@@ -303,8 +307,8 @@ class PocketOperation(BaseOp.baseOp):
                         nbtour = math.ceil(dz / 1.0)  # 1mm par tour
                         prisePasse = (dz/nbtour) / 2
                         gcodeWriter.linearMove({'X': start_pt.x + diam/2, 'Y': start_pt.y, 'Z': safe_z}, feed=feed_rate)
-                        Log.baptDebug(f"Plongée hélicoïdale: {nbtour} tours, prise de passe {prisePasse:.3f}\n")
-                        Log.baptDebug(f"safe_z {safe_z}, current_z {current_z}\n")
+                        Log.baptDebug(f"Plongée hélicoïdale: {nbtour} tours, prise de passe {prisePasse:.3f}")
+                        Log.baptDebug(f"safe_z {safe_z}, current_z {current_z}")
                         for i in range(nbtour):
                             gcodeWriter.arcMove({'X': start_pt.x - diam/2, 'Y': start_pt.y, 'Z': safe_z - ((i+1)*prisePasse + i * prisePasse), 'CCW': True, 'I': -diam/2, 'J': 0}, feed=feed_rate)
                             gcodeWriter.arcMove({'X': start_pt.x + diam/2, 'Y': start_pt.y, 'Z': safe_z - ((i+1)*(prisePasse * 2)), 'CCW': True, 'I': diam/2, 'J': 0}, feed=feed_rate)
@@ -333,7 +337,10 @@ class PocketOperation(BaseOp.baseOp):
                     gcodeWriter.linearMove({'Z': safe_z}, rapid=True)
 
                 obj.Gcode = "\n".join(gcodeWriter.lines)
-                Log.baptDebug(f"G-code généré: {len(obj.Gcode)} caractères\n")
+                obj.TimeEstimate = gcodeWriter.time_estimate
+                obj.LastCoordinate = App.Vector(gcodeWriter.current_position['X'], gcodeWriter.current_position['Y'], gcodeWriter.current_position['Z'])
+
+                Log.baptDebug(f"G-code généré: {len(obj.Gcode)} caractères")
 
                 # for n in nodes:
                 #     wires = n.getWires()
@@ -715,7 +722,7 @@ class PocketOperation(BaseOp.baseOp):
                 reversed_edges = [e.reversed() for e in reversed(list(node.wires.Edges))]
                 node.wires = Part.Wire(reversed_edges)
                 direction_str = 'CCW' if want_ccw else 'CW'
-                Log.baptDebug(f'Wire inversé pour {direction_str} : {node}\n')
+                Log.baptDebug(f'Wire inversé pour {direction_str} : {node}')
                 # Vérification post-inversion
                 if node.isCCW() != want_ccw:
                     App.Console.PrintWarning(
@@ -741,7 +748,7 @@ class PocketOperation(BaseOp.baseOp):
         # ------ Cas simple : pas d'enfant non visité → tour complet ------
         if not unvisited:
             path.append(node.wires)
-            Log.baptDebug(f'Usinage complet : {node}\n')
+            Log.baptDebug(f'Usinage complet : {node}')
             return
 
         # ------ Cas avec interruptions ------
@@ -759,14 +766,14 @@ class PocketOperation(BaseOp.baseOp):
         if not transitions:
             # Aucune transition possible → tour complet quand même
             path.append(node.wires)
-            Log.baptDebug(f'Usinage complet (pas de transitions) : {node}\n')
+            Log.baptDebug(f'Usinage complet (pas de transitions) : {node}')
             return
 
         # Trier par position le long du wire (edge_idx, puis param)
         transitions.sort(key=lambda t: (t[1]['edge_idx'], t[1]['param']))
 
         Log.baptDebug(
-            f'Usinage avec {len(transitions)} interruption(s) : {node}\n')
+            f'Usinage avec {len(transitions)} interruption(s) : {node}')
 
         # Parcourir le wire avec interruptions
         wire_edges = list(node.wires.Edges)
@@ -810,7 +817,7 @@ class PocketOperation(BaseOp.baseOp):
             path.append(Part.makeLine(pt_source, pt_target))
             Log.baptDebug(
                 f'  Interruption → enfant {child}, '
-                f'dist={(pt_target - pt_source).Length:.3f}\n')
+                f'dist={(pt_target - pt_source).Length:.3f}')
 
             # 5) Décaler le wire enfant pour qu'il commence à pt_target
             child.shiftWire(pt_target)
@@ -844,7 +851,7 @@ class PocketOperation(BaseOp.baseOp):
                 for e in collected_edges:
                     path.append(e)
 
-        Log.baptDebug(f'  Fin usinage {node}\n')
+        Log.baptDebug(f'  Fin usinage {node}')
 
     def makeTransitionToParent(self, obj, childNode: noeud, parentNode: noeud):
         """
@@ -870,9 +877,9 @@ class PocketOperation(BaseOp.baseOp):
 
                 start_point: App.Vector = edge.Vertexes[indice_start_point].Point
                 end_point: App.Vector = edge.Vertexes[-1 if indice_start_point == 0 else 0].Point
-                Log.baptDebug(f'start_point: {start_point} is ccw: {is_ccw}\n')
+                Log.baptDebug(f'start_point: {start_point} is ccw: {is_ccw}')
                 # for i,e in enumerate(childWire.Edges):
-                #     Log.baptDebug(f'Edge {i}: {e.Vertexes[0].Point} to {e.Vertexes[-1].Point}\n')
+                #     Log.baptDebug(f'Edge {i}: {e.Vertexes[0].Point} to {e.Vertexes[-1].Point}')
 
             else:
                 Log.baptDebug("Inverse le sens de l'arête pour CCW")
@@ -883,7 +890,7 @@ class PocketOperation(BaseOp.baseOp):
                 u1 = u2
                 u2 = utemp
 
-            Log.baptDebug(f'start_point: {start_point}, end_point: {end_point}, is_ccw: {is_ccw}\n')
+            Log.baptDebug(f'start_point: {start_point}, end_point: {end_point}, is_ccw: {is_ccw}')
             # perpendiculaire à l'arête de début du childWire
             if edge.Curve.TypeId == 'Part::GeomLine':
                 edge_normal = edge.tangentAt(u1).cross(App.Vector(0, 0, 1))
@@ -929,7 +936,7 @@ class PocketOperation(BaseOp.baseOp):
                         return True
 
             # Si aucune intersection trouvée à la distance exacte, chercher la plus proche
-            Log.baptDebug(f'Recherche transition approximative...\n')
+            Log.baptDebug(f'Recherche transition approximative...')
             min_dist_diff = float('inf')
             best_intersection = None
 
@@ -947,7 +954,7 @@ class PocketOperation(BaseOp.baseOp):
                 parentNode.shiftWire(best_intersection)
                 transition_line = Part.makeLine(start_point, best_intersection)
                 childNode.wires.add(transition_line)
-                Log.baptDebug(f'Transition approximative: diff={min_dist_diff:.3f}mm\n')
+                Log.baptDebug(f'Transition approximative: diff={min_dist_diff:.3f}mm')
                 return True
 
             App.Console.PrintWarning(f'Aucune transition trouvée pour {childNode}\n')
@@ -955,7 +962,7 @@ class PocketOperation(BaseOp.baseOp):
 
         except Exception as e:
             line_nr = traceback.extract_tb(sys.exc_info()[2])[-1][1]
-            App.Console.PrintError(f"makeTransitionToParent : {e} at line {line_nr}\n")
+            App.Console.PrintError(f"makeTransitionToParent : {e} at line {line_nr}")
             return False
 
 
@@ -1039,7 +1046,7 @@ class ViewProviderPocketOperation(BaseOp.baseOpViewProviderProxy):
         #     """Configuration du menu contextuel"""
         super().setupContextMenu(vobj, menu)
 
-        action_edit_gcode = QtGui.QAction(Gui.getIcon("Std_TransformManip.svg"), "edit Gcode", menu)
+        action_edit_gcode = QtGui.QAction(QtGui.QIcon(BaptUtilities.getIconPath("GcodeFile.svg")), "edit Gcode", menu)
         QtCore.QObject.connect(action_edit_gcode, QtCore.SIGNAL("triggered()"), lambda: self.EditGcode(vobj))
         menu.addAction(action_edit_gcode)
         #     action = menu.addAction("Edit")
@@ -1117,7 +1124,6 @@ def createPocketOperation(contour=None) -> Part.Feature:
     obj = doc.addObject("Part::FeaturePython", "PocketOperation")
 
     PocketOperation(obj)
-    ViewProviderPocketOperation(obj.ViewObject)
 
     if contour:
         obj.Contour = contour
@@ -1153,6 +1159,7 @@ def createPocketOperation(contour=None) -> Part.Feature:
                     operations_group.addObject(link)
                     operations_group.Group.append(link)
 
+    ViewProviderPocketOperation(obj.ViewObject)
     if hasattr(obj, "ViewObject"):
         obj.ViewObject.Proxy.setEdit(obj.ViewObject)
     return obj

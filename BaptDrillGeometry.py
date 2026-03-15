@@ -327,3 +327,15 @@ class ViewProviderDrillGeometry:
                     child.Document.removeObject(child.Name)
             except Exception as e:
                 App.Console.PrintError(f"Erreur suppression enfant {child.Name}: {e}\n")
+
+    def getDisplayModes(self, obj):
+        "Return a list of display modes."
+        modes = ["Shaded"]
+        return modes
+
+    def getDefaultDisplayMode(self):
+        "Return the name of the default display mode. It must be defined in getDisplayModes."
+        return "Shaded"
+
+    def setDisplayMode(self, mode):
+        return mode

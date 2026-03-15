@@ -1,5 +1,7 @@
 
-from BaptPath import GcodeAnimationControl, absinc, comp, memory
+import sys
+
+from BaptPath import GcodeAnimationControl, GcodeEditorTaskPanel, absinc, comp, memory
 from BaptPreferences import BaptPreferences
 import BaptUtilities
 import FreeCAD as App
@@ -21,8 +23,10 @@ else:
 
 class baseOp:
 
-    def __init__(self, obj):
+    def __init__(self, obj, cam_proj=None):
         # App.Console.PrintMessage("Initializing baseOp object proxy for: {}\n".format(__class__.__name__))
+        self.cam_proj = cam_proj
+
         if not hasattr(obj, "Gcode"):
             obj.addProperty("App::PropertyString", "Gcode", "Gcode", "Gcode").Gcode = ""
             # obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
@@ -43,6 +47,14 @@ class baseOp:
             obj.CoolantMode = CoolantMode
             obj.CoolantMode = "Flood"  # Valeur par défaut
 
+        if not hasattr(obj, "TimeEstimate"):
+            obj.addProperty("App::PropertyTime", "TimeEstimate", "Gcode", "Estimated machining time")
+            obj.TimeEstimate = 0.0
+
+        if not hasattr(obj, "LastCoordinate"):
+            obj.addProperty("App::PropertyVector", "LastCoordinate", "Gcode", "Last coordinate")
+            obj.LastCoordinate = App.Vector(0, 0, 0)
+
         # set property "Gcode" hidden
         obj.setEditorMode("Gcode", 2)
 
@@ -57,19 +69,61 @@ class baseOp:
                     obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
 
     def onChanged(self, fp, prop):
+        if App.ActiveDocument and App.ActiveDocument.Restoring:
+            return
         self.execute(fp)
 
     def execute(self, obj):
-        self.cam_proj = BaptUtilities.find_cam_project(obj)
+        # self.cam_proj = BaptUtilities.find_cam_project(obj)
         pass
 
-    def __getstate__(self):
+    def onDocumentRestored(self, obj):
+        self.cam_proj = BaptUtilities.find_cam_project(obj)
+        Log.baptDebug(f"Document restored, found cam project: {self.cam_proj}")
+
+    def dumps(self):
         """Sérialisation"""
         return None
 
-    def __setstate__(self, state):
+    def loads(self, state):
         """Désérialisation"""
         return None
+
+    def findPrevOp(self, obj):
+        """Trouver l'opération précédente dans cam_proj"""
+        if self.cam_proj is None:
+            self.cam_proj = BaptUtilities.find_cam_project(obj)
+        if self.cam_proj is None:
+            Log.baptDebug("No cam_proj available in findPrevOp")
+            return None
+        ops = self.cam_proj.Proxy.getOperationsGroup(self.cam_proj).Group
+        try:
+            index = ops.index(obj)
+        except ValueError:
+            Log.baptDebug(f"Object {obj.Name} not found in operations group")
+            return None
+        return ops[index - 1] if index > 0 else None
+
+    def getStartPosition(self, obj):
+        """Obtenir la position de départ pour cette opération.
+
+        Retourne un tuple (position: App.Vector, same_tool: bool).
+        - Si l'op précédente a le même outil → (LastCoordinate, True)
+        - Si l'op précédente a un outil différent ou n'existe pas → (toolChangePos, False)
+        """
+        prevOp = self.findPrevOp(obj)
+        toolChangePos = self.cam_proj.toolChangePos if self.cam_proj else App.Vector(0, 0, 0)
+
+        if prevOp is not None and hasattr(prevOp, "Tool") and hasattr(prevOp, "LastCoordinate"):
+            if prevOp.Tool == obj.Tool:
+                Log.baptDebug(f"Previous op '{prevOp.Label}' has same tool, using its LastCoordinate")
+                return prevOp.LastCoordinate, True
+            else:
+                Log.baptDebug(f"Previous op '{prevOp.Label}' has different tool → toolChangePos")
+                return toolChangePos, False
+
+        Log.baptDebug("No previous operation found → toolChangePos")
+        return toolChangePos, False
 
 
 class repeatGcodeException(Exception):
@@ -90,7 +144,7 @@ class baseOpViewProviderProxy:
         self.deleteOnReject = True
         self.pick_radius = 5  # pixels
         self.icon = "BaptWorkbench.svg"
-
+        self.cam_proj = None
         BaptPref = BaptPreferences()
 
         if not hasattr(obj, "Rapid"):
@@ -143,6 +197,10 @@ class baseOpViewProviderProxy:
 
     def attach(self, obj):
         # App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
+
+        self.cam_proj = BaptUtilities.find_cam_project(obj.Object)
+        Log.baptDebug(f"Found cam project: {self.cam_proj}")
+
         self.pick_radius = 5
         self.Path = coin.SoGroup()
 
@@ -410,16 +468,32 @@ class baseOpViewProviderProxy:
         feed_coords = []
         feed_idx = []
 
-        toolChangePos = App.Vector(0, 0, 0)
-        if hasattr(fp, "Proxy") and hasattr(fp.Proxy, "cam_proj"):
-            cam_project = fp.Proxy.cam_proj
-            if cam_project is not None and hasattr(cam_project, "toolChangePos"):
-                toolChangePos = cam_project.toolChangePos
-            else:
-                Log.baptDebug("No CamProject found for Op object {}".format(self.Object.Name))
+        toolChangePos = self.cam_proj.toolChangePos
+        # if hasattr(fp, "Proxy") and hasattr(fp.Proxy, "cam_proj"):
+        #     cam_project = fp.Proxy.cam_proj
+        #     if cam_project is not None and hasattr(cam_project, "toolChangePos"):
+        #         toolChangePos = cam_project.toolChangePos
+        #     else:
+        #         Log.baptDebug("No CamProject found for Op object {}".format(self.Object.Name))
 
-        # current position (start at tool change position)
-        self.cur = (toolChangePos.x, toolChangePos.y, toolChangePos.z)
+        # Position de départ : fin de l'op précédente (même outil) ou toolChangePos.
+        # Utilise directement self.cam_proj du view provider (déjà initialisé).
+        self._same_tool_transition = False
+        try:
+            ops = self.cam_proj.Proxy.getOperationsGroup(self.cam_proj).Group
+            index = ops.index(fp)
+            if index > 0:
+                prev_op = ops[index - 1]
+                if hasattr(prev_op, "Tool") and prev_op.Tool == fp.Tool and hasattr(prev_op, "LastCoordinate"):
+                    lc = prev_op.LastCoordinate
+                    self.cur = (lc.x, lc.y, lc.z)
+                    self._same_tool_transition = True
+                else:
+                    self.cur = (toolChangePos.x, toolChangePos.y, toolChangePos.z)
+            else:
+                self.cur = (toolChangePos.x, toolChangePos.y, toolChangePos.z)
+        except Exception:
+            self.cur = (toolChangePos.x, toolChangePos.y, toolChangePos.z)
 
         self.ordered_segments = []
         self.segment_metadata = {"rapid": [], "feed": []}
@@ -535,7 +609,7 @@ class baseOpViewProviderProxy:
             return c1, c2
 
         def append_segment(coords_list, idx_list, a, b):
-            """helper to append a segment to a group's arrays"""
+            """helper to append a segment to a group's arrays."""
             i = len(coords_list)
             coords_list.append(a)
             coords_list.append(b)
@@ -900,6 +974,10 @@ class baseOpViewProviderProxy:
                     if self.mem.current_cycle is not None:
                         executeCycle()
 
+                elif up.startswith("G10"):
+                    # Handle G10 command
+                    pass
+
                 elif up.startswith(("G1", "G01")):
                     new = parse_xyz(ln, self.cur, self.absinc_mode)
 
@@ -928,6 +1006,12 @@ class baseOpViewProviderProxy:
                     self.mem.moveMode = "feed"
                     if self.mem.current_cycle is not None:
                         executeCycle()
+
+                elif up.startswith("G38"):
+                    # probe cycle - treat as linear move to target (ignoring success/fail)
+                    new = parse_xyz(ln, self.cur, self.absinc_mode)
+                    append_segment(feed_coords, feed_idx, self.cur, new)
+                    self.cur = new
 
                 elif up.startswith(("G2", "G02", "G3", "G03")):
                     # Circular interpolation. Prefer I/J (center offsets). If only R given, compute center(s).
@@ -1236,6 +1320,14 @@ class baseOpViewProviderProxy:
 
                     Log.baptDebug("Ignoring line: {}\n".format(ln))
 
+        # Si transition même outil, ajouter un retract visuel à Z100
+        # pour correspondre au G0 Z100 inséré par le post-processeur.
+        if self._same_tool_transition:
+            retract_z = 100
+            retract_pos = (self.cur[0], self.cur[1], retract_z)
+            append_segment(rapid_coords, rapid_idx, self.cur, retract_pos)
+            self.cur = retract_pos
+
         try:
             processGcode()
         except repeatGcodeException as e:
@@ -1283,6 +1375,11 @@ class baseOpViewProviderProxy:
         QtCore.QObject.connect(action_Toggle, QtCore.SIGNAL("triggered()"), lambda: self.ToggleOp(vobj))
         menu.addAction(action_Toggle)
         return True
+
+    def viewGcode(self, vobj):
+        """Afficher le G-code dans une boîte de dialogue"""
+        taskPanel = GcodeEditorTaskPanel(vobj.Object)
+        Gui.Control.showDialog(taskPanel)
 
     def ToggleOp(self, vobj):
         vobj.Object.Active = not vobj.Object.Active

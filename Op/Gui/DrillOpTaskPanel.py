@@ -1,15 +1,15 @@
+import BaptDrillGeometry
 from Gui.cuttingConditionTaskPanel import cuttingConditionTaskPanel
 import Op.DrillOp as DrillOp
-from BaptUtilities import getIconPath
+from BaptUtilities import find_cam_project, getIconPath
 import FreeCAD as App
 import FreeCADGui as Gui
 from Op.utils import CoolantMode
 from PySide import QtCore, QtGui
 
 from BaptTools import ToolDatabase, Tool
-from Tool import ToolSelectorDialog
 from Tool.ToolTaskPannel import ToolTaskPanel
-from utils import BQuantitySpinBox
+from utils import BQuantitySpinBox, Log
 
 
 class DrillOperationTaskPanel:
@@ -17,6 +17,7 @@ class DrillOperationTaskPanel:
         # Garder une référence à l'objet
         self.obj = obj
 
+        App.activeDocument().openTransaction("Edit Drill Operation Parameters")
         self.cuttingCondition = cuttingConditionTaskPanel(obj)
 
         ui1 = QtGui.QWidget()
@@ -307,15 +308,23 @@ class DrillOperationTaskPanel:
         """Met à jour la liste des géométries de perçage disponibles"""
         self.geometryCombo.clear()
 
+        project = find_cam_project(self.obj)
+        if project is not None:
+            objList = project.Proxy.getGeometryGroup(project).Group
+        else:
+            objList = App.ActiveDocument.Objects
         # Parcourir tous les objets du document
-        for obj in App.ActiveDocument.Objects:
-            if hasattr(obj, "Proxy") and isinstance(obj.Proxy, DrillOp.DrillOperation):
+        for obj in objList:
+            if hasattr(obj, "Proxy") and isinstance(obj.Proxy, BaptDrillGeometry.DrillGeometry):
                 self.geometryCombo.addItem(obj.Label, obj.Name)
 
         # Sélectionner la géométrie actuelle si elle existe
-        if hasattr(self.obj, "DrillGeometry") and self.obj.DrillGeometry:
-            index = self.geometryCombo.findData(self.obj.DrillGeometry.Name)
-            self.geometryCombo.setCurrentIndex(index)
+        drill_geom = getattr(self.obj, "DrillGeometry", None)
+        geom_name = getattr(drill_geom, "Name", None) if drill_geom is not None else None
+        if geom_name:
+            index = self.geometryCombo.findData(geom_name)
+            if index >= 0:
+                self.geometryCombo.setCurrentIndex(index)
 
     def syncDwellTimes(self, value):
         """Synchronise toutes les valeurs dwellTime quand l'une change"""
@@ -462,11 +471,12 @@ class DrillOperationTaskPanel:
 
         # Fermer la tâche
         Gui.Control.closeDialog()
+        App.activeDocument().commitTransaction()
         return True
 
     def reject(self):
         """Appelé quand l'utilisateur clique sur Cancel"""
-
+        App.activeDocument().abortTransaction()
         if self.obj.Tool:
             self.obj.Tool.Visibility = False
 
@@ -476,7 +486,13 @@ class DrillOperationTaskPanel:
     def getStandardButtons(self):
         """Définir les boutons standard"""
         return (QtGui.QDialogButtonBox.Ok
+                | QtGui.QDialogButtonBox.Apply
                 | QtGui.QDialogButtonBox.Cancel)
+
+    def clicked(self, button):
+        """clicked(button) ... callback invoked when the user presses any of the task panel buttons."""
+        if button == QtGui.QDialogButtonBox.Apply:
+            self.obj.recompute()
 
     def cycleTypeChanged(self, index):
         """Appelé quand le type de cycle change"""

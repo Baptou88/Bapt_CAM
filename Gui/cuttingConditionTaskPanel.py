@@ -19,12 +19,12 @@ class cuttingConditionTaskPanel:
 
         # Rotations par minute
         self.Speed = BQuantitySpinBox.BQuantitySpinBox(obj, "SpindleSpeed")
-        self.Speed.setValue(obj.SpindleSpeed)
+        # self.Speed.setValue(obj.SpindleSpeed)
         self.layout.addRow("Speed:", self.Speed.getWidget())
 
         # Avance
         self.Feed = BQuantitySpinBox.BQuantitySpinBox(obj, "FeedRate")
-        self.Feed.setValue(obj.FeedRate)
+        # self.Feed.setValue(obj.FeedRate)
         self.layout.addRow("Feed:", self.Feed.getWidget())
 
         # lubrification

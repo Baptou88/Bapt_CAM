@@ -11,12 +11,12 @@ from utils import BQuantitySpinBox, Log
 class ContournageTaskPanel:
     """Panneau de tâche pour éditer les paramètres de contournage"""
 
-    def __init__(self, obj):
+    def __init__(self, obj, deleteOnReject):
         """Initialise le panneau avec l'objet de contournage"""
         self.obj = obj
-
+        self.deleteOnReject = deleteOnReject
         self.cuttingConditionPanel = cuttingConditionTaskPanel(obj)
-
+        App.activeDocument().openTransaction("Edit Contournage Parameters")
         # Créer l'interface utilisateur
         self.ui1 = QtGui.QWidget()
         self.ui1.setWindowTitle("Paramètres de contournage")
@@ -239,23 +239,47 @@ class ContournageTaskPanel:
         if prop in ["Tool"]:
             self.setFields(obj)
 
+    def getStandardButtons(self):
+        """Définir les boutons standard"""
+        return (
+            QtGui.QDialogButtonBox.Ok
+            | QtGui.QDialogButtonBox.Apply
+            | QtGui.QDialogButtonBox.Cancel
+        )
+
+    def clicked(self, button):
+        """clicked(button) ... callback invoked when the user presses any of the task panel buttons."""
+        if button == QtGui.QDialogButtonBox.Apply:
+            # self.panelGetFields()
+            # self.setClean()
+            self.obj.recompute()
+            # App.ActiveDocument.recompute()
+
     def accept(self):
         """Appelé lorsque l'utilisateur clique sur OK"""
+        self.preCleanup()
+
         self.updateContournage()
         self.updateDisplay()
 
-        if self.obj.Tool:
-            self.obj.Tool.Visibility = False
-
         Gui.Control.closeDialog()
         self.obj.recompute()
+        App.activeDocument().commitTransaction()
         return True
 
     def reject(self):
         """Appelé lorsque l'utilisateur clique sur Annuler"""
+        self.preCleanup()
+        App.activeDocument().abortTransaction()
 
-        if self.obj.Tool:
-            self.obj.Tool.Visibility = False
+        if self.deleteOnReject():
+            pass
+            # App.ActiveDocument.removeObject(self.obj.Name)
 
         Gui.Control.closeDialog()
         return True
+
+    def preCleanup(self):
+        if self.obj.Tool:
+            self.obj.Tool.Visibility = False
+        self.obj.ViewObject.Proxy.closeTaskPanel()

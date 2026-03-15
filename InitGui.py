@@ -41,9 +41,11 @@ class BaptWorkbench (Workbench):
         Gui.addPreferencePage(BaptPreferencesPage, QT_TRANSLATE_NOOP("QObject", "Bapt"))
         Gui.addIconPath(os.path.join(BaptUtilities.getResourcesPath(), "icons"))
 
-        self.list = ["Bapt_CreateCamProject", "Bapt_CreateSurfacage", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_HoleRecognition", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateContourEditableGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreatePocketOperation", "Bapt_CreateOrigin", "Bapt_CreateHotReload", "ImportMpf", "Bapt_PostProcessGCode", "Bapt_CreateProbeFace", "Bapt_TestPath", "Bapt_HighlightCollisions", "Bapt_CreateAdaptativeOperation"]  # Ajout des commandes d'opération, poche et origine
+        self.list = ["Bapt_CreateCamProject", "Bapt_CreateSurfacage", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_HoleRecognition", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateContourEditableGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreatePocketOperation", "Bapt_CreateOrigin", "ImportMpf", "Bapt_PostProcessGCode", "Bapt_CreateProbeFace", "Bapt_TestPath", "Bapt_HighlightCollisions", "Bapt_CreateAdaptativeOperation", "Bapt_RapportProgrammation"]  # Ajout des commandes d'opération, poche et origine
         self.appendToolbar("Bapt Tools", self.list)
+        self.appendToolbar("Bapt Debug", ["Bapt_CreateHotReload", "Bapt_createTestFPO"],)  # Ajout de la barre d'outils de debug
         self.appendMenu("Bapt", self.list)
+        self.appendMenu(["Bapt", "Debug"], ["Separator"]+["Bapt_CreateHotReload", "Bapt_createTestFPO"],)
 
     def Activated(self):
         """This function is executed whenever the workbench is activated"""

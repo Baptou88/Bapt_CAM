@@ -2,7 +2,7 @@
 from collections import deque
 import math
 import sys
-from BaptUtilities import find_cam_project
+from BaptUtilities import find_cam_project, getIconPath
 import FreeCAD as App
 import FreeCADGui
 
@@ -106,6 +106,7 @@ class GcodeEditorTaskPanel:
         self.obj = obj
         self.form = QtGui.QWidget()
         self.form.setWindowTitle("Gcode Editor")
+        self.form.setWindowIcon(QtGui.QIcon(getIconPath("GcodeFile.svg")))
         layout = QtGui.QVBoxLayout(self.form)
 
         self.textEdit = QtGui.QPlainTextEdit()

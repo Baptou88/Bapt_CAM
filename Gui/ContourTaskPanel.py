@@ -14,7 +14,7 @@ class ContourTaskPanel:
         self.obj = obj
 
         self.deleteOnReject = deleteOnReject
-
+        App.activeDocument().openTransaction("Edit Contour Parameters")
         # Créer l'interface utilisateur
         self.form = QtGui.QWidget()
         self.form.setWindowTitle("Éditer le contour")
@@ -359,11 +359,11 @@ class ContourTaskPanel:
     def detectDepth(self):
         """Détecte automatiquement la profondeur en fonction des arêtes sélectionnées"""
         if not hasattr(self.obj, "Edges") or not self.obj.Edges:
-            Log.baptDebug("Aucune arête sélectionnée, impossible de détecter la profondeur.\n")
+            Log.baptDebug("Aucune arête sélectionnée, impossible de détecter la profondeur.")
             return
 
         if self.obj.Zref != 0 and self.obj.depth != 0:
-            Log.baptDebug("Zref et depth ne sont pas à 0, détection automatique de la profondeur ignorée.\n")
+            Log.baptDebug("Zref et depth ne sont pas à 0, détection automatique de la profondeur ignorée.")
             return
 
         highest_z = float('-inf')
@@ -389,8 +389,8 @@ class ContourTaskPanel:
                         if vertex.Point.z < lowest_z:
                             lowest_z = vertex.Point.z
 
-        Log.baptDebug(f"Hauteur la plus haute du contour: {highest_z} mm\n")
-        Log.baptDebug(f"Hauteur la plus basse du contour: {lowest_z} mm\n")
+        Log.baptDebug(f"Hauteur la plus haute du contour: {highest_z} mm")
+        Log.baptDebug(f"Hauteur la plus basse du contour: {lowest_z} mm")
 
         # Mettre à jour Zref et depth
         self.obj.Zref = highest_z
@@ -472,24 +472,6 @@ class ContourTaskPanel:
                     for vertex in face.Vertexes:
                         if vertex.Point.z > highest_z:
                             highest_z = vertex.Point.z
-            # self.obj.Zref = highest_z
-        # else:
-        #     App.Console.PrintWarning("Aucune arête sélectionnée, Zref non mis à jour.\n")
-        # #debug
-        # App.Console.PrintMessage(f"Zref mis à jour: {self.obj.Zref}\n")
-
-        # # Mettre à jour les autres propriétés
-        # self.obj.Zref = self.Zref.value()
-
-        # # Mettre à jour depth en fonction du mode
-        # if self.relativeDepthRadio.isChecked():
-        #     # Mode relatif: depth = Zref + valeur relative (négative)
-        #     #self.obj.depth = self.Zref.value() + self.depth.value()
-        #     self.obj.DepthMode = "Relatif"
-        # else:
-        #     # Mode absolu: depth = valeur absolue
-        #     #self.obj.depth = self.depth.value()
-        #     self.obj.DepthMode = "Absolu"
 
         if hasattr(self, "_clickObserver") and self._clickObserver:
             self._clickObserver.disable()
@@ -501,15 +483,18 @@ class ContourTaskPanel:
 
         # Fermer la tâche
         Gui.Control.closeDialog()
+        App.activeDocument().commitTransaction()
         return True
 
     def reject(self):
         """Appelé quand l'utilisateur clique sur Cancel"""
+        App.activeDocument().abortTransaction()
         # Désactiver le mode de sélection si actif
         if self.selectionMode:
             Gui.Selection.removeSelectionGate()
         if self.deleteOnReject:
-            App.ActiveDocument.removeObject(self.obj.Name)
+            # App.activeDocument().removeObject(self.obj.Name)
+            pass
         if hasattr(self, "_clickObserver") and self._clickObserver:
             self._clickObserver.disable()
             self._clickObserver = None
@@ -520,9 +505,10 @@ class ContourTaskPanel:
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
-
         return (
-            QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Apply | QtGui.QDialogButtonBox.Cancel
+            QtGui.QDialogButtonBox.Ok
+            | QtGui.QDialogButtonBox.Apply
+            | QtGui.QDialogButtonBox.Cancel
         )
 
     def clicked(self, button):
@@ -530,7 +516,8 @@ class ContourTaskPanel:
         if button == QtGui.QDialogButtonBox.Apply:
             # self.panelGetFields()
             # self.setClean()
-            App.ActiveDocument.recompute()
+            self.obj.recompute()
+            # App.ActiveDocument.recompute()
 
     def onTableSelectionChanged(self):
         """Gère la sélection d'une ligne dans le tableau"""

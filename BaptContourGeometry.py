@@ -1,3 +1,5 @@
+from BaptContourEditableGeometry import createContourEditableGeometry
+from ContourBaseGeom import ContourBaseGeom
 import FreeCAD as App
 import FreeCADGui as Gui
 
@@ -19,12 +21,13 @@ else:
     Log.setLevel(Log.Level.INFO, Log.thisModule())
 
 
-class ContourGeometry:
+class ContourGeometry(ContourBaseGeom):
     """Classe pour gérer les contours d'usinage"""
 
     def __init__(self, obj):
         """Ajoute les propriétés"""
-
+        super().__init__(obj)
+        self.Object = obj
         self.Type = "ContourGeometry"
 
         # Transformer l'objet en groupe
@@ -49,36 +52,13 @@ class ContourGeometry:
             obj.addProperty("App::PropertyFloat", "depth", "Contour", "Hauteur finale")
             obj.depth = 0.0
 
-        if not hasattr(obj, "DepthMode"):
-            obj.addProperty("App::PropertyEnumeration", "DepthMode", "Contour", "Mode de profondeur (Absolu ou Relatif)")
-            obj.DepthMode = ["Absolu", "Relatif"]
-            obj.DepthMode = "Absolu"
-
-        if not hasattr(obj, "Direction"):
-            obj.addProperty("App::PropertyEnumeration", "Direction", "Contour", "Direction d'usinage")
-            obj.Direction = ["Horaire", "Anti-horaire"]
-            obj.Direction = "Horaire"
-
-        # proprité read only pour savoir si un contour est fermé
-        if not hasattr(obj, "IsClosed"):
-            obj.addProperty("App::PropertyBool", "IsClosed", "Contour", "Indique si le contour est fermé")
-            obj.IsClosed = False
-
-        if not hasattr(obj, "testShape"):
-            obj.addProperty("Part::PropertyPartShape", "testShape", "Subsection", "Description for tooltip")
-            obj.testShape = Part.Shape()
-
-        if not hasattr(obj, "debugArrow"):
-            obj.addProperty("App::PropertyBool", "debugArrow", "debug", "Description for tooltip")
-            obj.debugArrow = True
-
         obj.Shape = obj.testShape
 
         obj.Proxy = self
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
-
+        self.Object = obj
         self.__init__(obj)
 
     def onChanged(self, obj, prop):
@@ -89,7 +69,7 @@ class ContourGeometry:
             else:
                 obj.depth = obj.Zref + obj.depth
             self.execute(obj)
-        elif prop in ["Edges", "Zref", "Direction", "depth", "debugArrow"]:
+        elif prop in ["Edges", "Zref", "Direction", "depth", "debugArrow", "CoteMatiere"]:
             self.execute(obj)
         # elif prop == "SelectedEdgeIndex":
         #     # Mettre à jour les couleurs des arêtes lorsque la sélection change
@@ -108,213 +88,40 @@ class ContourGeometry:
         start = App.Vector(round(start.x, 3), round(start.y, 3), round(start.z, 3))
         end = edge.Vertexes[-1].Point
         end = App.Vector(round(end.x, 3), round(end.y, 3), round(end.z, 3))
-        App.Console.PrintMessage(f"[DEBUG] Edge {i}: orientation={edge.Orientation}, start={start}, end={end}, firstParam={round(edge.FirstParameter,3)}, lastParam={round(edge.LastParameter,3)}\n")
+        App.Console.PrintMessage(f"[DEBUG] Edge {i}: orientation={edge.Orientation}, start={start}, end={end}, firstParam={round(edge.FirstParameter, 3)}, lastParam={round(edge.LastParameter, 3)}\n")
 
-    def execute(self, obj):
-        """Mettre à jour la représentation visuelle du contour"""
-        if App.ActiveDocument.Restoring:
-            return
-        try:
-            if not hasattr(obj, "Edges") or not obj.Edges:
-                # App.Console.PrintMessage("Aucune arête sélectionnée pour le contour.\n")
-                return
+    def getEdges(self, obj):
+        """Collecter toutes les arêtes sélectionnées"""
+        edges = []
+        for sub in obj.Edges:
+            obj_ref = sub[0]  # L'objet référencé
+            sub_names = sub[1]  # Les noms des sous-éléments (arêtes)
 
-            # Collecter toutes les arêtes sélectionnées
-            edges = []
-            for sub in obj.Edges:
-                obj_ref = sub[0]  # L'objet référencé
-                sub_names = sub[1]  # Les noms des sous-éléments (arêtes)
+            for sub_name in sub_names:
+                element = obj_ref.Shape.getElement(sub_name)
+                element_type = getattr(element, "ShapeType", "Inconnu")
+                # Log.baptDebug(f"Traitement de l'objet {obj_ref.Name} avec les sous-éléments {sub_names}, type:{element_type}\n")
+                if element_type == "Edge":
+                    edge = obj_ref.Shape.getElement(sub_name)
+                    edges.append(edge)
+                    # App.Console.PrintMessage(f"Arête ajoutée: {sub_name} de {obj_ref.Name}\n")
 
-                for sub_name in sub_names:
-                    element = obj_ref.Shape.getElement(sub_name)
-                    element_type = getattr(element, "ShapeType", "Inconnu")
-                    # Log.baptDebug(f"Traitement de l'objet {obj_ref.Name} avec les sous-éléments {sub_names}, type:{element_type}\n")
-                    if element_type == "Edge":
-                        edge = obj_ref.Shape.getElement(sub_name)
-                        edges.append(edge)
-                        # App.Console.PrintMessage(f"Arête ajoutée: {sub_name} de {obj_ref.Name}\n")
-
-                    elif element_type == "Face":
-                        # Si l'élément est une face, ajouter toutes ses arêtes
-                        face_edges = element.Edges
-                        edges.extend(face_edges)
-                        Log.baptDebug(f"Face détectée, ajout de {len(face_edges)} arêtes de {obj_ref.Name}\n")
-                    else:
-                        App.Console.PrintWarning(f"Element {sub_name} de {obj_ref.Name} n'est ni une arête ni une face (type: {element_type}), ignoré.\n")
-
-            if not edges:
-                App.Console.PrintError("Aucune arête valide trouvée.\n")
-                return
-
-            # App.Console.PrintMessage(f"Nombre d'arêtes collectées: {len(edges)}\n")
-
-            # Vérifier si une arête est sélectionnée
-            selected_index = -1
-            if hasattr(obj, "SelectedEdgeIndex"):
-                selected_index = obj.SelectedEdgeIndex
-
-            # Créer des arêtes ajustées à la hauteur Zref et à depth
-            adjusted_edges_zref = []
-            adjusted_edges_depth = []
-
-            # Créer des flèches pour indiquer la direction
-            direction_arrows = []
-
-            if obj.Direction == "Anti-horaire":
-                edges.reverse()
-
-            # sorted_edges = self.order_edges(edges)  # Trier les arêtes par ordre croissant de edges
-            # sorted_edges = Part.__sortEdges__(edges)
-            sorted_edges = Part.sortEdges(list(edges))[0]  # https://github.com/FreeCAD/FreeCAD/commit/1031644fa
-            # sorted_edges = Part.getSortedClusters(list(edges))[0]
-            # sorted_edges = edges.copy()  # Faire une copie des arêtes pour le tri
-            # sorted_edges = edges
-
-            if obj.Direction == "Anti-horaire":
-                sorted_edges.reverse()
-
-            if DEBUG:
-                self.debugEdges(sorted_edges, "Sorted Edges")
-
-            if not sorted_edges:
-                App.Console.PrintError("Aucune arête valide après le tri.\n")
-                obj.Shape = Part.Shape()  # Shape vide
-                obj.testShape = Part.Shape()
-                obj.IsClosed = False
-                return
-
-            for i, edge in enumerate(sorted_edges):
-                # Créer des arêtes ajustées avec des couleurs différentes selon la sélection
-                # Pour l'arête sélectionnée, utiliser une couleur différente et une largeur plus grande
-
-                # if edge.Vertexes[0].Orientation == "Reversed":
-                #     App.Console.PrintMessage(f"Edge {i} est inversée, inversion de l'arête pour correspondre au sens.\n")
-                #     edge = edge.reversed()
-                current_edge = edge
-                bon_sens = None
-                if i < len(sorted_edges)-1:
-                    next_edge = sorted_edges[i+1]
-                    if current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[0].Point) < 1e-6:
-                        bon_sens = True
-                        # App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
-                    elif current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[-1].Point) < 1e-6:
-                        bon_sens = True
-                        # App.Console.PrintMessage(f"Edge {i} Ok ,Edge {i+1} est inversée, inversion de l'arête pour correspondre au sens.\n")
-                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[-1].Point) < 1e-6:
-                        bon_sens = False
-                        # App.Console.PrintMessage(f"Edge {i} et Edge {i+1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
-                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[0].Point) < 1e-6:
-                        bon_sens = False
-                        # App.Console.PrintMessage(f"Edge {i} est inversée, inversion de l'arête pour correspondre au sens.\n")
-                    else:
-                        # App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")
-                        pass
+                elif element_type == "Face":
+                    # Si l'élément est une face, ajouter toutes ses arêtes
+                    face_edges = element.Edges
+                    edges.extend(face_edges)
+                    # Log.baptDebug(f"Face détectée, ajout de {len(face_edges)} arêtes de {obj_ref.Name}")
                 else:
-                    prev_edge = sorted_edges[i-1]
+                    App.Console.PrintWarning(f"Element {sub_name} de {obj_ref.Name} n'est ni une arête ni une face (type: {element_type}), ignoré.\n")
+        return edges
 
-                    if prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[0].Point) < 1e-6:
-                        bon_sens = True
-                        # App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
-                    elif prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[-1].Point) < 1e-6:
-                        bon_sens = False
-                        # App.Console.PrintMessage(f"Edge {i} NOk ,Edge {i-1} est inversée, inversion de l'arête pour correspondre au sens.\n")
-                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[-1].Point) < 1e-6:
-                        bon_sens = False
-                        # App.Console.PrintMessage(f"Edge {i} et Edge {i-1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
-                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[0].Point) < 1e-6:
-                        bon_sens = True
-                        # App.Console.PrintMessage(f"Edge {i} Ok, inversion de l'arête pour correspondre au sens.\n")
-                    else:
-                        # App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")
-                        pass
-
-                if DEBUG:
-                    self.debugEdge(edge, i, "")
-
-                # Créer une flèche pour indiquer la direction de l'arête
-                arrow = self._create_direction_arrow(obj, edge, size=2.0, invert_direction=not bon_sens)
-                if arrow:
-                    direction_arrows.append(arrow)
-
-                edge_zref = edge.copy().translate(App.Vector(0, 0, obj.Zref - edge.Vertexes[0].Z))
-
-                edge_zfinal = edge.copy().translate(App.Vector(0, 0, obj.Zref - edge.Vertexes[0].Z + obj.depth if obj.DepthMode == "Relatif" else obj.depth - edge.Vertexes[0].Z))
-                adjusted_edges_zref.append(edge_zref)
-                adjusted_edges_depth.append(edge_zfinal)
-
-            # self.debugEdge(adjusted_edges_zref, "Zref")
-
-            try:
-                # Créer le fil à Zref
-                wire_zref = Part.Wire(adjusted_edges_zref)
-
-                # Créer le fil à depth
-                wire_zfinal = Part.Wire(adjusted_edges_depth)
-
-                # Créer les faces entre les arêtes correspondantes
-                faces = []
-                if len(adjusted_edges_zref) == len(adjusted_edges_depth):
-                    for i in range(len(adjusted_edges_zref)):
-                        try:
-                            face = Part.makeRuledSurface(adjusted_edges_zref[i], adjusted_edges_depth[i])
-                            faces.append(face)
-                        except Exception as e:
-                            App.Console.PrintError(f"Impossible de créer une face entre les arêtes {i}: {str(e)}\n")
-                else:
-                    App.Console.PrintError("Les listes d'arêtes ajustées n'ont pas la même taille, impossible de créer les faces.\n")
-
-                first_point = wire_zref.Edges[0].Vertexes[0].Point
-                sph = Part.makeSphere(2, first_point)
-
-                # Créer un compound contenant les deux fils, les flèches et les faces
-                shapes = [wire_zref, wire_zfinal, sph]
-                # shapes = [wire_zref]
-
-                if obj.debugArrow:
-                    shapes.extend(direction_arrows)
-
-                shapes.extend(faces)  # Ajouter les faces ici
-                compound = Part.makeCompound(shapes)
-                obj.Shape = compound
-                obj.testShape = compound
-
-                # Vérifier si le fil est fermé (utiliser le fil à Zref pour cette vérification)
-                if wire_zref.isClosed():
-                    obj.IsClosed = True
-                else:
-                    obj.IsClosed = False
-
-                # prefs = BaptPreferences()
-
-                # autoRecomputeChildren = prefs.getAutoChildUpdate()
-                # if autoRecomputeChildren:
-                #     for child in obj.Group:
-                #         child.recompute()
-
-            except Exception as e:
-                App.Console.PrintError(f"Impossible de créer un fil à partir des arêtes sélectionnées: {str(e)}\n")
-                exc_type, exc_value, exc_traceback = sys.exc_info()
-                line_number = exc_traceback.tb_lineno
-                App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
-                App.Console.PrintError(f"[DEBUG] Les arêtes transmises à Part.Wire ne sont pas chaînées ou sont invalides.\n")
-                # Essayer de créer une forme composite si le fil échoue
-                try:
-                    all_edges = adjusted_edges_zref
-                    all_edges.extend(adjusted_edges_depth)
-                    compound = Part.makeCompound(all_edges)
-                    obj.Shape = compound
-                    obj.testShape = compound
-                    # App.Console.PrintMessage("Forme composite créée à la place du fil.\n")
-                    return
-                except Exception as e2:
-                    # App.Console.PrintError(f"Impossible de créer une forme composite: {str(e2)}\n")
-                    return
-
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de l'exécution: {str(e)}\n")
-            exc_type, exc_value, exc_traceback = sys.exc_info()
-            line_number = exc_traceback.tb_lineno
-            App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
+    def getDepths(self):
+        """Retourne la profondeur finale en fonction du mode"""
+        Zref = self.Object.Zref
+        if self.Object.DepthMode == "Relatif":
+            return Zref, Zref - self.Object.depth
+        else:  # Absolu
+            return Zref, self.Object.depth
 
     def _create_adjusted_edge(self, edge, z_value, selected=False):
         """Crée une arête ajustée à une hauteur Z spécifique avec une couleur optionnelle
@@ -516,78 +323,6 @@ class ContourGeometry:
             new_edge = edge.copy()
             new_edge.reverse()
             return new_edge
-
-    def _create_direction_arrow(self, obj, edge, size=2.0, invert_direction=False):
-        """Crée une petite flèche au milieu de l'arête pour indiquer la direction
-
-        Args:
-            edge: L'arête d'origine
-            z_value: Valeur Z à appliquer
-            size: Taille de la flèche en mm
-
-        Returns:
-            Shape représentant la flèche
-        """
-        # TODO implemente param: invert_direction pour inverser la direction de la flèche
-        try:
-            # Point milieu paramétrique
-            mid_param = (edge.FirstParameter + edge.LastParameter) / 2.0
-            mid_point = edge.valueAt(mid_param)
-            mid_point_z = App.Vector(mid_point.x, mid_point.y, obj.Zref)
-
-            # Tangente au point milieu
-            tangent = edge.tangentAt(mid_param)
-            # Protection : parfois tangentAt peut retourner un vecteur nul
-            if tangent.Length < 1e-9:
-                tangent = App.Vector(1, 0, 0)
-            tangent = tangent.normalize()
-
-            if invert_direction:
-                tangent = tangent.multiply(-1)
-
-            # Projet de la tangente sur XY et normalisation
-            tangent_z = App.Vector(tangent.x, tangent.y, 0.0)
-
-            tangent_z = tangent_z.normalize()
-
-            # Normale (perpendiculaire) dans le plan XY
-            normal_xy = App.Vector(-tangent_z.y, tangent_z.x, 0.0)
-            if normal_xy.Length < 1e-9:
-                normal_xy = App.Vector(0, 1, 0)
-            normal_xy = normal_xy.normalize()
-
-            # Décalage le long de la normale : proportionnel à la taille, ajustable
-            offset_distance = size * 0.6
-
-            # if hasattr(obj, "Direction") and obj.Direction == "Anti-horaire" :
-            #     offset_distance = -offset_distance
-
-            # Point milieu décalé le long de la normale
-            shifted_mid = mid_point_z.add(normal_xy.multiply(offset_distance))
-
-            # Construire la flèche centrée sur shifted_mid, orientée selon la tangente
-            start_point = shifted_mid.sub(tangent_z.multiply(size / 2.0))
-            end_point = shifted_mid.add(tangent_z.multiply(size / 2.0))
-
-            arrow_line = Part.makeLine(start_point, end_point)
-
-            # Pointe de la flèche (petites lignes perpendiculaires)
-            perp = normal_xy  # vecteur perpendiculaire déjà calculé et normalisé
-
-            arrow_p1 = end_point.sub(tangent_z.multiply(size / 3.0)).add(perp.multiply(size / 4.0))
-            arrow_p2 = end_point.sub(tangent_z.multiply(size / 3.0)).sub(perp.multiply(size / 4.0))
-
-            # perp_line = Part.makeLine(mid_point, shifted_mid )
-
-            arrow_line1 = Part.makeLine(end_point, arrow_p1)
-            arrow_line2 = Part.makeLine(end_point, arrow_p2)
-
-            arrow_shape = Part.makeCompound([arrow_line, arrow_line1, arrow_line2])
-            return arrow_shape
-
-        except Exception as e:
-            App.Console.PrintWarning(f"Erreur lors de la création de la flèche: {str(e)}\n")
-            return None
 
     def __getstate__(self):
         """Sérialisation"""
@@ -830,7 +565,33 @@ class ViewProviderContourGeometry:
 
         actionExport = menu.addAction("Export")
         actionExport.triggered.connect(lambda: self.export(vobj))
+
+        actionTransformToSketch = menu.addAction("Transform to Sketch")
+        actionTransformToSketch.triggered.connect(lambda: self.transformToSketch(vobj))
         return True
+
+    def transformToSketch(self, vobj):
+        """Transforme le contour en sketch"""
+        cam_project = BaptUtilities.getActiveCamProject()
+        obj = createContourEditableGeometry(cam_project)
+        sketch = obj.Sketch
+        depths = vobj.Object.Proxy.getDepths()
+        sketch.Placement.Base.z = depths[0] if depths else 0
+        obj.depth = depths[1]
+        for sub in vobj.Object.Edges:
+            obj_ref = sub[0]
+            sub_names = sub[1]
+
+            for sub_name in sub_names:
+                if "Edge" in sub_name:
+                    try:
+                        edge = obj_ref.Shape.getElement(sub_name)
+                        # sketch.addGeometry(edge, False)
+                        Log.baptDebug(f"Adding edge {sub_name} to sketch with shape: {edge}\n")
+                        sketch.addExternal(obj_ref.Name, sub_name, True)
+                    except Exception as e:
+                        App.Console.PrintError(f"Erreur lors de la récupération de l'arête {sub_name}: {str(e)}\n")
+        pass
 
     def export(self, vobj, mode=0):
         """Exporte l'objet"""

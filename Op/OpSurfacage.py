@@ -8,15 +8,19 @@ from Tool.ToolTaskPannel import ToolTaskPanel
 import Part
 import BaptUtilities
 
-from utils import PointSelectionObserver
+from PySide import QtGui, QtCore
+
+from utils import Log, PointSelectionObserver
 from utils import BQuantitySpinBox
 import math
 
+from utils.GcodeWriter import GcodeWriter
+
 
 class Surfacage(baseOp):
-    def __init__(self, obj):
+    def __init__(self, obj, cam_proj=None):
         self.Type = "Surfacage"
-        super().__init__(obj)
+        super().__init__(obj, cam_proj)
 
         self.initProperties(obj)
         self.installToolProp(obj)
@@ -24,8 +28,7 @@ class Surfacage(baseOp):
         obj.Proxy = self
 
     def initProperties(self, obj):
-        if not hasattr(obj, "Name"):
-            obj.addProperty("App::PropertyString", "Name", "Surfacage", "Nom de l'opérateur").Name = "Surfacage"
+
         if not hasattr(obj, "Stock"):
             obj.addProperty("App::PropertyLink", "Stock", "Surfacage", "Stock")
 
@@ -33,6 +36,9 @@ class Surfacage(baseOp):
 
         if not hasattr(obj, "Depth"):
             obj.addProperty("App::PropertyFloat", "Depth", "Surfacage", "Profondeur finale")
+        if not hasattr(obj, "safeZ"):
+            obj.addProperty("App::PropertyFloat", "safeZ", "Surfacage", "Hauteur de sécurité pour les déplacements rapides")
+            obj.safeZ = 2.0
 
         if not hasattr(obj, "Recouvrement"):
             obj.addProperty("App::PropertyFloat", "Recouvrement", "Surfacage", "Recouvrement").Recouvrement = 10.0
@@ -46,10 +52,12 @@ class Surfacage(baseOp):
 
         if not hasattr(obj, "Tool") or obj.Tool is None:
             return
-        # obj.Shape = Part.Shape()
         if not obj.Stock:
             App.Console.PrintMessage("Aucun stock sélectionné\n")
             return
+
+        gcodeWriter = GcodeWriter()
+
         App.Console.PrintMessage(f"Stock sélectionné : {obj.Stock.Name}\n")
         bb = obj.Stock.Shape.BoundBox
         App.Console.PrintMessage(f"Taille du stock : {bb.XLength}, {bb.YLength}, {bb.ZLength}\n")
@@ -61,43 +69,48 @@ class Surfacage(baseOp):
 
         posX = bb.XMin - obj.Tool.Radius.Value
         posY = bb.YMin - (obj.Tool.Radius.Value) + passeLat
-        # posY = bb.YMin + (obj.Tool.Radius.Value) - passeLat
         posZ = obj.Depth
 
-        obj.Gcode = ""
-        obj.Gcode += f"G0 X{posX} Y{posY} Z{posZ+2}\n"
-        obj.Gcode += f"G1 Z{posZ} F{obj.FeedRate.getValueAs('mm/min')}\n"
+        gcodeWriter.linearMove({'X': posX, 'Y': posY}, rapid=True)
+        gcodeWriter.linearMove({'Z': posZ + obj.safeZ}, rapid=True)
+        gcodeWriter.linearMove({'Z': posZ}, feed=float(obj.FeedRate.getValueAs('mm/min')))
 
         for i in range(int(nbPasseLat)):
             if i % 2 != 0:
-                obj.Gcode += f"G1 X{bb.XMin - (obj.Tool.Radius.Value)} Y{posY}\n"
+                gcodeWriter.linearMove({'X': bb.XMin - (obj.Tool.Radius.Value), 'Y': posY})
                 # points.append(App.Vector(posX, posY, posZ))
                 if i == nbPasseLat - 1:
 
-                    obj.Gcode += f"G0 X{bb.XMin - (obj.Tool.Radius.Value)} Y{posY} Z{posZ + 2}\n"
+                    gcodeWriter.linearMove({'X': bb.XMin - (obj.Tool.Radius.Value), 'Y': posY, 'Z': posZ + obj.safeZ})
                 else:
                     posY += passeLat
 
-                    obj.Gcode += f"G1 X{bb.XMin - (obj.Tool.Radius.Value)} Y{posY}\n"
+                    gcodeWriter.linearMove({'X': bb.XMin - (obj.Tool.Radius.Value), 'Y': posY})
             else:
 
-                obj.Gcode += f"G1 X{bb.XMax + (obj.Tool.Radius.Value)} Y{posY}\n"
+                gcodeWriter.linearMove({'X': bb.XMax + (obj.Tool.Radius.Value), 'Y': posY})
                 # points.append(App.Vector(posX, posY, posZ))
                 if i == nbPasseLat - 1:
 
-                    obj.Gcode += f"G0 X{bb.XMax + (obj.Tool.Radius.Value)} Y{posY} Z{posZ + 2}\n"
+                    gcodeWriter.linearMove({'X': bb.XMax + (obj.Tool.Radius.Value), 'Y': posY, 'Z': posZ + obj.safeZ})
 
                 else:
                     posY += passeLat
 
-                    obj.Gcode += f"G1 X{bb.XMax + (obj.Tool.Radius.Value)} Y{posY}\n"
+                    gcodeWriter.linearMove({'X': bb.XMax + (obj.Tool.Radius.Value), 'Y': posY})
+
+        obj.Gcode = "\n".join(gcodeWriter.lines)
+        obj.TimeEstimate = gcodeWriter.time_estimate
+        obj.LastCoordinate = App.Vector(gcodeWriter.current_position['X'], gcodeWriter.current_position['Y'], gcodeWriter.current_position['Z'])
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
+        super().onDocumentRestored(obj)
         self.__init__(obj)
 
     def onChanged(self, obj, prop):
-        if prop in ("Stock", "Depth", "Tool", "Recouvrement"):
+        # super().onChanged(obj, prop)
+        if prop in ("Stock", "Depth", "Tool", "Recouvrement", "FeedRate", "safeZ"):
             self.execute(obj)
 
     def __getstate__(self):
@@ -115,9 +128,11 @@ class ViewProviderSurfacage(baseOpViewProviderProxy):
         vobj.Proxy = self
         self.Object = vobj.Object
         self.icon = "Surfacage.svg"
+        self.panel = None
 
     def attach(self, obj):
         self.Object = obj.Object
+        self.panel = None
         return super().attach(obj)
 
     def getIcon(self):
@@ -186,32 +201,19 @@ class ViewProviderSurfacage(baseOpViewProviderProxy):
     #         return
     #     App.Console.PrintMessage(f"Get highlight segments\n")
 
-    # def updateData(self, obj, prop):
-    #     if prop in ("Depth","Rapid", "Feed"):
-    #         #self.updateColors()
-    #         pass
-    #     if hasattr(self, "root"):
-    #         #self.root.removeAllChildren()
-    #         self.root = self.buildScene(obj.ViewObject)
-    # def updateColors(self):
-    #     App.Console.PrintMessage(f"Update colors\n")
-    #     if not hasattr(self, "Object") or not self.Object:
-    #         return
-    #     #debug
-    #     App.Console.PrintMessage(f"Update colors 1\n")
-    #     if hasattr(self.Object, "Rapid") and hasattr(self.Object, "Feed"):
-    #         App.Console.PrintMessage(f"Update colors 2\n")
-    #         rapidcount = len(self.Object.Rapid)
-    #         feedcount = len(self.Object.Feed)
-    #         colors = []
-    #         colors.extend([self.Object.ViewObject.Rapid] * rapidcount)
-    #         colors.extend([self.Object.ViewObject.Feed] * feedcount)
-    #         self.Object.ViewObject.DiffuseColor = colors
-    #         # self.Object.ViewObject.LineColor = colors
+    def updateData(self, obj, prop):
+        super().updateData(obj, prop)
+        if self.panel is not None:
+            self.panel.updateData(obj, prop)
+        if prop in ("Depth", "Rapid", "Feed", "Recouvrement", "safeZ", "Label"):
+            # self.updateVisual()
+            pass
 
-    # def setupContextMenu(self, vobj, menu):
-    #     action = menu.addAction("Edit")
-    #     action.triggered.connect(lambda: self.setEdit(vobj))
+    def setupContextMenu(self, vobj, menu):
+        super().setupContextMenu(vobj, menu)
+        action_edit_gcode = QtGui.QAction(QtGui.QIcon(BaptUtilities.getIconPath("GcodeFile.svg")), "edit Gcode", menu)
+        QtCore.QObject.connect(action_edit_gcode, QtCore.SIGNAL("triggered()"), lambda: self.viewGcode(vobj))
+        menu.addAction(action_edit_gcode)
 
     def setEdit(self, vobj, mode=0):
         try:
@@ -219,7 +221,8 @@ class ViewProviderSurfacage(baseOpViewProviderProxy):
             importlib.reload(SurfacageTaskPanel)
         except Exception:
             pass
-        Gui.Control.showDialog(SurfacageTaskPanel(vobj.Object, deleteOnReject=False))
+        self.panel = SurfacageTaskPanel(vobj.Object, deleteOnReject=False)
+        Gui.Control.showDialog(self.panel)
 
     # def doubleClicked(self, vobj):
     #     self.setEdit(vobj)
@@ -230,6 +233,12 @@ class ViewProviderSurfacage(baseOpViewProviderProxy):
 
     def __setstate__(self, state):
         return None
+
+    def unsetEdit(self, vobj, mode=0):
+        Log.baptDebug("unsetEdit called")
+        if self.panel is not None:
+            # self.panel.reject(resetEdit=True)
+            self.panel = None
 
     # def getDisplayModes(self, vobj):
     #     return ["Lines"]
@@ -254,7 +263,7 @@ class SurfacageTaskPanel:
     def __init__(self, obj, deleteOnReject):
         self.obj = obj
         self.deleteOnReject = deleteOnReject
-
+        App.activeDocument().openTransaction("Edit Surfacage Operation")
         self.cuttingCondition = cc.cuttingConditionTaskPanel(obj)
 
         self.ui1 = QtGui.QWidget()
@@ -265,34 +274,28 @@ class SurfacageTaskPanel:
 
         layout = QtGui.QFormLayout(self.ui1)
         # Nom
-        self.nameEdit = QtGui.QLineEdit(obj.Name)
-        layout.addRow("Nom", self.nameEdit)
+        self.labelEdit = QtGui.QLineEdit(obj.Label)
+        layout.addRow("Label", self.labelEdit)
 
         # Recouvrement
-        # self.recouvrement = QtGui.QDoubleSpinBox();
         self.recouvrement = BQuantitySpinBox.BQuantitySpinBox(obj, "Recouvrement")
-        # self.recouvrement.setRange(0,1000);
-        # self.recouvrement.setValue(obj.Recouvrement)
 
         layout.addRow("Recouvrement", self.recouvrement.getWidget())
 
         # Profondeur finale
         self.depthEdit = BQuantitySpinBox.BQuantitySpinBox(obj, "Depth")
-        # self.depthEdit.setRange(-10000,10000);
-        # self.depthEdit.setProperty("unit", "mm")
-        # self.depthEdit.setProperty("rawValue", getattr(obj, "Depth"))
-        # self.depthEdit.setProperty("binding","%s.%s" % (obj.Name, "Depth"))
-        # Gui.ExpressionBinding(self.depthEdit).bind(obj, "Depth")
         layout.addRow("Profondeur finale", self.depthEdit.getWidget())
         self.depthBtn = QtGui.QPushButton("Click on Part")
         self.depthBtn.clicked.connect(self.setDepth)
         layout.addRow(self.depthBtn)
 
-        # self.depthEdit.valueChanged.connect(self.updateValue)
-        # self.recouvrement.valueChanged.connect(self.updateValue)
-
         if self.obj.Tool:
             self.obj.Tool.Visibility = True
+
+    def updateData(self, obj, prop):
+        if prop in ("Depth", "Recouvrement", "Label", "safeZ"):
+            self.setFields()
+        pass
 
     def updateValue(self):
         # self.obj.Depth = self.depthEdit.value()
@@ -304,7 +307,8 @@ class SurfacageTaskPanel:
         self.recouvrement.updateProperty()
 
     def setFields(self):
-        self.depthEdit.setValue(self.obj.Depth)
+        self.labelEdit.setText(self.obj.Label)
+        self.depthEdit.updateWidget()
         self.recouvrement.updateWidget()
 
     def setDepth(self):
@@ -326,19 +330,21 @@ class SurfacageTaskPanel:
         self.obj.Recouvrement = self.recouvrement.value()
 
     def accept(self):
-        # self.obj.Name = self.nameEdit.text()
+        self.obj.ViewObject.Proxy.unsetEdit(self.obj.ViewObject)
+        self.obj.Label = self.labelEdit.text()
         self.updateValue()
-
         if self.obj.Tool:
             self.obj.Tool.Visibility = False
 
+        App.activeDocument().commitTransaction()
         App.ActiveDocument.recompute()
         Gui.Control.closeDialog()
 
-    def reject(self):
-
+    def reject(self, resetEdit=False):
+        self.obj.ViewObject.Proxy.unsetEdit(self.obj.ViewObject)
         if self.obj.Tool:
             self.obj.Tool.Visibility = False
+        App.activeDocument().abortTransaction()
 
         if self.deleteOnReject:
             App.ActiveDocument.removeObject(self.obj.Name)

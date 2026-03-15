@@ -420,6 +420,8 @@ class CamProject:
         # Créer ou obtenir l'objet Tools
         self.getToolsGroup()
 
+        self.getExprSet()
+
         # Assigner le proxy à la fin pour éviter les problèmes de récursion
         obj.Proxy = self
 
@@ -602,6 +604,34 @@ class CamProject:
             self.Object.addObject(tools_group)
 
         return tools_group
+
+    def getExprSet(self):
+        """Obtenir ou créer l'objet ExpressionSet pour le projet"""
+        expr_set = None
+
+        # Vérifier si l'objet existe déjà
+        for child in self.Object.Group:
+            if child.Name.startswith("VarSet"):
+                expr_set = child
+                break
+
+        # Créer l'objet s'il n'existe pas
+        if not expr_set:
+
+            expr_set = App.ActiveDocument.addObject('App::VarSet', 'VarSet')
+
+            expr_set.Label = "Expressions"
+            self.Object.addObject(expr_set)
+
+            expr_set.addProperty("App::PropertyFloat", "safeZ", "Expressions", "Hauteur de sécurité pour les déplacements rapides")
+            expr_set.addProperty("App::PropertyFloat", "clearanceZ", "Expressions", "Hauteur de sécurité pour les déplacements rapides")
+            if hasattr(expr_set, "ExpressionEngine"):
+                expr_set.setExpression("safeZ", "2mm")
+                stock = self.getStock(self.Object)
+                if stock and hasattr(stock, "ZPos") and hasattr(stock, "ZNeg"):
+                    expr_set.setExpression("clearanceZ", f"<<{stock.Name}>>.Shape.BoundBox.ZMax + 10")
+
+        return expr_set
 
     def execute(self, obj):
         """Mettre à jour le projet"""
