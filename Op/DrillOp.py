@@ -1,16 +1,10 @@
-import sys
 from Op.BaseOp import baseOpViewProviderProxy
-from BaptTools import ToolDatabase
 import FreeCAD as App
 import FreeCADGui as Gui
 from Op.BaseOp import baseOp
-from Op.utils import CoolantMode
 import Part
-import os
 import math
-from PySide import QtCore, QtGui
 import BaptUtilities
-from utils import Log
 
 
 cycleType = ["Simple", "Peck", "Tapping", "Boring", "Reaming", "Contournage"]
@@ -109,6 +103,10 @@ class DrillOperation(baseOp):
             self.updateFromGeometry(obj)
         elif prop == "Diam":
             self.execute()
+        elif prop == "DrillGeometry":
+            self.updateFromGeometry(obj)
+        elif prop in ["ShowPathLine", "SafeHeight", "FinalDepth"]:
+            self.execute(obj)
 
     def updateVisibleProperties(self, obj):
         """Met à jour la visibilité des propriétés en fonction du type de cycle"""
@@ -220,7 +218,7 @@ class DrillOperation(baseOp):
                 prisePasse = (profTotale / nbTour) / 2
 
                 strGcode += f"{obj.Label}:\n"
-                strGcode += f"G91\n"
+                strGcode += "G91\n"
                 strGcode += f"G1 X{r}\n"
                 for _ in range(nbTour):
                     strGcode += f"G3 X{-d} Y0 Z-{prisePasse} I{-r} J{0}\n"
@@ -230,7 +228,7 @@ class DrillOperation(baseOp):
                 strGcode += f"G3 X{d} Y0 I{r} J{0}\n"
                 strGcode += f"G1 X{-r}\n"
                 strGcode += f"G1 Z{profTotale}\n"
-                strGcode += f"G90\n"
+                strGcode += "G90\n"
                 strGcode += f"{obj.Label}_FIN:\n"
             else:
                 raise Exception(f"Unsupported Cycle Type : {obj.CycleType}")
@@ -378,7 +376,7 @@ class DrillOperation(baseOp):
             return shape
         else:
             # Partie cylindrique + cône
-            body_height = depth - tip_height
+            # body_height = depth - tip_height
 
             # Construire le profil complet en une seule pièce :
             # triangle de la pointe + rectangle du cylindre → révolution
@@ -443,13 +441,6 @@ class DrillOperation(baseOp):
         body_pos = App.Vector(top_pos.x, top_pos.y, bottom_pos.z)
         body = Part.makeCylinder(diameter / 2, length, body_pos, App.Vector(0, 0, 1))
         return body
-
-    def onChanged(self, obj, prop):
-        """Appelé quand une propriété change"""
-        if prop == "DrillGeometry":
-            self.updateFromGeometry(obj)
-        elif prop in ["ShowPathLine", "SafeHeight", "FinalDepth"]:
-            self.execute(obj)
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""

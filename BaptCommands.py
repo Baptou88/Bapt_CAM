@@ -6,6 +6,7 @@ Contient les commandes principales du workbench
 """
 
 import BaptCamProject
+import BaptContour25DGeom
 import BaptContourEditableGeometry
 import BaptContourGeometry
 import BaptDrillGeometry
@@ -65,7 +66,7 @@ class CreateAdaptativeOperationCommand:
         doc = App.ActiveDocument
         doc.openTransaction('Create Adaptive Operation')
         contour_geometry = Gui.Selection.getSelection()[0]
-        obj = AdaptativeOp.createAdaptativeOperation(contour=contour_geometry)
+        AdaptativeOp.createAdaptativeOperation(contour=contour_geometry)
         doc.recompute()
         doc.commitTransaction()
         App.Console.PrintMessage(
@@ -88,7 +89,7 @@ class CreatePocketOperationCommand:
         doc = App.ActiveDocument
         doc.openTransaction('Create Pocket Operation')
         contour_geometry = Gui.Selection.getSelection()[0]
-        obj = PocketOp.createPocketOperation(contour=contour_geometry)
+        PocketOp.createPocketOperation(contour=contour_geometry)
         # if obj.ViewObject:
         #     BaptPocketOperation.ViewProviderPocketOperation(obj.ViewObject)
         #     obj.ViewObject.Proxy.setEdit(obj.ViewObject)
@@ -125,7 +126,7 @@ class CreateContourCommand:
         obj = doc.addObject("Part::FeaturePython", "Contournage")
 
         # Ajouter la fonctionnalité
-        contour = OpContournage.ContournageCycle(obj)
+        OpContournage.ContournageCycle(obj)
 
         pref = BaptPreferences.BaptPreferences()
         modeAjout = pref.getModeAjout()
@@ -312,7 +313,7 @@ class CreateCamProjectCommand:
         obj = doc.addObject("App::DocumentObjectGroupPython", "CamProject")
 
         # Ajouter la fonctionnalité
-        project = BaptCamProject.CamProject(obj)
+        BaptCamProject.CamProject(obj)
 
         # Ajouter le ViewProvider
         if App.GuiUp and obj.ViewObject:
@@ -388,17 +389,18 @@ class CreateContourEditableGeometryCommand:
     """Commande pour créer une géométrie de contour editable via Sketcher"""
 
     def GetResources(self):
-        return {'Pixmap': BaptUtilities.getIconPath("Tree_Contour.svg"),
+        return {'Pixmap': BaptUtilities.getIconPath("ContourEditable.svg"),
                 'MenuText': "Nouvelle géométrie de contour editable",
                 'ToolTip': "Créer une nouvelle géométrie de contour pour l'usinage"}
 
     def IsActive(self):
         """La commande est active si un projet CAM est sélectionné"""
-        sel = Gui.Selection.getSelection()
-        if not sel:
+        doc = App.ActiveDocument
+        if doc is None:
             return False
+        cam_project = BaptUtilities.getActiveCamProject()
 
-        return hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, BaptCamProject.CamProject)
+        return cam_project is not None
 
     def Activated(self):
         """Créer une nouvelle géométrie de contour"""
@@ -422,8 +424,8 @@ class CreateContourEditableGeometryCommand:
 
         # Ajouter le ViewProvider
         if App.GuiUp and obj.ViewObject:
-            BaptContourEditableGeometry.ViewProviderContourEditableGeometry(obj.ViewObject)
             obj.ViewObject.addExtension("Gui::ViewProviderGroupExtensionPython")
+            BaptContourEditableGeometry.ViewProviderContourEditableGeometry(obj.ViewObject)
 
         # Ajouter au groupe Geometry
         geometry_group = project.Proxy.getGeometryGroup(project)
@@ -431,6 +433,46 @@ class CreateContourEditableGeometryCommand:
 
         # Message de confirmation
         App.Console.PrintMessage("Géométrie de contour editable créée.\n")
+
+        App.ActiveDocument.recompute()
+
+        doc.commitTransaction()
+
+
+class CreateContour25DGeometryCommand:
+    """Commande pour créer une géométrie de contour 2.5D via Sketcher"""
+
+    def GetResources(self):
+        return {'Pixmap': BaptUtilities.getIconPath("ContourEditable.svg"),
+                'MenuText': "Nouvelle géométrie de contour editable",
+                'ToolTip': "Créer une nouvelle géométrie de contour pour l'usinage"}
+
+    def IsActive(self):
+        """La commande est active si un projet CAM est sélectionné"""
+        doc = App.ActiveDocument
+        if doc is None:
+            return False
+        cam_project = BaptUtilities.getActiveCamProject()
+
+        return cam_project is not None
+
+    def Activated(self):
+        """Créer une nouvelle géométrie de contour"""
+        doc = App.ActiveDocument
+
+        # Obtenir le projet CAM sélectionné
+        project = BaptUtilities.getActiveCamProject()
+        if project is None:
+            App.Console.PrintError("Aucun projet CAM actif. Veuillez sélectionner ou activer un projet CAM.\n")
+
+            return
+
+        doc.openTransaction('Create Contour Geometry')
+        # Créer l'objet avec le bon type pour avoir une Shape
+        BaptContour25DGeom.createContour25DGeom(project)
+
+        # Message de confirmation
+        App.Console.PrintMessage("Géométrie de contour 2.5D créée.\n")
 
         App.ActiveDocument.recompute()
 
@@ -553,7 +595,7 @@ class CreateDrillOperationCommand:
         obj = doc.addObject("Part::FeaturePython", "DrillOperation")
 
         # Ajouter la fonctionnalité
-        operation = DrillOp.DrillOperation(obj)
+        DrillOp.DrillOperation(obj)
 
         # Définir le nom de la géométrie de perçage associée (au lieu d'un lien direct)
         obj.DrillGeometry = drill_geometry
@@ -763,7 +805,7 @@ class testFPOCommand:
         doc = App.ActiveDocument
 
         doc.openTransaction('testFPO')
-        obj = testFPO.create()
+        testFPO.create()
 
         doc.commitTransaction()
 
@@ -808,6 +850,7 @@ if App.GuiUp:
     Gui.addCommand('Bapt_CreateDrillGeometry', CreateDrillGeometryCommand())
     Gui.addCommand('Bapt_CreateContourGeometry', CreateContourGeometryCommand())
     Gui.addCommand('Bapt_CreateContourEditableGeometry', CreateContourEditableGeometryCommand())
+    Gui.addCommand('Bapt_CreateContour25DGeometry', CreateContour25DGeometryCommand())
     Gui.addCommand('Bapt_CreateMachiningCycle', CreateContourCommand())
     Gui.addCommand('Bapt_CreatePocketOperation', CreatePocketOperationCommand())
     Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())

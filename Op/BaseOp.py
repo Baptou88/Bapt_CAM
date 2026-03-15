@@ -1,6 +1,4 @@
 
-import sys
-
 from BaptPath import GcodeAnimationControl, GcodeEditorTaskPanel, absinc, comp, memory
 from BaptPreferences import BaptPreferences
 import BaptUtilities
@@ -79,7 +77,7 @@ class baseOp:
 
     def onDocumentRestored(self, obj):
         self.cam_proj = BaptUtilities.find_cam_project(obj)
-        Log.baptDebug(f"Document restored, found cam project: {self.cam_proj}")
+        # Log.baptDebug(f"Document restored, found cam project: {self.cam_proj}")
 
     def dumps(self):
         """Sérialisation"""
@@ -199,7 +197,7 @@ class baseOpViewProviderProxy:
         # App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
 
         self.cam_proj = BaptUtilities.find_cam_project(obj.Object)
-        Log.baptDebug(f"Found cam project: {self.cam_proj}")
+        # Log.baptDebug(f"Found cam project: {self.cam_proj}")
 
         self.pick_radius = 5
         self.Path = coin.SoGroup()
@@ -306,20 +304,20 @@ class baseOpViewProviderProxy:
         picking.setPoint(pos)
         picking.setRadius(self.pick_radius)
         picking.apply(self.Path)
-        App.Console.PrintMessage(f'mouse event cb 0\n')
+        App.Console.PrintMessage('mouse event cb 0\n')
 
         picked = picking.getPickedPoint()
         if picked is None:
             self.direction_switch.whichChild = coin.SO_SWITCH_NONE
             return
 
-        App.Console.PrintMessage(f'mouse event cb 01\n')
+        App.Console.PrintMessage('mouse event cb 01\n')
         detail = picked.getDetail()
         if not isinstance(detail, coin.SoLineDetail):
             self.direction_switch.whichChild = coin.SO_SWITCH_NONE
             return
 
-        App.Console.PrintMessage(f'mouse event cb 1\n')
+        App.Console.PrintMessage('mouse event cb 1\n')
 
         path = picked.getPath()
         kind = None
@@ -334,7 +332,7 @@ class baseOpViewProviderProxy:
         if kind is None or kind not in self.segment_metadata:
             self.direction_switch.whichChild = coin.SO_SWITCH_NONE
             return
-        App.Console.PrintMessage(f'mouse event cb 2\n')
+        App.Console.PrintMessage('mouse event cb 2\n')
 
         line_index = detail.getLineIndex()
         segments = self.segment_metadata.get(kind, [])
@@ -343,7 +341,7 @@ class baseOpViewProviderProxy:
             return
 
         pt1, pt2 = segments[line_index]
-        App.Console.PrintMessage(f'mouse event cb 3\n')
+        App.Console.PrintMessage('mouse event cb 3\n')
 
         default_color = (1.0, 0.0, 0.0) if kind == "rapid" else (0.0, 1.0, 0.0)
         view_obj = getattr(self.Object, "ViewObject", None)
@@ -517,7 +515,7 @@ class baseOpViewProviderProxy:
                 try:
                     idx = up.index("CHF")
                     # Extraire la valeur après CHF
-                    rest = up[idx+3:].strip()
+                    rest = up[idx + 3:].strip()
                     if rest and (rest[0].isdigit() or rest[0] == '.'):
                         # Extraire le nombre
                         num_str = ""
@@ -536,7 +534,7 @@ class baseOpViewProviderProxy:
                 try:
                     idx = up.index("RND")
                     # Extraire la valeur après RND
-                    rest = up[idx+3:].strip()
+                    rest = up[idx + 3:].strip()
                     if rest and (rest[0].isdigit() or rest[0] == '.'):
                         # Extraire le nombre
                         num_str = ""
@@ -591,7 +589,7 @@ class baseOpViewProviderProxy:
             (x2, y2) = (p1[0], p1[1])
             dx = x2 - x1
             dy = y2 - y1
-            d2 = dx*dx + dy*dy
+            d2 = dx * dx + dy * dy
             if d2 == 0.0:
                 return None  # identical points
             d = math.sqrt(d2)
@@ -601,7 +599,7 @@ class baseOpViewProviderProxy:
             mx = (x1 + x2) / 2.0
             my = (y1 + y2) / 2.0
             # distance from midpoint to center
-            h = math.sqrt(max(R*R - (d/2.0)*(d/2.0), 0.0))
+            h = math.sqrt(max(R * R - (d / 2.0) * (d / 2.0), 0.0))
             ux = -dy / d
             uy = dx / d
             c1 = (mx + ux * h, my + uy * h)
@@ -613,7 +611,7 @@ class baseOpViewProviderProxy:
             i = len(coords_list)
             coords_list.append(a)
             coords_list.append(b)
-            idx_list.extend([i, i+1, -1])
+            idx_list.extend([i, i + 1, -1])
             group = "rapid" if coords_list is rapid_coords else "feed"
             self.ordered_segments.append((group, a, b))
             self.segment_metadata[group].append((a, b))
@@ -642,7 +640,7 @@ class baseOpViewProviderProxy:
             dx_next = p1[0] - p0[0]
             dy_next = p1[1] - p0[1]
             dz_next = p1[2] - p0[2]
-            length_next = math.sqrt(dx_next*dx_next + dy_next*dy_next + dz_next*dz_next)
+            length_next = math.sqrt(dx_next * dx_next + dy_next * dy_next + dz_next * dz_next)
 
             if length_next < chf_dist:
                 Log.baptWarning(f"Chamfer distance {chf_dist} is larger than next segment length {length_next}. Using normal segment.")
@@ -656,7 +654,7 @@ class baseOpViewProviderProxy:
             dx_prev = p0[0] - p_prev[0]
             dy_prev = p0[1] - p_prev[1]
             dz_prev = p0[2] - p_prev[2]
-            length_prev = math.sqrt(dx_prev*dx_prev + dy_prev*dy_prev + dz_prev*dz_prev)
+            length_prev = math.sqrt(dx_prev * dx_prev + dy_prev * dy_prev + dz_prev * dz_prev)
 
             if length_prev < chf_dist:
                 Log.baptWarning(f"Chamfer distance {chf_dist} is larger than previous segment length {length_prev}. Using normal segment.")
@@ -708,7 +706,7 @@ class baseOpViewProviderProxy:
             dx_next = p1[0] - p0[0]
             dy_next = p1[1] - p0[1]
             dz_next = p1[2] - p0[2]
-            length_next = math.sqrt(dx_next*dx_next + dy_next*dy_next + dz_next*dz_next)
+            length_next = math.sqrt(dx_next * dx_next + dy_next * dy_next + dz_next * dz_next)
 
             # Récupérer le point précédent
             p_prev = coords_list[-2]
@@ -717,7 +715,7 @@ class baseOpViewProviderProxy:
             dx_prev = p0[0] - p_prev[0]
             dy_prev = p0[1] - p_prev[1]
             dz_prev = p0[2] - p_prev[2]
-            length_prev = math.sqrt(dx_prev*dx_prev + dy_prev*dy_prev + dz_prev*dz_prev)
+            length_prev = math.sqrt(dx_prev * dx_prev + dy_prev * dy_prev + dz_prev * dz_prev)
 
             # Distance de tangence (approximation simple : rayon = distance)
             tang_dist = rnd_radius
@@ -759,7 +757,7 @@ class baseOpViewProviderProxy:
             # Vecteur de arc_start vers arc_end
             chord_x = arc_end[0] - arc_start[0]
             chord_y = arc_end[1] - arc_start[1]
-            chord_len = math.sqrt(chord_x*chord_x + chord_y*chord_y)
+            chord_len = math.sqrt(chord_x * chord_x + chord_y * chord_y)
 
             if chord_len > 1e-6:
                 # Milieu de la corde
@@ -846,7 +844,7 @@ class baseOpViewProviderProxy:
                 done = start_z
                 prisePasse = self.mem.current_cycle["Q"]
                 while done > final_Z:
-                    done = done-prisePasse
+                    done = done - prisePasse
                     if done < final_Z:
                         prisePasse = final_Z
                     a = list(new[0:2])
@@ -1048,8 +1046,8 @@ class baseOpViewProviderProxy:
                         # compute sweeps for both centers
 
                         def compute_sweep(c):
-                            sx = math.atan2(self.cur[1]-c[1], self.cur[0]-c[0])
-                            ex = math.atan2(end[1]-c[1], end[0]-c[0])
+                            sx = math.atan2(self.cur[1] - c[1], self.cur[0] - c[0])
+                            ex = math.atan2(end[1] - c[1], end[0] - c[0])
                             sweep = ex - sx
                             return sweep, sx, ex
                         s1, s1s, s1e = compute_sweep(c1)
@@ -1059,10 +1057,10 @@ class baseOpViewProviderProxy:
                         def norm_sweep(s):
                             if is_ccw:
                                 if s <= 0:
-                                    s += 2*math.pi
+                                    s += 2 * math.pi
                             else:
                                 if s >= 0:
-                                    s -= 2*math.pi
+                                    s -= 2 * math.pi
                             return s
                         ns1 = norm_sweep(s1)
                         ns2 = norm_sweep(s2)
@@ -1117,7 +1115,7 @@ class baseOpViewProviderProxy:
                         self.cur = new_pt
 
                     # ensure final endpoint exact
-                    if (abs(self.cur[0]-end[0]) > 1e-9) or (abs(self.cur[1]-end[1]) > 1e-9) or (abs(self.cur[2]-end[2]) > 1e-9):
+                    if (abs(self.cur[0] - end[0]) > 1e-9) or (abs(self.cur[1] - end[1]) > 1e-9) or (abs(self.cur[2] - end[2]) > 1e-9):
                         append_segment(feed_coords, feed_idx, self.cur, end)
                         self.cur = end
 
@@ -1169,7 +1167,6 @@ class baseOpViewProviderProxy:
 
                 elif up.startswith("G84"):
                     # tapping cycle
-                    code = int(up[1:3])
                     up = up[3:]
 
                     tokens = up.split(" ")
@@ -1215,12 +1212,12 @@ class baseOpViewProviderProxy:
                     if len(parts) == 2:  # REPEAT Start
                         label_begin = parts[1] if len(parts) > 1 else None
                         n_times = 1
-                        if not label_begin in self.mem.labels:
+                        if label_begin not in self.mem.labels:
                             raise repeatGcodeException("Invalid REPEAT syntax, label for start not found")
                     elif len(parts) == 3:  # REPEAT Start P=
                         label_begin = parts[1] if len(parts) > 1 else None
 
-                        if not label_begin in self.mem.labels:
+                        if label_begin not in self.mem.labels:
                             raise repeatGcodeException("Invalid REPEAT syntax, label for start not found")
 
                         if not parts[2].startswith("P="):
@@ -1239,11 +1236,11 @@ class baseOpViewProviderProxy:
                     elif len(parts) == 4:  # REPEAT Start End P=
                         label_begin = parts[1]
 
-                        if not label_begin in self.mem.labels:
+                        if label_begin not in self.mem.labels:
                             raise repeatGcodeException("Invalid REPEAT syntax, label for start not found")
 
                         label_end = parts[2]
-                        if not label_end in self.mem.labels:
+                        if label_end not in self.mem.labels:
                             raise repeatGcodeException("Invalid REPEAT syntax, label for end not found")
                         if not parts[3].startswith("P="):
                             raise repeatGcodeException("Invalid REPEAT syntax, expected P= for number of times")
@@ -1274,7 +1271,7 @@ class baseOpViewProviderProxy:
                                 self.line = start_line
 
                             else:
-                                saved_line = self.line-1
+                                saved_line = self.line - 1
                                 self.line = start_line
                                 restore = saved_line
 
@@ -1292,7 +1289,7 @@ class baseOpViewProviderProxy:
                     # variable
                     # up.removeprefix("R")
                     number = int(up[1:up.index("=")])
-                    value = float(up[up.index("=")+1:])
+                    value = float(up[up.index("=") + 1:])
                     # if not hasattr(fp, "R{}".format(number)):
                     #     App.Console.PrintMessage("Adding property R{} to object\n".format(number))
                     try:
@@ -1396,7 +1393,6 @@ class baseOpViewProviderProxy:
 
     def startSimulation(self, vobj):
         """Start the G-code simulation animation"""
-        vp = vobj.Proxy
         # vp.animator = GcodeAnimator(vp)
         # vp.animator.load_paths(include_rapid=True)
         # vp.animator.start(speed_mm_s=20.0)

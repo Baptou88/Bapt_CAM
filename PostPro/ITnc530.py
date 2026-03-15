@@ -1,6 +1,5 @@
 import math
 from BasePostPro import BasePostPro
-import FreeCAD as App
 
 
 class PostPro(BasePostPro):
@@ -32,7 +31,6 @@ class PostPro(BasePostPro):
         return blk
 
     def transformGCode(self, gcode):
-        current_move = None
         current_pos = {'X': 0.0, 'Y': 0.0, 'Z': 0.0}
         lines = gcode.split('\n')
         retour = []
@@ -43,7 +41,7 @@ class PostPro(BasePostPro):
 
             if line.startswith('G'):
                 space = line.index(' ')
-                new_line = line[space+1:]
+                new_line = line[space + 1:]
             else:
                 new_line = line
 
@@ -119,13 +117,11 @@ class PostPro(BasePostPro):
 
     def toolChange(self, tool, cam_project):
         tool_id = getattr(tool, 'Id', None)
-        tool_name = getattr(tool, 'Label', None)
         spindle = getattr(tool, 'Speed', None).Value
         Feed = getattr(tool, 'Feed', None).Value
         return f"TOOL CALL {tool_id} Z S{spindle} DL+0 DR+0\nL R0 F{Feed} M3\n"
 
     def G81(self, obj):
-        doc = App.ActiveDocument
         geom = obj.DrillGeometry
         if geom and hasattr(geom, 'DrillPositions'):
             points = geom.DrillPositions

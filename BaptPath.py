@@ -129,7 +129,7 @@ class GcodeEditorTaskPanel:
         # pos est un QPoint avec les coordonnées du curseur
         cursor = self.textEdit.textCursor()
         line = cursor.blockNumber() + 1  # blockNumber est 0-based
-        col = cursor.columnNumber() + 1    # columnNumber est 0-based
+        # col = cursor.columnNumber() + 1    # columnNumber est 0-based
         # App.Console.PrintMessage(f"Cursor position: Line {line}, Column {col}\n")
         self.obj.ViewObject.Cursor = line  # Mettre à jour la propriété Cursor de l'objet avec le numéro de ligne (1-based)
 
@@ -355,13 +355,13 @@ class GcodeAnimator:
             if include_rapid and hasattr(vp, "rapid_coords"):
                 rc = getattr(vp, "rapid_coords") or []
                 for i in range(0, len(rc), 2):
-                    if i+1 < len(rc):
-                        segs.append(("rapid", rc[i], rc[i+1]))
+                    if i + 1 < len(rc):
+                        segs.append(("rapid", rc[i], rc[i + 1]))
             if hasattr(vp, "feed_coords"):
                 fc = getattr(vp, "feed_coords") or []
                 for i in range(0, len(fc), 2):
-                    if i+1 < len(fc):
-                        segs.append(("feed", fc[i], fc[i+1]))
+                    if i + 1 < len(fc):
+                        segs.append(("feed", fc[i], fc[i + 1]))
         return segs
 
     def start(self, speed_mm_s=20.0, rapid_speed_mm_s=100.0):
@@ -412,7 +412,7 @@ class GcodeAnimator:
         dx = p1[0] - p0[0]
         dy = p1[1] - p0[1]
         dz = p1[2] - p0[2]
-        self.seg_len = math.sqrt(dx*dx + dy*dy + dz*dz)
+        self.seg_len = math.sqrt(dx * dx + dy * dy + dz * dz)
         self.seg_pos = 0.0
         self._set_marker_position(p0)
 
@@ -492,9 +492,9 @@ class GcodeAnimator:
             if distance < remaining:
                 # advance within current segment
                 t = (self.seg_pos + distance) / self.seg_len
-                x = p0[0] + (p1[0]-p0[0]) * t
-                y = p0[1] + (p1[1]-p0[1]) * t
-                z = p0[2] + (p1[2]-p0[2]) * t
+                x = p0[0] + (p1[0] - p0[0]) * t
+                y = p0[1] + (p1[1] - p0[1]) * t
+                z = p0[2] + (p1[2] - p0[2]) * t
                 self.seg_pos += distance
                 self._set_marker_position((x, y, z))
                 break  # un seul tick par appel timer
@@ -640,7 +640,7 @@ class GcodeAnimationControl():
         self.operationsListWidget = QtGui.QListWidget()
         if self.animator.operations:
             for i, op in enumerate(self.animator.operations):
-                item_text = f"{i+1}. {op.Label if hasattr(op, 'Label') else op.Name}"
+                item_text = f"{i + 1}. {op.Label if hasattr(op, 'Label') else op.Name}"
                 self.operationsListWidget.addItem(item_text)
         layoutOperations.addWidget(QtGui.QLabel("Opérations à simuler:"))
         layoutOperations.addWidget(self.operationsListWidget)

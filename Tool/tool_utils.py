@@ -89,7 +89,6 @@ def _make_torus_endmill(radius, height, torus_r):
 
     # Key dimensions
     flat_radius = radius - torus_r          # radius of the flat bottom part
-    arc_centre = App.Vector(flat_radius, 0, torus_r)  # centre of the fillet arc
 
     # Profile points (in the XZ half-plane, revolved around Z)
     p1 = App.Vector(radius, 0, height)      # top outer edge

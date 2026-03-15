@@ -9,10 +9,6 @@ import sys
 import BaptUtilities
 from utils import Log
 
-try:
-    from pivy import coin  # type: ignore
-except ImportError:
-    App.Console.PrintError("Impossible d'importer le module coin. La mise en surbrillance des arêtes ne fonctionnera pas correctement.\n")
 
 DEBUG = False
 if DEBUG:
@@ -208,7 +204,6 @@ class ContourGeometry(ContourBaseGeom):
         Trie et oriente les edges pour qu'ils forment une chaîne continue.
         Gère tous les cas de correspondance de sommets.
         """
-        import Part  # type: ignore
 
         if not edges:
             return []
@@ -554,10 +549,6 @@ class ViewProviderContourGeometry:
         """Définit le mode d'affichage"""
         return mode
 
-    def onChanged(self, vobj, prop):
-        """Appelé lorsqu'une propriété du ViewProvider est modifiée"""
-        pass
-
     def setupContextMenu(self, vobj, menu):
         """Configuration du menu contextuel"""
         action = menu.addAction("Edit")
@@ -605,20 +596,20 @@ class ViewProviderContourGeometry:
         for i, edge in enumerate(edges):
             obj_ref = edge[0]
             sub_names = edge[1]
-            sheet.set("A" + str(i+1), str(i))
+            sheet.set("A" + str(i + 1), str(i))
             for j, sub_name in enumerate(sub_names):
-                sheet.set("B" + str(i+j+1), str(sub_name))
+                sheet.set("B" + str(i + j + 1), str(sub_name))
                 edge_ref = obj_ref.Shape.getElement(sub_name)
                 start_point = edge_ref.Vertexes[0].Point
                 end_point = edge_ref.Vertexes[-1].Point
-                sheet.set("C" + str(i+j+1), str(start_point))
-                sheet.set("D" + str(i+j+1), str(end_point))
+                sheet.set("C" + str(i + j + 1), str(start_point))
+                sheet.set("D" + str(i + j + 1), str(end_point))
                 if isinstance(edge_ref.Curve, Part.Circle):
-                    sheet.set("E" + str(i+j+1), "Cercle")
+                    sheet.set("E" + str(i + j + 1), "Cercle")
                 elif isinstance(edge_ref.Curve, Part.Line):
-                    sheet.set("E" + str(i+j+1), "Ligne")
+                    sheet.set("E" + str(i + j + 1), "Ligne")
                 else:
-                    sheet.set("E" + str(i+j+1), "Inconnu")
+                    sheet.set("E" + str(i + j + 1), "Inconnu")
         pass
 
     def setEdit(self, vobj, mode=0):

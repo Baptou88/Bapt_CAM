@@ -12,7 +12,7 @@ import Op.Gui.ContournageTaskPanel as ContournageTaskPanel
 from Op.BaseOp import baseOp
 
 import math
-import sys
+
 
 # compensation = ["Ordinateur", "Machine", "Ordinateur + G41/G42", "Aucune"]
 
@@ -23,7 +23,8 @@ class compensation(enum.Enum):
     Ordinateur_G41_G42 = 2
     Aucune = 3
 
-    def __repr__(self): return f"{self.name}"
+    def __repr__(self):
+        return f"{self.name}"
 
 
 approach_types = ["Tangentielle", "Perpendiculaire", "Perp+Arc", "Hélicoïdale"]
@@ -134,7 +135,6 @@ class ContournageCycle(baseOp):
             return
         super().execute(obj)
 
-        obj.Shape = Part.Shape()  # TODO ligne à mettre après le calcul du shape pour éviter le recalcul à chaque étape
         all_shapes = []
         gcode = GcodeWriter.GcodeWriter()
 
@@ -324,8 +324,8 @@ class ContournageCycle(baseOp):
                 a = float(obj.ApproachRetractLength) - r
                 angle = math.asin(r / a)
                 D = App.Vector(
-                    ((a*a - r*r) / a) * math.cos(angle),
-                    -((r / a) * math.sqrt(a*a - r*r)) * math.sin(angle), 0)
+                    ((a * a - r * r) / a) * math.cos(angle),
+                    -((r / a) * math.sqrt(a * a - r * r)) * math.sin(angle), 0)
                 gcode.linearMove(
                     {'X': approach_pt.x + D.x, 'Y': approach_pt.y + D.y},
                     feed=feed)

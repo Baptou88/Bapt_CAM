@@ -199,7 +199,8 @@ class Stock:
                 cx = modelBbox.Center.x
                 cy = modelBbox.Center.y
                 zMin = modelBbox.ZMin
-                cyl = Part.makeCylinder(radius, height, App.Vector(cx, cy, zMin))
+                cyl = Part.makeCylinder(
+                    radius, height, App.Vector(cx, cy, zMin))
                 obj.Shape = cyl
         obj.testShape = obj.Shape
 
@@ -398,7 +399,8 @@ class CamProject:
             obj.PostProcessor = ["Siemens828"]  # Valeur par défaut
 
         if not hasattr(obj, "toolChangePos"):
-            obj.addProperty("App::PropertyVector", "toolChangePos", "Project", "Origine de la pièce")
+            obj.addProperty("App::PropertyVector", "toolChangePos",
+                            "Project", "Origine de la pièce")
             obj.toolChangePos = App.Vector(0, 0, 250)
 
         # Créer le groupe Operations
@@ -450,11 +452,6 @@ class CamProject:
                 obj.Model = clone
                 obj.addObject(clone)
                 clone.recompute()
-                bbox = selected_obj.Shape.BoundBox
-                # App.Console.PrintMessage(f"Dimensions: X={bbox.XLength} Y={bbox.YLength} Z={bbox.ZLength}\n")
-                # print(f"X Range: {bbox.XMin} to {bbox.XMax}")
-                # print(f"Y Range: {bbox.YMin} to {bbox.YMax}")
-                # print(f"Z Range: {bbox.ZMin} to {bbox.ZMax}")
 
     def getOperationsGroup(self, obj):
         """Obtenir ou créer le groupe Operations"""
@@ -623,13 +620,16 @@ class CamProject:
             expr_set.Label = "Expressions"
             self.Object.addObject(expr_set)
 
-            expr_set.addProperty("App::PropertyFloat", "safeZ", "Expressions", "Hauteur de sécurité pour les déplacements rapides")
-            expr_set.addProperty("App::PropertyFloat", "clearanceZ", "Expressions", "Hauteur de sécurité pour les déplacements rapides")
+            expr_set.addProperty("App::PropertyFloat", "safeZ", "Expressions",
+                                 "Hauteur de sécurité pour les déplacements rapides")
+            expr_set.addProperty("App::PropertyFloat", "clearanceZ", "Expressions",
+                                 "Hauteur de sécurité pour les déplacements rapides")
             if hasattr(expr_set, "ExpressionEngine"):
                 expr_set.setExpression("safeZ", "2mm")
                 stock = self.getStock(self.Object)
                 if stock and hasattr(stock, "ZPos") and hasattr(stock, "ZNeg"):
-                    expr_set.setExpression("clearanceZ", f"<<{stock.Name}>>.Shape.BoundBox.ZMax + 10")
+                    expr_set.setExpression(
+                        "clearanceZ", f"<<{stock.Name}>>.Shape.BoundBox.ZMax + 10")
 
         return expr_set
 
@@ -715,19 +715,6 @@ class ViewProviderCamProject:
         self.setEdit(vobj)
         return True
 
-    def updateData(self, obj, prop):
-        """Appelé quand une propriété de l'objet est modifiée"""
-        pass
-
-    def onChanged(self, vobj, prop):
-        """Appelé quand une propriété du ViewProvider est modifiée"""
-        pass
-
-    def doubleClicked(self, vobj):
-        """Gérer le double-clic"""
-        self.setEdit(vobj)
-        return True
-
     def deleteObjectsOnReject(self):
         """Indique si l'objet doit être supprimé si l'édition est annulée"""
         return hasattr(self, "deleteOnReject") and self.deleteOnReject
@@ -759,11 +746,6 @@ class ViewProviderCamProject:
         Gui.Control.closeDialog()
         return True
 
-    def doubleClicked(self, vobj):
-        """Gérer le double-clic"""
-        self.setEdit(vobj)
-        return True
-
     def __getstate__(self):
         """Sérialisation"""
         return None
@@ -775,7 +757,8 @@ class ViewProviderCamProject:
 
 class operationGroupViewProviderProxy():
     def __init__(self, vobj):
-        App.Console.PrintMessage("Initializing operation group view provider proxy for: {}\n".format(__class__.__name__))
+        App.Console.PrintMessage(
+            "Initializing operation group view provider proxy for: {}\n".format(__class__.__name__))
         vobj.Proxy = self
         self.Object = vobj.Object
 
@@ -806,24 +789,28 @@ class operationGroupViewProviderProxy():
 
     def simulateAllOperations(self, vobj):
         """Simuler toutes les opérations dans le groupe"""
-        from BaptPath import GcodeAnimationControl, GcodeAnimator
+        from BaptPath import GcodeAnimationControl
 
-        App.Console.PrintMessage("Simulating all operations in group: {}\n".format(vobj.Object.Name))
+        App.Console.PrintMessage(
+            "Simulating all operations in group: {}\n".format(vobj.Object.Name))
 
         # Collecter toutes les opérations actives
         operations = []
         for child in vobj.Object.Group:
             # Gérer les liens
-            actual_obj = child.LinkedObject if hasattr(child, 'LinkedObject') else child
+            actual_obj = child.LinkedObject if hasattr(
+                child, 'LinkedObject') else child
 
             # Vérifier que l'objet a un ViewObject et est actif
             if hasattr(actual_obj, "ViewObject") and hasattr(actual_obj, "Active"):
                 if actual_obj.Active:
                     operations.append(actual_obj)
-                    App.Console.PrintMessage(f"  Adding operation: {actual_obj.Label}\n")
+                    App.Console.PrintMessage(
+                        f"  Adding operation: {actual_obj.Label}\n")
 
         if not operations:
-            App.Console.PrintWarning("Aucune opération active trouvée dans le groupe\n")
+            App.Console.PrintWarning(
+                "Aucune opération active trouvée dans le groupe\n")
             return False
 
         # Afficher le panneau de contrôle avec toutes les opérations

@@ -1,8 +1,8 @@
-import sys
+
+import BaptUtilities
 from ContourBaseGeom import ContourBaseGeom
 import FreeCAD as App
 import FreeCADGui as Gui
-import Part
 
 
 class ContourEditableGeometry(ContourBaseGeom):
@@ -109,6 +109,7 @@ class ViewProviderContourEditableGeometry:
         self.Object = vobj.Object
 
     def getIcon(self):
+        return BaptUtilities.getIconPath("ContourEditable.svg")
         return ":/icons/Sketcher_NewSketch.svg"
 
     def attach(self, vobj):
@@ -156,6 +157,7 @@ def createContourEditableGeometry(cam_project):
 
     # Ajouter le ViewProvider
     if App.GuiUp and obj.ViewObject:
+        obj.ViewObject.addExtension("Gui::ViewProviderGroupExtensionPython")
         ViewProviderContourEditableGeometry(obj.ViewObject)
 
     # Placer l'objet dans le même groupe que les autres géométries du projet

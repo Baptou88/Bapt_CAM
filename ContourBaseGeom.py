@@ -54,15 +54,15 @@ class ContourBaseGeom:
             edges = self.getEdges(obj)
 
             if not edges:
-                App.Console.PrintError("Aucune arête valide trouvée.\n")
+                # App.Console.PrintError("Aucune arête valide trouvée.\n")
                 return
 
             # App.Console.PrintMessage(f"Nombre d'arêtes collectées: {len(edges)}\n")
 
             # Vérifier si une arête est sélectionnée
-            selected_index = -1
-            if hasattr(obj, "SelectedEdgeIndex"):
-                selected_index = obj.SelectedEdgeIndex
+            # selected_index = -1
+            # if hasattr(obj, "SelectedEdgeIndex"):
+            #     selected_index = obj.SelectedEdgeIndex
 
             # Créer des arêtes ajustées à la hauteur Zref et à depth
             adjusted_edges_zref = []
@@ -105,8 +105,8 @@ class ContourBaseGeom:
                 #     edge = edge.reversed()
                 current_edge = edge
                 bon_sens = None
-                if i < len(sorted_edges)-1:
-                    next_edge = sorted_edges[i+1]
+                if i < len(sorted_edges) - 1:
+                    next_edge = sorted_edges[i + 1]
                     if current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[0].Point) < 1e-6:
                         bon_sens = True
                         # App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
@@ -123,7 +123,7 @@ class ContourBaseGeom:
                         # App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")
                         pass
                 else:
-                    prev_edge = sorted_edges[i-1]
+                    prev_edge = sorted_edges[i - 1]
 
                     if prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[0].Point) < 1e-6:
                         bon_sens = True
@@ -210,7 +210,7 @@ class ContourBaseGeom:
                 exc_type, exc_value, exc_traceback = sys.exc_info()
                 line_number = exc_traceback.tb_lineno
                 App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
-                App.Console.PrintError(f"[DEBUG] Les arêtes transmises à Part.Wire ne sont pas chaînées ou sont invalides.\n")
+                App.Console.PrintError("[DEBUG] Les arêtes transmises à Part.Wire ne sont pas chaînées ou sont invalides.\n")
                 # Essayer de créer une forme composite si le fil échoue
                 try:
                     all_edges = adjusted_edges_zref
@@ -220,7 +220,7 @@ class ContourBaseGeom:
                     obj.testShape = compound
                     # App.Console.PrintMessage("Forme composite créée à la place du fil.\n")
                     return
-                except Exception as e2:
+                except Exception:
                     # App.Console.PrintError(f"Impossible de créer une forme composite: {str(e2)}\n")
                     return
 

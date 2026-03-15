@@ -82,7 +82,7 @@ class DrillGeometry:
                 if face.Surface.TypeId == 'Part::GeomCylinder':
                     # Récupérer le centre de la face cylindrique
                     center = face.Surface.Center
-                    axis = face.Surface.Axis
+                    # axis = face.Surface.Axis
 
                     # Trouver le point le plus haut de la face
                     z_max = float('-inf')

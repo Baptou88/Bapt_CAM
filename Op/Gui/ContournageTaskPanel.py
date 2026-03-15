@@ -1,11 +1,12 @@
-import os
+from BaptUtilities import find_cam_project
+import ContourBaseGeom
 import FreeCAD as App
 import FreeCADGui as Gui
 from Op import OpContournage
-from PySide import QtCore, QtGui
+from PySide import QtGui
 from Tool.ToolTaskPannel import ToolTaskPanel
 from Gui.cuttingConditionTaskPanel import cuttingConditionTaskPanel
-from utils import BQuantitySpinBox, Log
+from utils import BQuantitySpinBox
 
 
 class ContournageTaskPanel:
@@ -25,6 +26,16 @@ class ContournageTaskPanel:
         self.form = [self.ui1, ui2.getForm(), self.cuttingConditionPanel.getForm()]
 
         layout = QtGui.QFormLayout(self.ui1)
+
+        # ComboBox pour sélectionner la géométrie du contour
+        self.geometryCombo = QtGui.QComboBox()
+        contourGeometryLayout = QtGui.QHBoxLayout()
+        contourGeometryGroup = QtGui.QGroupBox("Géométrie du contour")
+        contourGeometryGroup.setLayout(contourGeometryLayout)
+
+        contourGeometryLayout.addWidget(self.geometryCombo)
+        layout.addWidget(contourGeometryGroup)
+
         # Groupe Outil
         toolGroup = QtGui.QGroupBox("Paramètres d'outil")
         toolLayout = QtGui.QFormLayout()
@@ -136,7 +147,7 @@ class ContournageTaskPanel:
         self.pathColor = QtGui.QPushButton()
         self.pathColor.setAutoFillBackground(True)
         color = obj.ViewObject.PathColor
-        self.pathColor.setStyleSheet(f"background-color: rgb({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)})")
+        self.pathColor.setStyleSheet(f"background-color: rgb({int(color[0] * 255)}, {int(color[1] * 255)}, {int(color[2] * 255)})")
         self.pathColor.clicked.connect(self.chooseColor)
         displayLayout.addRow("Couleur de la trajectoire:", self.pathColor)
 
@@ -170,8 +181,11 @@ class ContournageTaskPanel:
         infoGroup.setLayout(infoLayout)
         layout.addWidget(infoGroup)
 
+        self.updateGeometryList()
+
         # Connecter les signaux
         # self.toolDiameter.valueChanged.connect(self.updateContournage)
+        self.geometryCombo.currentTextChanged.connect(self.geometryChanged)
         self.cutDepth.valueChanged.connect(self.updateContournage)
         # self.stepDown.valueChanged.connect(self.updateContournage)
         self.direction.currentTextChanged.connect(self.updateContournage)
@@ -180,6 +194,37 @@ class ContournageTaskPanel:
 
         if self.obj.Tool:
             self.obj.Tool.Visibility = True
+
+    def updateGeometryList(self):
+        """Met à jour la liste des géométries de contournage disponibles"""
+        self.geometryCombo.clear()
+
+        project = find_cam_project(self.obj)
+        if project is not None:
+            objList = project.Proxy.getGeometryGroup(project).Group
+        else:
+            objList = App.ActiveDocument.Objects
+        # Parcourir tous les objets du document
+        for obj in objList:
+            if hasattr(obj, "Proxy") and isinstance(obj.Proxy, ContourBaseGeom.ContourBaseGeom):
+                self.geometryCombo.addItem(obj.Label, obj.Name)
+
+        # Sélectionner la géométrie actuelle si elle existe
+        contour_geom = getattr(self.obj, "ContourGeometry", None)
+        geom_name = getattr(contour_geom, "Name", None) if contour_geom is not None else None
+        if geom_name:
+            index = self.geometryCombo.findData(geom_name)
+            if index >= 0:
+                self.geometryCombo.setCurrentIndex(index)
+
+    def geometryChanged(self, index):
+        """Appelé quand la géométrie sélectionnée change"""
+        # Mettre à jour la géométrie
+        if self.geometryCombo.currentIndex() >= 0:
+            objName = self.geometryCombo.itemData(self.geometryCombo.currentIndex())
+            geom = App.ActiveDocument.getObject(objName)
+            if geom:
+                self.obj.ContourGeometry = geom
 
     def chooseColor(self):
         """Ouvre un sélecteur de couleur"""
@@ -197,10 +242,10 @@ class ContournageTaskPanel:
         if self.obj.Compensation == "Machine" or self.obj.Compensation == "Ordinateur + G41/G42":
             if self.obj.ApproachType != "Perpendiculaire":
                 self.approachType.setCurrentText("Perpendiculaire")
-                App.Console.PrintMessage(f'Approche Perpendiculaire exigée !\n')
+                App.Console.PrintMessage('Approche Perpendiculaire exigée !\n')
             if self.obj.RetractType != "Perpendiculaire":
                 self.retractType.setCurrentText("Perpendiculaire")
-                App.Console.PrintMessage(f'Sortie Perpendiculaire exigée !\n')
+                App.Console.PrintMessage('Sortie Perpendiculaire exigée !\n')
         self.updateContournage()
 
     def updateContournage(self):
@@ -242,9 +287,9 @@ class ContournageTaskPanel:
     def getStandardButtons(self):
         """Définir les boutons standard"""
         return (
-            QtGui.QDialogButtonBox.Ok
-            | QtGui.QDialogButtonBox.Apply
-            | QtGui.QDialogButtonBox.Cancel
+            QtGui.QDialogButtonBox.Ok |
+            QtGui.QDialogButtonBox.Apply |
+            QtGui.QDialogButtonBox.Cancel
         )
 
     def clicked(self, button):

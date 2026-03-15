@@ -127,7 +127,7 @@ class CreateHighlightCommand:
 
     def Activated(self):
         doc = App.ActiveDocument
-        project = Gui.activeView().getActiveObject("camproject")
+
         sel = Gui.Selection.getSelection()
 
         obj = doc.addObject("Part::FeaturePython", "Highlight_Collisions")

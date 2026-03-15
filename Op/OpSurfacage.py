@@ -3,12 +3,10 @@ from Op.BaseOp import baseOpViewProviderProxy
 import FreeCAD as App
 import FreeCADGui as Gui
 from Op.BaseOp import baseOp
-from PySide import QtGui
+from PySide import QtGui, QtCore
 from Tool.ToolTaskPannel import ToolTaskPanel
-import Part
 import BaptUtilities
 
-from PySide import QtGui, QtCore
 
 from utils import Log, PointSelectionObserver
 from utils import BQuantitySpinBox

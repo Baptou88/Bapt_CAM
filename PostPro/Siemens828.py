@@ -1,4 +1,3 @@
-import FreeCAD as App
 import BasePostPro
 
 Name = "Siemens828D"
@@ -42,13 +41,11 @@ class PostPro(BasePostPro.BasePostPro):
         return f"WORKPIECE(,\"\",,\"BOX\",112,{bb.ZMax},{bb.ZMin},-80,{bb.XMin},{bb.YMin},{bb.XMax},{bb.YMax})"
 
     def toolChange(self, tool, cam_project):
-        tool_id = getattr(tool, 'Id', None)
         tool_name = getattr(tool, 'Name', None)
         spindle = getattr(tool, 'Speed', None).getValueAs("mm/min")  # FIXME Speed
         return f"\nT=\"{tool_name}\" D1\nM6\nS{spindle} M3\n"
 
     def G81(self, obj):
-        doc = App.ActiveDocument
         geom = obj.DrillGeometry
         if geom and hasattr(geom, 'DrillPositions'):
             points = geom.DrillPositions
@@ -74,7 +71,6 @@ class PostPro(BasePostPro.BasePostPro):
         return gcode_lines
 
     def G84(self, obj):
-        doc = App.ActiveDocument
         geom = obj.DrillGeometry
         if geom and hasattr(geom, 'DrillPositions'):
             points = geom.DrillPositions

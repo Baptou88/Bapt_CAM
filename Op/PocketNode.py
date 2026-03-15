@@ -58,8 +58,8 @@ class noeud:
             area = 0.0
             for i, edge in enumerate(self.wires.Edges):
 
-                if edge.Vertexes[-1].Point.distanceToPoint(self.wires.Edges[(i+1) % len(self.wires.Edges)].Vertexes[0].Point) < 1e-6 or \
-                        edge.Vertexes[-1].Point.distanceToPoint(self.wires.Edges[(i+1) % len(self.wires.Edges)].Vertexes[-1].Point) < 1e-6:
+                if edge.Vertexes[-1].Point.distanceToPoint(self.wires.Edges[(i + 1) % len(self.wires.Edges)].Vertexes[0].Point) < 1e-6 or \
+                        edge.Vertexes[-1].Point.distanceToPoint(self.wires.Edges[(i + 1) % len(self.wires.Edges)].Vertexes[-1].Point) < 1e-6:
                     # edge est dans le bon sens
                     # App.Console.PrintMessage(f'bon sens\n')
                     v1 = edge.Vertexes[0].Point
@@ -75,7 +75,7 @@ class noeud:
                 area += (v1.x - v2.x) * (v1.y + v2.y)
                 # App.Console.PrintMessage(f'area = {area}\n')
             return (area > 0)
-        except Exception as e:
+        except Exception:
             # App.Console.PrintError(f"isCCW erreur: {e}\n")
             return True
 

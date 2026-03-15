@@ -63,8 +63,6 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
     gcode_lines = [Postpro.writeHeader()]
 
     current_tool = None
-    current_spindle = None
-    current_feed = None
     current_Coolant = None
     last_op = None  # Dernière opération traitée (pour la transition)
 
@@ -118,21 +116,16 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
 
         # --- Perçage ---
         elif isinstance(obj.Proxy, DrillOp.DrillOperation):
-            tool_id = getattr(obj, 'ToolId', None)
-            tool_name = getattr(obj, 'ToolName', None)
-            spindle = getattr(obj, 'SpindleSpeed', None)
+
             feed = getattr(obj, 'FeedRate', None).Value
             safe_z = getattr(obj, 'SafeHeight').Value
             final_z = getattr(obj, 'FinalDepth', -5.0).Value
             cycle = getattr(obj, 'CycleType', "Simple")
-            dwell = getattr(obj, 'DwellTime', 0.5)
             peck = getattr(obj, 'PeckDepth', 2.0).Value
-            retract = getattr(obj, 'Retract', 1.0).Value
 
             gcode_lines.append(Postpro.writeComment(f"Perçage: {obj.Label}"))
             points = []
             if hasattr(obj, 'DrillGeometry'):
-                doc = App.ActiveDocument
                 geom = obj.DrillGeometry
                 if geom and hasattr(geom, 'DrillPositions'):
                     points = geom.DrillPositions
@@ -141,35 +134,35 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
                 gcode_lines.append(Postpro.G81(obj))
 
             elif cycle == "Peck":
-                commentaire = Postpro.writeComment(f"Cycle: G83 - Perçage par reprise")
+                commentaire = Postpro.writeComment("Cycle: G83 - Perçage par reprise")
                 gcode_lines.append(commentaire)
                 for pt in points:
                     gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
                     gcode_lines.append(f"G83 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} Q{peck:.3f} F{feed}")
-                    gcode_lines.append(f"G80")
+                    gcode_lines.append("G80")
 
             elif cycle == "Tapping":
-                commentaire = Postpro.writeComment(f"Cycle: G84 - Taraudage")
+                commentaire = Postpro.writeComment("Cycle: G84 - Taraudage")
                 gcode_lines.append(commentaire)
                 gcode_lines.append(Postpro.G84(obj))
 
             elif cycle == "Boring":
-                commentaire = Postpro.writeComment(f"Cycle: G85 - Alésage")
+                commentaire = Postpro.writeComment("Cycle: G85 - Alésage")
                 gcode_lines.append(commentaire)
                 for pt in points:
                     gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
                     gcode_lines.append(f"G85 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
-                    gcode_lines.append(f"G80")
+                    gcode_lines.append("G80")
             elif cycle == "Reaming":
-                gcode_lines.append(f"(Cycle: G85 - Alésage/finition)")
-                commentaire = Postpro.writeComment(f"Cycle: Contournage personnalisé")
+                gcode_lines.append("(Cycle: G85 - Alésage/finition)")
+                commentaire = Postpro.writeComment("Cycle: Contournage personnalisé")
                 gcode_lines.append(commentaire)
                 for pt in points:
                     gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
                     gcode_lines.append(f"G85 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
-                    gcode_lines.append(f"G80")
+                    gcode_lines.append("G80")
             elif cycle == "Contournage":
-                commentaire = Postpro.writeComment(f"Cycle: Contournage personnalisé")
+                commentaire = Postpro.writeComment("Cycle: Contournage personnalisé")
                 gcode_lines.append(commentaire)
                 gcode_lines.append(obj.Gcode)
 
@@ -396,17 +389,17 @@ class PostProcessDialog(QtGui.QDialog):
         row = self.listWidget.currentRow()
         if row > 0:
             item = self.listWidget.takeItem(row)
-            self.listWidget.insertItem(row-1, item)
-            self.listWidget.setCurrentRow(row-1)
+            self.listWidget.insertItem(row - 1, item)
+            self.listWidget.setCurrentRow(row - 1)
 
             self.updateOrder()
 
     def move_item_down(self):
         row = self.listWidget.currentRow()
-        if row < self.listWidget.count()-1 and row >= 0:
+        if row < self.listWidget.count() - 1 and row >= 0:
             item = self.listWidget.takeItem(row)
-            self.listWidget.insertItem(row+1, item)
-            self.listWidget.setCurrentRow(row+1)
+            self.listWidget.insertItem(row + 1, item)
+            self.listWidget.setCurrentRow(row + 1)
 
             self.updateOrder()
 

@@ -1,15 +1,14 @@
 import BaptDrillGeometry
+from BaptUtilities import find_cam_project
 from Gui.cuttingConditionTaskPanel import cuttingConditionTaskPanel
 import Op.DrillOp as DrillOp
-from BaptUtilities import find_cam_project, getIconPath
 import FreeCAD as App
 import FreeCADGui as Gui
-from Op.utils import CoolantMode
-from PySide import QtCore, QtGui
+from PySide import QtGui
 
-from BaptTools import ToolDatabase, Tool
+from BaptTools import ToolDatabase
 from Tool.ToolTaskPannel import ToolTaskPanel
-from utils import BQuantitySpinBox, Log
+from utils import BQuantitySpinBox
 
 
 class DrillOperationTaskPanel:
@@ -285,7 +284,8 @@ class DrillOperationTaskPanel:
             # Trouver un outil correspondant au diamètre
             diameter = obj.DrillDiameter.Value
             try:
-                db = ToolDatabase()
+                db = ToolDatabase()  # TODO Why?
+
                 tools = db.get_all_tools()
 
                 bestTool = None
@@ -485,9 +485,9 @@ class DrillOperationTaskPanel:
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
-        return (QtGui.QDialogButtonBox.Ok
-                | QtGui.QDialogButtonBox.Apply
-                | QtGui.QDialogButtonBox.Cancel)
+        return (QtGui.QDialogButtonBox.Ok |
+                QtGui.QDialogButtonBox.Apply |
+                QtGui.QDialogButtonBox.Cancel)
 
     def clicked(self, button):
         """clicked(button) ... callback invoked when the user presses any of the task panel buttons."""

@@ -254,7 +254,7 @@ class CamProjectTaskPanel:
         self.sphere_manager_active = False
 
     def placeModel(self):
-        App.Console.PrintMessage(f'placeModel\n')
+        App.Console.PrintMessage('placeModel\n')
         if self.sphere_manager_active:
             # Désactiver le mode de positionnement
             self.sphere_manager.clear_spheres()
@@ -395,7 +395,7 @@ class CamProjectTaskPanel:
 
     def updateVisual(self):
         """Met à jour la représentation visuelle"""
-        App.Console.PrintMessage(f'updateVisual\n')
+        App.Console.PrintMessage('updateVisual\n')
         # Mettre à jour les propriétés du projet
 
         self.obj.WorkPlane = self.ui1.workPlane.currentText()
@@ -448,8 +448,8 @@ class CamProjectTaskPanel:
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
-        return (QtGui.QDialogButtonBox.Ok
-                | QtGui.QDialogButtonBox.Cancel)
+        return (QtGui.QDialogButtonBox.Ok |
+                QtGui.QDialogButtonBox.Cancel)
 
 
 class PostProcessorTaskPanel:

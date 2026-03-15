@@ -21,14 +21,12 @@ class BaptWorkbench (Workbench):
     def Initialize(self):
         """This function is executed when the workbench is first activated.
         It is executed once in a FreeCAD session."""
-        import BaptCommands
-        import BaptTools
+        import BaptCommands  # noqa F401
 
         self.addExamplePath()
 
         translate = App.Qt.translate
         import BaptUtilities
-        App.Console.PrintMessage(f'Activing tr {os.path.join(BaptUtilities.getResourcesPath(), "translations")}\n')
         Gui.addLanguagePath(os.path.join(BaptUtilities.getResourcesPath(), "translations"))
         # Gui.addLanguagePath(r"C:\\Users\\Baptou88\\AppData\\Roaming\\FreeCAD\\Mod\\Bapt\\resources\\translations")
         # Gui.addLanguagePath("C:/Users/Baptou88/AppData/Roaming/FreeCAD/Mod/Bapt/resources/translations")
@@ -41,11 +39,11 @@ class BaptWorkbench (Workbench):
         Gui.addPreferencePage(BaptPreferencesPage, QT_TRANSLATE_NOOP("QObject", "Bapt"))
         Gui.addIconPath(os.path.join(BaptUtilities.getResourcesPath(), "icons"))
 
-        self.list = ["Bapt_CreateCamProject", "Bapt_CreateSurfacage", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_HoleRecognition", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateContourEditableGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreatePocketOperation", "Bapt_CreateOrigin", "ImportMpf", "Bapt_PostProcessGCode", "Bapt_CreateProbeFace", "Bapt_TestPath", "Bapt_HighlightCollisions", "Bapt_CreateAdaptativeOperation", "Bapt_RapportProgrammation"]  # Ajout des commandes d'opération, poche et origine
+        self.list = ["Bapt_CreateCamProject", "Bapt_CreateSurfacage", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_HoleRecognition", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateContourEditableGeometry", "Bapt_CreateContour25DGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreatePocketOperation", "Bapt_CreateOrigin", "ImportMpf", "Bapt_PostProcessGCode", "Bapt_CreateProbeFace", "Bapt_TestPath", "Bapt_HighlightCollisions", "Bapt_CreateAdaptativeOperation", "Bapt_RapportProgrammation"]  # Ajout des commandes d'opération, poche et origine
         self.appendToolbar("Bapt Tools", self.list)
         self.appendToolbar("Bapt Debug", ["Bapt_CreateHotReload", "Bapt_createTestFPO"],)  # Ajout de la barre d'outils de debug
         self.appendMenu("Bapt", self.list)
-        self.appendMenu(["Bapt", "Debug"], ["Separator"]+["Bapt_CreateHotReload", "Bapt_createTestFPO"],)
+        self.appendMenu(["Bapt", "Debug"], ["Separator"] + ["Bapt_CreateHotReload", "Bapt_createTestFPO"],)
 
     def Activated(self):
         """This function is executed whenever the workbench is activated"""
@@ -73,7 +71,7 @@ class BaptWorkbench (Workbench):
         if exPath not in customFolders:
             # boite de dialogue pour demander à l'utilisateur s'il veut ajouter le dossier d'exemples
 
-            from PySide import QtWidgets, QtCore, QtGui
+            from PySide import QtWidgets
             msgBox = QtWidgets.QMessageBox()
             msgBox.setIcon(QtWidgets.QMessageBox.Question)
             msgBox.setWindowTitle("Add Examples Folder")

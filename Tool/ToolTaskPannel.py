@@ -1,9 +1,7 @@
-import sys
 from BaptUtilities import find_cam_project, getIconPath
 import FreeCAD as App
-import FreeCADGui as Gui
 
-from PySide import QtCore, QtGui
+from PySide import QtGui
 from Tool import ToolSelectorDialog, tool_utils
 
 from utils import Log

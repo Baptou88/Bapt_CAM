@@ -1,5 +1,4 @@
 import math
-from BaptPath import GcodeEditorTaskPanel
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
@@ -319,7 +318,6 @@ class AdaptativeOp(BaseOp.baseOp):
 
         except Exception as e:
             import sys
-            import traceback
             App.Console.PrintError(f"AdaptativeOp erreur: {e}\n")
             exc_type, exc_value, exc_traceback = sys.exc_info()
             line_number = exc_traceback.tb_lineno
@@ -526,8 +524,8 @@ class AdaptativeOp(BaseOp.baseOp):
             # Vérifier si le wire est entièrement dans le stock
             # en comparant la longueur clippée vs originale
             clipped_length = sum(w.Length for w in clipped)
-            is_complete = (abs(clipped_length - offset_wire.Length)
-                           < margin * 10)
+            is_complete = (abs(clipped_length - offset_wire.Length) <
+                           margin * 10)
 
             if is_complete:
                 pass_data.append((offset_wire, True, [offset_wire]))
@@ -661,8 +659,6 @@ class AdaptativeOp(BaseOp.baseOp):
                     else:
                         prev_end = seg_end
 
-                prev_wire = None
-
                 Log.baptDebug(
                     f"Passe {pass_idx}: clippé, "
                     f"{len(effective_wires)} segment(s)")
@@ -736,8 +732,8 @@ class AdaptativeOp(BaseOp.baseOp):
 
         # ---- Court-circuit : wire entièrement dans le stock ? ------------
         wbb = wire.BoundBox
-        if (wbb.XMin >= sx_min and wbb.XMax <= sx_max
-                and wbb.YMin >= sy_min and wbb.YMax <= sy_max):
+        if (wbb.XMin >= sx_min and wbb.XMax <= sx_max and
+                wbb.YMin >= sy_min and wbb.YMax <= sy_max):
             if not (face_ok and stock_face is not None):
                 # Stock rectangulaire → BBox suffit
                 return [wire]
@@ -753,8 +749,8 @@ class AdaptativeOp(BaseOp.baseOp):
                 return [wire]
 
         # ---- Court-circuit : wire entièrement hors du stock ? ------------
-        if (wbb.XMax < sx_min or wbb.XMin > sx_max
-                or wbb.YMax < sy_min or wbb.YMin > sy_max):
+        if (wbb.XMax < sx_min or wbb.XMin > sx_max or
+                wbb.YMax < sy_min or wbb.YMin > sy_max):
             return []
 
         def find_intersection_params(edge):
@@ -768,8 +764,8 @@ class AdaptativeOp(BaseOp.baseOp):
 
             # Pré-test rapide : edge entièrement dans la BBox du stock ?
             ebb = edge.BoundBox
-            edge_in_bbox = (ebb.XMin >= sx_min and ebb.XMax <= sx_max
-                            and ebb.YMin >= sy_min and ebb.YMax <= sy_max)
+            edge_in_bbox = (ebb.XMin >= sx_min and ebb.XMax <= sx_max and
+                            ebb.YMin >= sy_min and ebb.YMax <= sy_max)
 
             if edge_in_bbox and not (face_ok and stock_face is not None):
                 # Stock rectangulaire + edge dans la BBox → pas d'intersection
@@ -812,8 +808,8 @@ class AdaptativeOp(BaseOp.baseOp):
 
             # Pré-test BoundBox par edge : si entièrement hors stock, skip
             ebb = edge.BoundBox
-            if (ebb.XMax < sx_min or ebb.XMin > sx_max
-                    or ebb.YMax < sy_min or ebb.YMin > sy_max):
+            if (ebb.XMax < sx_min or ebb.XMin > sx_max or
+                    ebb.YMax < sy_min or ebb.YMin > sy_max):
                 continue
 
             params = find_intersection_params(edge)
