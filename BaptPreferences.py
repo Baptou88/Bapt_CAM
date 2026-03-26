@@ -1,10 +1,9 @@
 import os
-import FreeCAD
 import FreeCAD as App
-import FreeCADGui as Gui
-from PySide import QtCore, QtGui
+from PySide import QtCore, QtGui  # type: ignore
 import BaptUtilities
-translate = FreeCAD.Qt.translate
+
+translate = App.Qt.translate
 
 
 class BaptPreferences:
@@ -17,7 +16,8 @@ class BaptPreferences:
 
     def __init__(self):
 
-        self.ToolsDbPath: str = None
+        self.ToolsDbList: str = ""   # Liste de chemins séparés par ;;
+        self.selectedToolDb: int = 0
         self.GCodeFolderPath: str = None
         self.AutoChildUpdate: bool = None
         self.ModeAjout: int = None
@@ -38,7 +38,8 @@ class BaptPreferences:
     def saveSettings(self) -> bool:
         """Enregistrer les paramètres"""
 
-        self.preferences.SetString("ToolsDbPath", self.ToolsDbPath)
+        self.preferences.SetString("ToolsDbList", self.ToolsDbList)
+        self.preferences.SetInt("SelectedToolDb", self.selectedToolDb)
         self.preferences.SetString("GCodeFolderPath", self.GCodeFolderPath)
         self.preferences.SetBool("AutoChildUpdate", self.AutoChildUpdate)
         self.preferences.SetInt("ModeAjout", self.ModeAjout)
@@ -63,7 +64,13 @@ class BaptPreferences:
 
     def loadSettings(self) -> bool:
         """Charger les paramètres"""
-        self.ToolsDbPath = self.preferences.GetString("ToolsDbPath", "")
+        self.ToolsDbList = self.preferences.GetString("ToolsDbList", "")
+        # Migration: si l'ancien paramètre existe encore, l'importer
+        if not self.ToolsDbList:
+            old = self.preferences.GetString("ToolsDbPath", "")
+            if old:
+                self.ToolsDbList = old
+        self.selectedToolDb = self.preferences.GetInt("SelectedToolDb", 0)
         self.GCodeFolderPath = self.preferences.GetString("GCodeFolderPath", "")
         self.AutoChildUpdate = self.preferences.GetBool("AutoChildUpdate", False)
         self.ModeAjout = self.preferences.GetInt("ModeAjout", 0)
@@ -85,13 +92,25 @@ class BaptPreferences:
         self.DefaultFeedColor = (r / 255.0, g / 255.0, b / 255.0)
         return True
 
+    def getToolsDbPaths(self) -> list:
+        """Retourne la liste des chemins de bases de données"""
+        if not self.ToolsDbList:
+            return []
+        return [p for p in self.ToolsDbList.split(';;') if p]
+
+    def setToolsDbPaths(self, paths):
+        """Enregistre la liste des chemins de bases de données"""
+        self.ToolsDbList = ';;'.join(paths)
+
     def getToolsDbPath(self) -> str:
-        """Obtenir le chemin de la base de données d'outils"""
-        path = self.ToolsDbPath
-        if not path or not os.path.isdir(os.path.dirname(path)):
-            path = BaptUtilities.getDefaultToolsDbPath()
-            # Créer le dossier s'il n'existe pas
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+        """Obtenir le chemin de la base de données d'outils sélectionnée"""
+        paths = self.getToolsDbPaths()
+        idx = self.selectedToolDb
+        if paths and 0 <= idx < len(paths):
+            return paths[idx]
+        # Aucun chemin configuré -> base par défaut SQLite
+        path = BaptUtilities.getDefaultToolsDbPath()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         return path
 
     def getGCodeFolderPath(self) -> str:
@@ -121,34 +140,41 @@ class BaptPreferencesPage(QtGui.QWidget):
         tools_db_group = QtGui.QGroupBox(translate("Preferences", "Tools Database"))
         tools_db_layout = QtGui.QVBoxLayout()
 
-        from PySide.QtCore import QT_TRANSLATE_NOOP
+        from PySide.QtCore import QT_TRANSLATE_NOOP  # type: ignore
 
         # Explication
-        info_label = QtGui.QLabel(QT_TRANSLATE_NOOP("Preferences", "Configurez l'emplacement de la base de données d'outils. Si aucun chemin n'est spécifié, "
-                                  "une base de données par défaut sera créée dans le dossier utilisateur de FreeCAD."))
+        info_label = QtGui.QLabel(QT_TRANSLATE_NOOP("Preferences",
+                                                    "Gérez vos bases de données d'outils. La ligne sélectionnée (en gras) est la base active. "
+                                                    "Si la liste est vide, une base SQLite par défaut sera utilisée."))
         info_label.setWordWrap(True)
         tools_db_layout.addWidget(info_label)
 
-        # Chemin de la base de données
-        path_layout = QtGui.QHBoxLayout()
-        path_label = QtGui.QLabel("Chemin de la base de données:")
-        self.toolsDbPath = QtGui.QLineEdit()
-        self.toolsDbPath.setReadOnly(True)  # Rendre le champ en lecture seule pour éviter les erreurs
-        self.toolsDbPathButton = QtGui.QPushButton("Parcourir...")
+        # Tableau des bases de données
+        self.dbTable = QtGui.QTableWidget()
+        self.dbTable.setColumnCount(2)
+        self.dbTable.setHorizontalHeaderLabels(["Chemin", "Type"])
+        self.dbTable.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
+        self.dbTable.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
+        self.dbTable.setEditTriggers(QtGui.QAbstractItemView.NoEditTriggers)
+        self.dbTable.horizontalHeader().setStretchLastSection(False)
+        self.dbTable.horizontalHeader().setSectionResizeMode(0, QtGui.QHeaderView.Stretch)
+        self.dbTable.horizontalHeader().setSectionResizeMode(1, QtGui.QHeaderView.ResizeToContents)
+        self.dbTable.setMinimumHeight(120)
+        tools_db_layout.addWidget(self.dbTable)
 
-        path_layout.addWidget(path_label)
-        path_layout.addWidget(self.toolsDbPath)
-        path_layout.addWidget(self.toolsDbPathButton)
-        tools_db_layout.addLayout(path_layout)
-
-        # Boutons pour créer une nouvelle base de données ou utiliser celle par défaut
+        # Boutons
         buttons_layout = QtGui.QHBoxLayout()
 
-        self.createNewDbButton = QtGui.QPushButton("Créer une nouvelle base de données...")
-        self.useDefaultDbButton = QtGui.QPushButton("Utiliser la base de données par défaut")
+        self.addDbButton = QtGui.QPushButton("Ajouter...")
+        self.createNewDbButton = QtGui.QPushButton("Créer nouvelle...")
+        self.removeDbButton = QtGui.QPushButton("Supprimer")
+        self.setActiveDbButton = QtGui.QPushButton("Définir comme active")
 
+        buttons_layout.addWidget(self.addDbButton)
         buttons_layout.addWidget(self.createNewDbButton)
-        buttons_layout.addWidget(self.useDefaultDbButton)
+        buttons_layout.addWidget(self.removeDbButton)
+        buttons_layout.addStretch()
+        buttons_layout.addWidget(self.setActiveDbButton)
         tools_db_layout.addLayout(buttons_layout)
 
         tools_db_group.setLayout(tools_db_layout)
@@ -222,9 +248,10 @@ class BaptPreferencesPage(QtGui.QWidget):
         layout.addStretch()
 
         # Connect signals
-        self.toolsDbPathButton.clicked.connect(self.chooseExistingDb)
+        self.addDbButton.clicked.connect(self.addDb)
         self.createNewDbButton.clicked.connect(self.createNewDb)
-        self.useDefaultDbButton.clicked.connect(self.useDefaultDb)
+        self.removeDbButton.clicked.connect(self.removeDb)
+        self.setActiveDbButton.clicked.connect(self.setActiveDb)
         self.gcodeFolderPathButton.clicked.connect(self.chooseGCodeFolder)
         self.mode_ajout_combo.currentIndexChanged.connect(self.onModeAjoutChanged)
 
@@ -250,8 +277,6 @@ class BaptPreferencesPage(QtGui.QWidget):
 
     def saveSettings(self):
         """Enregistrer les paramètres"""
-        App.Console.PrintMessage(f'saveSettings !\n')
-        self.prefs.ToolsDbPath = self.toolsDbPath.text()
         self.prefs.GCodeFolderPath = self.gcodeFolderPath.text()
         self.prefs.AutoChildUpdate = self.auto_child_update_checkbox.isChecked()
         self.prefs.ModeAjout = self.mode_ajout_combo.currentIndex()
@@ -263,8 +288,7 @@ class BaptPreferencesPage(QtGui.QWidget):
 
     def loadSettings(self):
         """Charger les paramètres"""
-
-        self.toolsDbPath.setText(self.prefs.ToolsDbPath)
+        self._refreshDbTable()
         self.gcodeFolderPath.setText(self.prefs.GCodeFolderPath)
         self.auto_child_update_checkbox.setChecked(self.prefs.AutoChildUpdate)
         self.mode_ajout_combo.setCurrentIndex(self.prefs.getModeAjout())
@@ -274,53 +298,109 @@ class BaptPreferencesPage(QtGui.QWidget):
 
         self.debug_gcode_checkbox.setChecked(self.prefs.debugGcode)
 
-        self.rapidColorButton.setStyleSheet(f"background-color: rgb({int(self.rapidColor[0]*255)}, {int(self.rapidColor[1]*255)}, {int(self.rapidColor[2]*255)})")
-        self.feedColorButton.setStyleSheet(f"background-color: rgb({int(self.feedColor[0]*255)}, {int(self.feedColor[1]*255)}, {int(self.feedColor[2]*255)})")
+        self.rapidColorButton.setStyleSheet(f"background-color: rgb({int(self.rapidColor[0] * 255)}, {int(self.rapidColor[1] * 255)}, {int(self.rapidColor[2] * 255)})")
+        self.feedColorButton.setStyleSheet(f"background-color: rgb({int(self.feedColor[0] * 255)}, {int(self.feedColor[1] * 255)}, {int(self.feedColor[2] * 255)})")
 
-    def chooseExistingDb(self):
-        """Sélectionner une base de données existante"""
+    def _refreshDbTable(self):
+        """Rafraîchit le tableau des bases de données depuis les préférences"""
+        paths = self.prefs.getToolsDbPaths()
+        active = self.prefs.selectedToolDb
+        self.dbTable.setRowCount(0)
+        bold_font = QtGui.QFont()
+        bold_font.setBold(True)
+        for i, path in enumerate(paths):
+            row = self.dbTable.rowCount()
+            self.dbTable.insertRow(row)
+            ext = os.path.splitext(path)[1].lower()
+            db_type = "e-NC (.tls)" if ext == '.tls' else "SQLite (.db)"
+            path_item = QtGui.QTableWidgetItem(path)
+            type_item = QtGui.QTableWidgetItem(db_type)
+            if i == active:
+                path_item.setFont(bold_font)
+                type_item.setFont(bold_font)
+            self.dbTable.setItem(row, 0, path_item)
+            self.dbTable.setItem(row, 1, type_item)
+        # Sélectionner la ligne active
+        if paths and 0 <= active < len(paths):
+            self.dbTable.selectRow(active)
+
+    def addDb(self):
+        """Ajouter une base de données existante à la liste"""
         path = QtGui.QFileDialog.getOpenFileName(
             self.form,
             "Sélectionner un fichier de base de données",
-            os.path.dirname(self.toolsDbPath.text()) if self.toolsDbPath.text() else App.getUserAppDataDir(),
-            "Fichiers SQLite (*.db);;Tous les fichiers (*.*)"
+            App.getUserAppDataDir(),
+            "Fichiers supportés (*.db *.tls);;Fichiers SQLite (*.db);;Fichiers e-NC (*.tls);;Tous les fichiers (*.*)"
         )[0]
-
-        if path:
-            self.toolsDbPath.setText(path)
-            self.saveSettings()
-
-            # Afficher un message de confirmation
-            QtGui.QMessageBox.information(
-                self.form,
-                "Base de données sélectionnée",
-                f"La base de données à l'emplacement suivant sera utilisée:\n{path}"
-            )
+        if not path:
+            return
+        # Éviter les doublons
+        paths = self.prefs.getToolsDbPaths()
+        if path in paths:
+            QtGui.QMessageBox.warning(self.form, "Doublon",
+                                      "Cette base de données est déjà dans la liste.")
+            return
+        paths.append(path)
+        self.prefs.setToolsDbPaths(paths)
+        # Activer automatiquement la nouvelle entrée
+        self.prefs.selectedToolDb = len(paths) - 1
+        self.saveSettings()
+        self._refreshDbTable()
 
     def createNewDb(self):
-        """Créer une nouvelle base de données"""
+        """Créer une nouvelle base de données SQLite et l'ajouter à la liste"""
         path = QtGui.QFileDialog.getSaveFileName(
             self.form,
             "Créer une nouvelle base de données",
-            os.path.dirname(self.toolsDbPath.text()) if self.toolsDbPath.text() else App.getUserAppDataDir(),
+            App.getUserAppDataDir(),
             "Fichiers SQLite (*.db)"
         )[0]
+        if not path:
+            return
+        if not path.lower().endswith('.db'):
+            path += '.db'
+        paths = self.prefs.getToolsDbPaths()
+        if path in paths:
+            QtGui.QMessageBox.warning(self.form, "Doublon",
+                                      "Cette base de données est déjà dans la liste.")
+            return
+        paths.append(path)
+        self.prefs.setToolsDbPaths(paths)
+        self.prefs.selectedToolDb = len(paths) - 1
+        self.saveSettings()
+        self._refreshDbTable()
 
-        if path:
-            # S'assurer que le fichier a l'extension .db
-            if not path.lower().endswith('.db'):
-                path += '.db'
-
-            self.toolsDbPath.setText(path)
+    def removeDb(self):
+        """Supprimer la base de données sélectionnée de la liste"""
+        selected = self.dbTable.selectedItems()
+        if not selected:
+            return
+        row = selected[0].row()
+        paths = self.prefs.getToolsDbPaths()
+        if 0 <= row < len(paths):
+            paths.pop(row)
+            self.prefs.setToolsDbPaths(paths)
+            # Ajuster l'index actif
+            if not paths:
+                self.prefs.selectedToolDb = 0
+            elif self.prefs.selectedToolDb >= len(paths):
+                self.prefs.selectedToolDb = len(paths) - 1
+            elif row < self.prefs.selectedToolDb:
+                self.prefs.selectedToolDb -= 1
             self.saveSettings()
+            self._refreshDbTable()
 
-            # Afficher un message de confirmation
-            QtGui.QMessageBox.information(
-                self.form,
-                "Nouvelle base de données",
-                f"Une nouvelle base de données sera créée à l'emplacement suivant:\n{path}\n\n"
-                "La base de données sera initialisée lors de la prochaine utilisation du gestionnaire d'outils."
-            )
+    def setActiveDb(self):
+        """Définir la base de données sélectionnée comme active"""
+        selected = self.dbTable.selectedItems()
+        if not selected:
+            return
+        row = selected[0].row()
+        paths = self.prefs.getToolsDbPaths()
+        if 0 <= row < len(paths):
+            self.prefs.selectedToolDb = row
+            self.saveSettings()
+            self._refreshDbTable()
 
     def chooseGCodeFolder(self):
         """Sélectionner le dossier par défaut des programmes G-code"""
@@ -343,17 +423,3 @@ class BaptPreferencesPage(QtGui.QWidget):
     def onAutoChildUpdateChanged(self, state):
         """Gérer le changement de l'option de mise à jour automatique des enfants"""
         is_checked = state == QtCore.Qt.Checked
-
-    def useDefaultDb(self):
-        """Utiliser la base de données par défaut"""
-        self.toolsDbPath.clear()
-        self.saveSettings()
-
-        default_path = BaptUtilities.getDefaultToolsDbPath()
-
-        # Afficher un message de confirmation
-        QtGui.QMessageBox.information(
-            self.form,
-            "Base de données par défaut",
-            f"La base de données par défaut sera utilisée à l'emplacement suivant:\n{default_path}"
-        )

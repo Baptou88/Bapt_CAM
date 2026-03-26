@@ -37,6 +37,20 @@
         </property>
        </widget>
       </item>
+      <item row="2" column="1">
+       <widget class="QPushButton" name="orientFaceZ">
+        <property name="text">
+         <string>Orient Face Z+</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QPushButton" name="orientFaceX">
+        <property name="text">
+         <string>Orient Face X</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

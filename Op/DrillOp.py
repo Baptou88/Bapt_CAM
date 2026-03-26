@@ -1,10 +1,16 @@
-from Op.BaseOp import baseOpViewProviderProxy
+
+import math
+
 import FreeCAD as App
 import FreeCADGui as Gui
-from Op.BaseOp import baseOp
-import Part
-import math
+import Part  # type: ignore
+import PySide.QtGui as QtGui  # type: ignore
+import PySide.QtCore as QtCore  # type: ignore
+
+
 import BaptUtilities
+from Op.BaseOp import baseOp, baseOpViewProviderProxy
+from utils.GcodeWriter import GcodeWriter
 
 
 cycleType = ["Simple", "Peck", "Tapping", "Boring", "Reaming", "Contournage"]
@@ -16,7 +22,7 @@ class DrillOperation(baseOp):
     def __init__(self, obj):
         """Ajoute les propriétés"""
         super().__init__(obj)
-        obj.Proxy = self
+
         self.Type = "DrillOperation"
 
         # Référence à la géométrie de perçage (PropertyLink)
@@ -90,6 +96,7 @@ class DrillOperation(baseOp):
             obj.Ap = 0.5
 
         super().installToolProp(obj)
+        obj.Proxy = self
 
     def onChanged(self, obj, prop):
         """Appelé quand une propriété est modifiée"""
@@ -99,13 +106,13 @@ class DrillOperation(baseOp):
             # self.updateToolInfo(obj)
         elif prop == "CycleType":
             self.updateVisibleProperties(obj)
+            self.execute(obj)
         elif prop == "DrillGeometry" and obj.DrillGeometry:
             self.updateFromGeometry(obj)
-        elif prop == "Diam":
-            self.execute()
+
         elif prop == "DrillGeometry":
             self.updateFromGeometry(obj)
-        elif prop in ["ShowPathLine", "SafeHeight", "FinalDepth"]:
+        elif prop in ["SafeHeight", "FinalDepth", "Diam", "Ap", "PeckDepth", "Retract", "ThreadPitch", "DwellTime"]:
             self.execute(obj)
 
     def updateVisibleProperties(self, obj):
@@ -166,6 +173,7 @@ class DrillOperation(baseOp):
         # Obtenir les positions de perçage
         drill_geometry = obj.DrillGeometry
         positions = drill_geometry.DrillPositions
+        feed = obj.FeedRate.getValueAs("mm/min").Value
 
         if not positions:
             obj.Shape = Part.Shape()  # Shape vide
@@ -192,66 +200,60 @@ class DrillOperation(baseOp):
                 tool_shape = self.createToolShape(obj, pos)
                 tool_shapes.append(tool_shape)
 
-        strGcode = ""
+        gcodeWriter = GcodeWriter()
         if len(positions) > 0:
+            p0 = positions[0]
+            safe_z_0 = p0.z + obj.SafeHeight.Value
 
-            strGcode += f"G0 X{positions[0].x} Y{positions[0].y} Z{positions[0].z + obj.SafeHeight.Value} \n"
+            gcodeWriter.linearMove({'X': p0.x, 'Y': p0.y}, rapid=True)
+            gcodeWriter.linearMove({'Z': p0.z}, rapid=True)
+
             if obj.CycleType == "Simple":
-                strGcode += f"G81 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z}\n"  # FIXME
+                gcodeWriter.raw(f"G81 Z{obj.FinalDepth.Value} R{safe_z_0} F{feed}")  # FIXME
 
             elif obj.CycleType == "Peck":
-                strGcode += f"G83 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z} Q{obj.PeckDepth.Value}\n"  # FIXME
+                gcodeWriter.raw(f"G83 Z{obj.FinalDepth.Value} R{safe_z_0} Q{obj.PeckDepth.Value} F{feed}")  # FIXME
 
             elif obj.CycleType == "Tapping":
                 # FIXME verifier la presence d'un outil de taraudage et son pas
-                strGcode += f"G84 Z{obj.FinalDepth.Value} R{obj.SafeHeight.Value + positions[0].z} \n"
+                gcodeWriter.raw(f"G84 Z{obj.FinalDepth.Value} R{safe_z_0}")
 
             elif obj.CycleType == "Contournage":
                 d = obj.Diam - obj.Tool.Radius.Value * 2
                 r = d / 2
                 # profTotale = distance verticale du plan R au fond (toujours positive)
-                r_plane_z = positions[0].z + obj.SafeHeight.Value
-                profTotale = abs(r_plane_z - final_z)
+                profTotale = abs(safe_z_0 - final_z)
 
                 nbTour = math.ceil(profTotale / obj.Ap)
-
                 prisePasse = (profTotale / nbTour) / 2
 
-                strGcode += f"{obj.Label}:\n"
-                strGcode += "G91\n"
-                strGcode += f"G1 X{r}\n"
+                gcodeWriter.addLabel(obj.Label)
+                gcodeWriter.raw("G91")
+                gcodeWriter.linearMove({'X': r}, feed=feed)  # TODO add feed
                 for _ in range(nbTour):
-                    strGcode += f"G3 X{-d} Y0 Z-{prisePasse} I{-r} J{0}\n"
-                    strGcode += f"G3 X{d} Y0 Z-{prisePasse} I{r} J{0}\n"
+                    gcodeWriter.arcMove({'X': -d, 'Y': 0, 'Z': -prisePasse, 'I': -r, 'J': 0, 'CCW': True})
+                    gcodeWriter.arcMove({'X': d, 'Y': 0, 'Z': -prisePasse, 'I': r, 'J': 0, 'CCW': True})
 
-                strGcode += f"G3 X{-d} Y0 I{-r} J{0}\n"
-                strGcode += f"G3 X{d} Y0 I{r} J{0}\n"
-                strGcode += f"G1 X{-r}\n"
-                strGcode += f"G1 Z{profTotale}\n"
-                strGcode += "G90\n"
-                strGcode += f"{obj.Label}_FIN:\n"
+                gcodeWriter.arcMove({'X': -d, 'Y': 0, 'I': -r, 'J': 0, 'CCW': True})
+                gcodeWriter.arcMove({'X': d, 'Y': 0, 'I': r, 'J': 0, 'CCW': True})
+                gcodeWriter.linearMove({'X': -r}, feed=None)
+                gcodeWriter.linearMove({'Z': profTotale}, rapid=True)
+                gcodeWriter.raw("G90")
+                gcodeWriter.endLabel()
             else:
                 raise Exception(f"Unsupported Cycle Type : {obj.CycleType}")
 
             for i in range(1, len(positions)):
-
-                strGcode += f"G0 X{positions[i].x} Y{positions[i].y} Z{positions[i].z + obj.SafeHeight.Value} \n"
+                pt = positions[i]
+                gcodeWriter.linearMove({'X': pt.x, 'Y': pt.y, 'Z': pt.z + obj.SafeHeight.Value}, rapid=True)
                 if obj.CycleType == "Contournage":
-                    strGcode += f"REPEAT {obj.Label} {obj.Label}_FIN P=1\n"
-                    # strGcode += f"G91\n"
-                    # strGcode += f"G1 X{r}\n"
-                    # strGcode += f"G3 X{-d} Z-0.5 I{-r} J{0}\n"
-                    # strGcode += f"G3 X{d} Z-0.5 I{r} J{0}\n"
-                    # strGcode += f"G3 X{-d} Z-0.5 I{-r} J{0}\n"
-                    # strGcode += f"G3 X{d} Z-0.5 I{r} J{0}\n"
-                    # strGcode += f"G1 X{-r}\n"
-                    # strGcode += f"G1 Z{2}\n"
-                    # strGcode += f"G90\n"
-            strGcode += "G80\n"
+                    gcodeWriter.raw(f"REPEAT {obj.Label} {obj.Label}_FIN P=1")
 
-        obj.Gcode = strGcode
-        # obj.TimeEstimate = gcodeWriter.time_estimate
-        # obj.LastCoordinate = App.Vector(gcodeWriter.current_position['X'], gcodeWriter.current_position['Y'], gcodeWriter.current_position['Z'])
+            if obj.CycleType != "Contournage":
+                gcodeWriter.raw("G80")
+
+        obj.Gcode = "\n".join(gcodeWriter.lines)
+        obj.TimeEstimate = gcodeWriter.time_estimate
 
         # # Créer un fil qui relie tous les trous
         # wires = []
@@ -271,16 +273,6 @@ class DrillOperation(baseOp):
         if shapes:
             compound = Part.makeCompound(shapes)
             obj.Shape = compound
-
-    # def getToolInfo(self, obj):
-    #     """Récupère les informations sur l'outil sélectionné"""
-    #     if not hasattr(obj, "Tool") or obj.Tool is None:
-    #         return None
-
-    #     # Récupérer l'outil depuis la base de données #TODO à modifier pour prendre en compte l'objet lien
-    #     db = ToolDatabase()
-    #     tool = db.get_tool_by_id(obj.Tool.Id)
-    #     return tool
 
     def createToolShape(self, obj, position):
         """Crée une représentation visuelle de l'outil en fonction de son type"""
@@ -476,13 +468,6 @@ class ViewProviderDrillOperation(baseOpViewProviderProxy):
             return BaptUtilities.getIconPath("operation_disabled.svg")
         return BaptUtilities.getIconPath("Tree_Drilling.svg")
 
-    # def setupContextMenu(self, vobj, menu):
-    #     """Configuration du menu contextuel"""
-    #     super().setupContextMenu()
-    #     action = menu.addAction("Edit")
-    #     action.triggered.connect(lambda: self.setEdit(vobj))
-    #     return True
-
     # def updateData(self, obj, prop):
     #     """Appelé quand une propriété de l'objet est modifiée"""
     #     pass
@@ -495,6 +480,13 @@ class ViewProviderDrillOperation(baseOpViewProviderProxy):
     #     """Gérer le double-clic"""
     #     self.setEdit(vobj)
     #     return True
+
+    def setupContextMenu(self, vobj, menu):
+        super().setupContextMenu(vobj, menu)
+
+        viewGcode = QtGui.QAction(QtGui.QIcon(BaptUtilities.getIconPath("GcodeFile.svg")), "View G-code", menu)
+        QtCore.QObject.connect(viewGcode, QtCore.SIGNAL("triggered()"), lambda: self.viewGcode(vobj))
+        menu.addAction(viewGcode)
 
     def setEdit(self, vobj, mode=0):
         """Ouvrir l'éditeur"""

@@ -1,7 +1,11 @@
 import FreeCAD as App
 import FreeCADGui as Gui
-import Part
 import BaptUtilities
+
+try:
+    from pivy import coin  # type: ignore
+except ImportError:
+    coin = None
 
 
 class DrillGeometry:
@@ -32,28 +36,10 @@ class DrillGeometry:
             obj.addProperty("App::PropertyLength", "DrillDepth", "Drill", "Detected drill depth")
             obj.setEditorMode("DrillDepth", 1)  # en lecture seule
 
-        # Taille des sphères de visualisation
-        if not hasattr(obj, "MarkerSize"):
-            obj.addProperty("App::PropertyLength", "MarkerSize", "Display", "Size of position markers")
-            obj.MarkerSize = 2.0  # 2mm par défaut
-
-        # Couleur des sphères
-        if not hasattr(obj, "MarkerColor"):
-            obj.addProperty("App::PropertyColor", "MarkerColor", "Display", "Color of position markers")
-            obj.MarkerColor = (1.0, 0.0, 0.0)  # Rouge par défaut
-
         # Index de la position sélectionnée (-1 si aucune)
         if not hasattr(obj, "SelectedPosition"):
             obj.addProperty("App::PropertyInteger", "SelectedPosition", "Display", "Index of the selected position")
             obj.SelectedPosition = -1
-
-        # Couleur de surbrillance pour la position sélectionnée
-        if not hasattr(obj, "HighlightColor"):
-            obj.addProperty("App::PropertyColor", "HighlightColor", "Display", "Color of the highlighted position")
-            obj.HighlightColor = (1.0, 1.0, 0.0)  # Jaune par défaut
-
-        # Créer ou obtenir l'objet de visualisation
-        # self.getOrCreateVisualObject(obj)
 
         obj.Proxy = self
 
@@ -61,7 +47,7 @@ class DrillGeometry:
         """Appelé quand une propriété est modifiée"""
         if prop == "DrillFaces":
             self.updateDrillParameters(obj)
-        elif prop in ["DrillPositions", "MarkerSize", "SelectedPosition"]:
+        elif prop == "DrillPositions":
             self.execute(obj)
 
     def updateDrillParameters(self, obj):
@@ -116,54 +102,9 @@ class DrillGeometry:
             obj.DrillDepth = list(depths)[0]
 
     def execute(self, obj):
-        """Mettre à jour la représentation visuelle"""
-        # Obtenir l'objet de visualisation
-        # visual = self.getOrCreateVisualObject(obj)
-
-        if not obj.DrillPositions:
-            obj.Shape = Part.Shape()  # Shape vide
-            return
-
-        # Créer une sphère pour chaque position
-        spheres = []
-        highlighted_spheres = []  # Liste séparée pour les sphères en surbrillance
-        radius = obj.MarkerSize / 2.0  # Rayon = moitié de la taille
-
-        for i, pos in enumerate(obj.DrillPositions):
-            # Utiliser la couleur de surbrillance pour la position sélectionnée
-            if i == obj.SelectedPosition:
-                # Créer une sphère légèrement plus grande pour la position sélectionnée
-                highlight_radius = radius * 1.5
-                sphere = Part.makeSphere(highlight_radius, pos)
-                # Stocker l'index pour l'utiliser dans ViewProvider
-                sphere.Tag = i  # Utiliser Tag pour stocker l'index
-                highlighted_spheres.append(sphere)  # Ajouter à la liste des sphères en surbrillance
-            else:
-                sphere = Part.makeSphere(radius, pos)
-                sphere.Tag = i  # Stocker l'index
-                spheres.append(sphere)
-
-        # Fusionner toutes les sphères
-        if spheres or highlighted_spheres:
-            # Créer un compound pour les sphères normales
-            normal_compound = Part.makeCompound(spheres) if spheres else Part.Shape()
-
-            # Créer un compound pour les sphères en surbrillance
-            highlight_compound = Part.makeCompound(highlighted_spheres) if highlighted_spheres else Part.Shape()
-
-            # Stocker les deux compounds dans des propriétés de l'objet
-            if not hasattr(obj, "NormalSpheres"):
-                obj.addProperty("App::PropertyPythonObject", "NormalSpheres", "Visualization", "Normal spheres")
-            obj.NormalSpheres = normal_compound
-
-            if not hasattr(obj, "HighlightedSpheres"):
-                obj.addProperty("App::PropertyPythonObject", "HighlightedSpheres", "Visualization", "Highlighted spheres")
-            obj.HighlightedSpheres = highlight_compound
-
-            # Combiner les deux compounds
-            all_spheres = spheres + highlighted_spheres
-            compound = Part.makeCompound(all_spheres)
-            obj.Shape = compound
+        """Mettre à jour la shape (vide, la visualisation est dans le ViewProvider)"""
+        pass
+        # obj.Shape = Part.Shape()
 
     def onDocumentRestored(self, obj):
         """Appelé lors de la restauration du document"""
@@ -187,17 +128,83 @@ class ViewProviderDrillGeometry:
         """Initialise le ViewProvider"""
         vobj.Proxy = self
         self.Object = vobj.Object
+        self._addProperties(vobj)
+
+    def _addProperties(self, vobj):
+        """Ajoute les propriétés d'affichage si elles n'existent pas encore"""
+        if not hasattr(vobj, "MarkerSize"):
+            vobj.addProperty("App::PropertyLength", "MarkerSize", "Display", "Size of position markers")
+            vobj.MarkerSize = 2.0
+
+        if not hasattr(vobj, "MarkerColor"):
+            vobj.addProperty("App::PropertyColor", "MarkerColor", "Display", "Color of position markers")
+            vobj.MarkerColor = (1.0, 0.0, 0.0)
+
+        if not hasattr(vobj, "HighlightColor"):
+            vobj.addProperty("App::PropertyColor", "HighlightColor", "Display", "Color of the highlighted position")
+            vobj.HighlightColor = (1.0, 1.0, 0.0)
 
     def getIcon(self):
         """Retourne l'icône"""
         return BaptUtilities.getIconPath("Tree_Drilling.svg")
 
     def attach(self, vobj):
-        """Appelé lors de l'attachement du ViewProvider"""
+        """Crée le scene graph coin3d pour les sphères"""
         self.Object = vobj.Object
+        self._addProperties(vobj)
+        self.markers = coin.SoSeparator()
+        vobj.addDisplayMode(self.markers, "Markers")
+        if self.Object:
+            self._buildMarkers(vobj)
 
-        # Définir la couleur de l'objet de visualisation
-        self.updateColors()
+    def _buildMarkers(self, vobj):
+        """Reconstruit les sphères coin3d à partir de DrillPositions"""
+        if not hasattr(self, 'markers') or not coin:
+            return
+        self.markers.removeAllChildren()
+
+        obj = getattr(self, 'Object', None)
+        if not obj or not hasattr(obj, 'DrillPositions') or not obj.DrillPositions:
+            return
+
+        radius = float(vobj.MarkerSize) / 2.0
+        if radius <= 0:
+            return
+
+        nc = vobj.MarkerColor
+        hc = vobj.HighlightColor
+        # App::PropertyColor peut retourner (r,g,b) ou (r,g,b,a)
+        normal_rgb = (float(nc[0]), float(nc[1]), float(nc[2]))
+        highlight_rgb = (float(hc[0]), float(hc[1]), float(hc[2]))
+        selected = obj.SelectedPosition if hasattr(obj, 'SelectedPosition') else -1
+
+        for i, pos in enumerate(obj.DrillPositions):
+            sep = coin.SoSeparator()
+
+            # Matériau (couleur)
+            mat = coin.SoMaterial()
+            if i == selected:
+                mat.diffuseColor.setValue(*highlight_rgb)
+                r = radius * 1.5
+            else:
+                mat.diffuseColor.setValue(*normal_rgb)
+                r = radius
+            sep.addChild(mat)
+
+            # Position
+            trans = coin.SoTranslation()
+            trans.translation.setValue(float(pos.x), float(pos.y), float(pos.z))
+            sep.addChild(trans)
+
+            # Sphère
+            sphere = coin.SoSphere()
+            sphere.radius.setValue(float(r))
+            sep.addChild(sphere)
+
+            self.markers.addChild(sep)
+
+        # Forcer le rafraîchissement de la scène 3D
+        self.markers.touch()
 
     def setupContextMenu(self, vobj, menu):
         """Configuration du menu contextuel"""
@@ -206,76 +213,15 @@ class ViewProviderDrillGeometry:
         return True
 
     def updateData(self, obj, prop):
-        """Appelé quand une propriété de l'objet est modifiée"""
-        # Si un nouvel objet de visualisation est ajouté, définir sa couleur
-        if prop == "Group":
-            self.updateColors()
-        # Si la position sélectionnée change, mettre à jour les couleurs
-        elif prop in ["SelectedPosition", "MarkerColor", "HighlightColor"]:
-            self.updateColors()
-
-    def updateColors(self):
-        """Met à jour les couleurs des marqueurs visuels"""
-        if not hasattr(self, "Object") or not self.Object:
-            return
-
-        # Vérifier si l'objet visuel existe
-        # visual = None
-        # for child in self.Object.Group:
-        #     if child.Name.startswith("DrillVisual") and hasattr(child, "ViewObject"):
-        #         visual = child
-        #         break
-
-        # if not visual:
-        #     return
-
-        # Définir les couleurs en fonction de la position sélectionnée
-        if hasattr(self.Object, "SelectedPosition") and self.Object.SelectedPosition >= 0:
-            # Vérifier si l'objet visuel a des sphères en surbrillance
-            if hasattr(self.Object, "HighlightedSpheres") and self.Object.HighlightedSpheres:
-                # Utiliser un ShapeColorExtension pour colorer individuellement les sous-éléments
-                if hasattr(self.Object.ViewObject, "DiffuseColor"):
-                    # Créer une liste de couleurs pour chaque sous-élément
-                    colors = []
-
-                    # Couleur normale pour les sphères normales
-                    normal_color = self.Object.MarkerColor
-
-                    # Couleur de surbrillance pour les sphères en surbrillance
-                    highlight_color = self.Object.HighlightColor
-
-                    # Appliquer les couleurs appropriées
-                    if hasattr(self.Object, "NormalSpheres") and self.Object.NormalSpheres:
-                        # Nombre de sous-éléments dans les sphères normales
-                        if hasattr(self.Object.NormalSpheres, "SubShapes"):
-                            normal_count = len(self.Object.NormalSpheres.SubShapes)
-                        else:
-                            normal_count = 1
-
-                        # Ajouter la couleur normale pour chaque sphère normale
-                        colors.extend([normal_color] * normal_count)
-
-                    # Ajouter la couleur de surbrillance pour chaque sphère en surbrillance
-                    if hasattr(self.Object, "HighlightedSpheres") and self.Object.HighlightedSpheres:
-                        if hasattr(self.Object.HighlightedSpheres, "SubShapes"):
-                            highlight_count = len(self.Object.HighlightedSpheres.SubShapes)
-                        else:
-                            highlight_count = 1
-
-                        colors.extend([highlight_color] * highlight_count)
-
-                    # Appliquer les couleurs
-                    self.Object.ViewObject.DiffuseColor = colors
-            else:
-                # Aucune sphère en surbrillance, utiliser la couleur normale pour tout
-                self.Object.ViewObject.ShapeColor = self.Object.MarkerColor
-        else:
-            # Aucune position sélectionnée, utiliser la couleur normale pour tout
-            self.Object.ViewObject.ShapeColor = self.Object.MarkerColor
+        """Appelé quand une propriété de l'objet data est modifiée"""
+        if prop in ["DrillPositions", "SelectedPosition"]:
+            if hasattr(obj, "ViewObject") and obj.ViewObject:
+                self._buildMarkers(obj.ViewObject)
 
     def onChanged(self, vobj, prop):
         """Appelé quand une propriété du ViewProvider est modifiée"""
-        pass
+        if prop in ["MarkerSize", "MarkerColor", "HighlightColor"]:
+            self._buildMarkers(vobj)
 
     def doubleClicked(self, vobj):
         """Gérer le double-clic"""
@@ -301,6 +247,7 @@ class ViewProviderDrillGeometry:
 
     def __setstate__(self, state):
         """Désérialisation"""
+        self.Object = None
         return None
 
     def claimChildren(self):
@@ -309,16 +256,14 @@ class ViewProviderDrillGeometry:
             return list(self.Object.Group)
         return []
 
-    def onDelete(self, feature, subelements):  # subelements is a tuple of strings
-
+    def onDelete(self, feature, subelements):
         App.Console.PrintMessage(f"onDelete de {feature.Object.Name}\n")
         for child in feature.Object.Group:
             App.ActiveDocument.removeObject(child.Name)
-        return True  # If False is returned the object won't be deleted
+        return True
 
     def onBeforeDelete(self, obj, subelements):
         """Supprime tous les enfants lors de la suppression du parent"""
-        # debug
         App.Console.PrintMessage(f"onBeforeDelete de {obj.Name}\n")
         children = self.claimChildren()
         for child in children:
@@ -329,13 +274,12 @@ class ViewProviderDrillGeometry:
                 App.Console.PrintError(f"Erreur suppression enfant {child.Name}: {e}\n")
 
     def getDisplayModes(self, obj):
-        "Return a list of display modes."
-        modes = ["Shaded"]
-        return modes
+        """Return a list of display modes."""
+        return ["Markers"]
 
     def getDefaultDisplayMode(self):
-        "Return the name of the default display mode. It must be defined in getDisplayModes."
-        return "Shaded"
+        """Return the name of the default display mode."""
+        return "Markers"
 
     def setDisplayMode(self, mode):
         return mode

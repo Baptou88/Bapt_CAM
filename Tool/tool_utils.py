@@ -1,8 +1,15 @@
+import math
+
 import FreeCAD as App
-import Part
+import Part  # type: ignore
+
+from BaptPreferences import BaptPreferences
+
+from Tool.SqliteToolRepository import SqliteToolRepository
+from Tool.TlsToolRepository import TlsToolRepository  # type: ignore
 
 
-def create_tool_obj(id=0, name="New Tool", diameter=10.0, speed=1000.0, feed=500.0,
+def create_tool_obj(Tid=0, name="New Tool", diameter=10.0, speed=1000.0, feed=500.0,
                     tool_type="Fraise", torus_radius=0.0, length=50.0, point_angle=118.0):
     """Create a tool document object with the correct 3D shape.
 
@@ -16,7 +23,7 @@ def create_tool_obj(id=0, name="New Tool", diameter=10.0, speed=1000.0, feed=500
         Drill point angle in degrees (default 118).
     """
     new_tool = App.ActiveDocument.addObject("Part::FeaturePython", f"{name}")
-    new_tool.addProperty("App::PropertyInteger", "Id", "Tool", "Tool ID").Id = id
+    new_tool.addProperty("App::PropertyInteger", "Id", "Tool", "Tool ID").Id = Tid
     new_tool.addProperty("App::PropertySpeed", "Speed", "Tool", "Tool Speed").Speed = f"{speed} mm/min"
     new_tool.addProperty("App::PropertySpeed", "Feed", "Tool", "Tool Feed").Feed = f"{feed} mm/min"
     new_tool.addProperty("App::PropertyLength", "Radius", "Tool", "Tool Radius").Radius = diameter / 2.0
@@ -85,7 +92,6 @@ def _make_torus_endmill(radius, height, torus_r):
 
     The shape sits with its base at Z=0, extending upward.
     """
-    import FreeCAD as App
 
     # Key dimensions
     flat_radius = radius - torus_r          # radius of the flat bottom part
@@ -128,8 +134,6 @@ def _make_drill_bit(radius, height, point_angle):
     point_angle : float
         Full point angle in degrees (e.g. 118).
     """
-    import math
-    import FreeCAD as App
 
     half_angle = math.radians(point_angle / 2.0)
     # Height of the conical tip
@@ -241,3 +245,16 @@ class ToolShapeViewProvider:
 
     def loads(self, state):
         return None
+
+
+def get_tool_repository():
+    """Retourne le bon ToolRepository selon les préférences.
+
+    - Si le chemin pointe vers un fichier .tls  -> TlsToolRepository
+    - Sinon (vide, .db, ou autre)               -> SqliteToolRepository
+    """
+    prefs = BaptPreferences()
+    path = prefs.getToolsDbPath()
+    if path and path.lower().endswith('.tls'):
+        return TlsToolRepository(path)
+    return SqliteToolRepository()

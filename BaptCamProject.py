@@ -629,7 +629,7 @@ class CamProject:
                 stock = self.getStock(self.Object)
                 if stock and hasattr(stock, "ZPos") and hasattr(stock, "ZNeg"):
                     expr_set.setExpression(
-                        "clearanceZ", f"<<{stock.Name}>>.Shape.BoundBox.ZMax + 10")
+                        "clearanceZ", f"<<{stock.Label}>>.Shape.BoundBox.ZMax + 10")
 
         return expr_set
 

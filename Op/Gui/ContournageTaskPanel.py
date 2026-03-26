@@ -1,10 +1,11 @@
-from BaptUtilities import find_cam_project
-import ContourBaseGeom
 import FreeCAD as App
 import FreeCADGui as Gui
-from Op import OpContournage
 from PySide import QtGui
-from Tool.ToolTaskPannel import ToolTaskPanel
+
+from BaptUtilities import find_cam_project
+import ContourBaseGeom
+from Op import OpContournage
+from Tool.ToolsGUI import ToolTaskPanel
 from Gui.cuttingConditionTaskPanel import cuttingConditionTaskPanel
 from utils import BQuantitySpinBox
 
@@ -79,7 +80,7 @@ class ContournageTaskPanel:
 
         # Compensation de l'outil
         self.compensationTool = QtGui.QComboBox()
-        self.compensationTool.addItems(list(comp.name for comp in OpContournage.compensation))
+        self.compensationTool.addItems(list(comp.name for comp in OpContournage.Compensation))
         if hasattr(obj, "Compensation"):
             idx = self.compensationTool.findText(obj.Compensation)
             if idx >= 0:

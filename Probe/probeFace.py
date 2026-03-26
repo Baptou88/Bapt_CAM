@@ -5,7 +5,7 @@ from PySide import QtCore, QtGui
 import BaptUtilities
 import Part
 from Tool import ToolSelectorDialog
-from Tool.ToolTaskPannel import ToolTaskPanel
+from Tool.ToolsGUI import ToolTaskPanel
 from utils import GcodeWriter
 from utils.BQuantitySpinBox import BQuantitySpinBox
 

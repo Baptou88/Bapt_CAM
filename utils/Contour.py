@@ -1,6 +1,6 @@
-import math
 import FreeCAD as App
 import Part
+from utils.GcodeWriter import GcodeWriter
 
 
 def getFirstPoint(edges):
@@ -53,7 +53,7 @@ def getLastPoint(edges):
         return 0
 
 
-def edgeToGcode(edge, bonSens=True, current_z=0.0, rapid=False, feed_rate=1000, gcodeWriter=None):
+def edgeToGcode(edge, bonSens: bool = True, current_z: float = 0.0, rapid: bool = False, feed_rate: float = 1000, gcodeWriter: GcodeWriter = None):
     """
     Convert an edge to G-code.
     :param edge: The edge to convert.
@@ -90,26 +90,10 @@ def edgeToGcode(edge, bonSens=True, current_z=0.0, rapid=False, feed_rate=1000, 
     elif edge.Curve.TypeId == 'Part::GeomCircle':
         circle = edge.Curve
         center = circle.Center
-        radius = circle.Radius
-
-        # Determine start and end angles
-        vec_start = start_point.sub(center)
-        vec_end = end_point.sub(center)
-        angle_start = vec_start.getAngle(App.Vector(1, 0, 0))
-        angle_end = vec_end.getAngle(App.Vector(1, 0, 0))
-
-        # 2. Calculer le produit vectoriel pour déterminer l'orientation
-        # cross_product.z > 0 : sens anti-horaire (CCW)
-        # cross_product.z < 0 : sens horaire (CW)
-        cross_product = vec_start.cross(vec_end)
 
         # 3. Prendre en compte l'orientation de l'axe du cercle
         # Si l'axe pointe vers le bas (z < 0), inverser la logique
         axis_z = circle.Axis.z
-
-        u1 = edge.FirstParameter
-        u2 = edge.LastParameter
-        arc_angle = u2 - u1
 
         # Determine direction
         # if  u2-u1 > math.pi :
@@ -160,22 +144,62 @@ def edgeToGcode(edge, bonSens=True, current_z=0.0, rapid=False, feed_rate=1000, 
         if gcodeWriter:
             gcodeWriter.arcMove({'X': end_point.x, 'Y': end_point.y, 'Z': current_z, 'CCW': is_ccw, 'I': center.x - start_point.x, 'J': center.y - start_point.y}, feed=feed_rate)
 
-    elif edge.CurveType == 'BSplineCurve':  # More specific BSpline handling if possible
-        raise NotImplementedError(f"Edge type {edge.Curve.TypeId} not implemented in G-code generation.")
+    elif edge.Curve.TypeId == 'Part::GeomBSplineCurve':  # More specific BSpline handling if possible
+        # raise NotImplementedError(f"Edge type {edge.Curve.TypeId} not implemented in G-code generation.")
+        gcodeWriter.comment(f"Warning: Edge type {edge.Curve.TypeId} partially implemented in G-code generation.")
         try:
             bs_points = []
             num_samples = 20  # Or from a property
             for i in range(num_samples + 1):
                 param = edge.FirstParameter + (edge.LastParameter - edge.FirstParameter) * i / num_samples
                 pt_on_curve = edge.valueAt(param)
-                bs_points.append(App.Vector(pt_on_curve.x, pt_on_curve.y, pass_z))
+                bs_points.append(App.Vector(pt_on_curve.x, pt_on_curve.y, current_z))
             if len(bs_points) >= 2:
                 bspline_at_z = Part.BSplineCurve()
                 bspline_at_z.interpolate(bs_points)
-                edges_for_current_pass_z.append(bspline_at_z.toShape())
+                if gcodeWriter:
+                    gcodeWriter.linearMove({'X': end_point.x, 'Y': end_point.y, 'Z': current_z}, feed=feed_rate, rapid=rapid)
         except Exception as e_bspline:
-            App.Console.PrintError(f"Failed to transform BSpline for pass Z={pass_z}: {e_bspline}\n")
+            App.Console.PrintError(f"Failed to transform BSpline for Z={current_z}: {e_bspline}\n")
+    elif edge.Curve.TypeId == 'Part::GeomOffsetCurve':
+        basis = edge.Curve.BasisCurve
+        if basis.TypeId == 'Part::GeomLine':
+            # Offset d'une ligne = ligne parallèle → G1
+            if rapid:
+                gcode += f"G0 X{end_point.x:.3f} Y{end_point.y:.3f} Z{current_z:.3f}\n"
+            else:
+                gcode += f"G1 X{end_point.x:.3f} Y{end_point.y:.3f} Z{current_z:.3f} F{feed_rate}\n"
+            if gcodeWriter:
+                gcodeWriter.linearMove({'X': end_point.x, 'Y': end_point.y, 'Z': current_z}, feed=feed_rate, rapid=rapid)
+
+        elif basis.TypeId == 'Part::GeomCircle':
+            # Offset d'un cercle = cercle concentrique → G2/G3, même centre
+            center = basis.Center
+            axis_z = basis.Axis.z
+            is_ccw = axis_z > 0
+            if not bonSens:
+                is_ccw = not is_ccw
+            arc = "G3" if is_ccw else "G2"
+            gcode += f"{arc} X{end_point.x:.3f} Y{end_point.y:.3f} I{center.x - start_point.x:.3f} J{center.y - start_point.y:.3f} F{feed_rate}\n"
+            if gcodeWriter:
+                gcodeWriter.arcMove({'X': end_point.x, 'Y': end_point.y, 'Z': current_z, 'CCW': is_ccw, 'I': center.x - start_point.x, 'J': center.y - start_point.y}, feed=feed_rate)
+
+        else:
+            # Autre courbe de base → discrétisation en segments G1
+            num_samples = 20
+            span = edge.LastParameter - edge.FirstParameter
+            for i in range(1, num_samples + 1):
+                t = i / num_samples
+                if bonSens:
+                    param = edge.FirstParameter + span * t
+                else:
+                    param = edge.LastParameter - span * t
+                pt = edge.valueAt(param)
+                gcode += f"G1 X{pt.x:.3f} Y{pt.y:.3f} Z{current_z:.3f} F{feed_rate}\n"
+                if gcodeWriter:
+                    gcodeWriter.linearMove({'X': pt.x, 'Y': pt.y, 'Z': current_z}, feed=feed_rate, rapid=False)
     else:
+        gcodeWriter.comment(f"Warning: Edge type {edge.Curve.TypeId} not implemented in G-code generation.")
         raise NotImplementedError(f"Edge type {edge.Curve.TypeId} not implemented in G-code generation.")
     return gcode
 
@@ -233,7 +257,7 @@ def shiftWire(wire: Part.Wire, new_start_point: App.Vector) -> Part.Wire:
             first_edge.append(e)
             continue
 
-    for j in range(i+1, len(wire.Edges)):
+    for j in range(i + 1, len(wire.Edges)):
         next_edges.append(wire.Edges[j])
     # App.Console.PrintMessage(f'shiftWire: found start at edge {i}\n')
     # App.Console.PrintMessage(f'{len(next_edges)} {len(first_edge)}\n')

@@ -1,5 +1,5 @@
 import FreeCAD as App
-import Part
+import Part  # type: ignore
 from utils.Contour import shiftWire
 
 

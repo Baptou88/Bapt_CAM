@@ -2,7 +2,7 @@ from BaptCamProject import CamProject
 from BaptUtilities import find_cam_project
 import FreeCAD as App
 import FreeCADGui as Gui
-from PySide import QtCore, QtGui
+from PySide import QtGui  # type: ignore
 import sys
 from utils import BQuantitySpinBox, Log
 from utils.PointSelectionObserver import PointSelectionObserver
@@ -599,7 +599,7 @@ class ContourTaskPanel:
             return
         # guider l'utilisateur
 
-    def _on_point_picked(self, point):
+    def _on_point_picked(self, point, document=None, obj=None, element=None):
         """Callback appelé par l'observer quand un point est sélectionné"""
         if self._pickingTarget == "Zref":
             self.Zref.setValue(point.z)

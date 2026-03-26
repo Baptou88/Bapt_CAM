@@ -87,6 +87,7 @@ class BaptHighlight:
 
 class ViewProviderBaptHighlight:
     def __init__(self, obj):
+        self.obj = obj.Object
         obj.Proxy = self
 
     def attach(self, obj):

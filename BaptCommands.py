@@ -17,7 +17,7 @@ import Op.AdaptativeOp as AdaptativeOp
 import Op.PocketOp as PocketOp
 import BaptPostProcess
 import BaptPreferences
-import BaptTools
+import Tool.BaptTools as BaptTools
 import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -27,6 +27,7 @@ import BaptOrigin
 
 from Op import DrillOp, OpContournage, OpSurfacage, PathOp
 from Probe import probeFace
+import Tool.ToolsGUI
 import testFPO
 
 
@@ -561,7 +562,7 @@ class ToolsManagerCommand:
 
     def Activated(self):
         """Ouvrir le gestionnaire d'outils"""
-        panel = BaptTools.ToolsManagerPanel()
+        panel = Tool.ToolsGUI.ToolsManagerPanel()
         Gui.Control.showDialog(panel)
         App.Console.PrintMessage("Gestionnaire d'outils ouvert.\n")
 

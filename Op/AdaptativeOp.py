@@ -8,7 +8,7 @@ import PySide.QtCore as QtCore
 import BaptPreferences
 import BaptUtilities
 from Op import BaseOp
-from Tool.ToolTaskPannel import ToolTaskPanel
+from Tool.ToolsGUI import ToolTaskPanel
 from utils import Log, GcodeWriter
 from utils.BQuantitySpinBox import BQuantitySpinBox
 from utils.Contour import shiftWire

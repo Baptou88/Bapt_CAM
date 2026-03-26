@@ -36,6 +36,7 @@ class PostPro(BasePostPro):
         retour = []
 
         def linear_move(line: str, rapid: bool = None):
+            current_move = 'G1'
             if rapid is not None:
                 current_move = 'G0' if rapid else 'G1'
 
@@ -123,6 +124,7 @@ class PostPro(BasePostPro):
 
     def G81(self, obj):
         geom = obj.DrillGeometry
+        points = []
         if geom and hasattr(geom, 'DrillPositions'):
             points = geom.DrillPositions
         safe_z = getattr(obj, 'SafeHeight', 5.0).Value

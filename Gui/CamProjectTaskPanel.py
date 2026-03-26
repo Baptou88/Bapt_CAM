@@ -1,8 +1,9 @@
-import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui
-from utils import PointSelectionObserver
+
+import BaptUtilities
+from utils.PointSelectionObserver import PointSelectionObserver
 from utils.BQuantitySpinBox import BQuantitySpinBox
 
 
@@ -156,7 +157,7 @@ class BoundBoxSphereManager:
             Gui.Selection.clearSelection()
 
             # Différer la suppression de toutes les sphères
-            QtCore.QTimer.singleShot(100, lambda: self._remove_all_spheres_deferred())
+            QtCore.QTimer.singleShot(100, self._remove_all_spheres_deferred)
 
     def _remove_all_spheres_deferred(self):
         """Supprimer toutes les sphères de manière différée pour éviter les violations d'accès"""
@@ -187,10 +188,14 @@ class BBoxSelectionObserver:
 
 
 class CamProjectTaskPanel:
+    """Panneau de tâches pour éditer les paramètres du projet CAM"""
+
     def __init__(self, obj, deleteOnReject):
         # Garder une référence à l'objet
         self.obj = obj
         self.deleteOnReject = deleteOnReject
+        self.orient = None
+        self.observer = None
         App.activeDocument().openTransaction("Edit CAM Project Parameters")
         # Obtenir l'objet Stock
         self.stock = self.getStockObject(obj)
@@ -244,18 +249,62 @@ class CamProjectTaskPanel:
             self.ui1.model.setCurrentText(obj.Model.Name)
 
         # Connecter les signaux
-        self.ui1.workPlane.currentIndexChanged.connect(lambda: self.updateVisual())
-        self.ui1.model.currentIndexChanged.connect(lambda: self.updateVisual())
-        self.ui1.stockMode.currentIndexChanged.connect(lambda: self.stockModeChanged())
+        self.ui1.workPlane.currentIndexChanged.connect(self.updateVisual)
+        self.ui1.model.currentIndexChanged.connect(self.updateVisual)
+        self.ui1.stockMode.currentIndexChanged.connect(self.stockModeChanged)
 
-        self.ui1.placeModel.clicked.connect(lambda: self.placeModel())
+        self.ui1.orientFaceX.clicked.connect(lambda: self.orientFace("X"))
+        self.ui1.orientFaceZ.clicked.connect(lambda: self.orientFace("Z"))
+
+        self.ui1.placeModel.clicked.connect(self.placeModel)
 
         # Initialiser le gestionnaire de sphères pour le positionnement du modèle
         self.sphere_manager = BoundBoxSphereManager(self)
         self.sphere_manager_active = False
 
+    def orientFace(self, axis):
+        """Orienter la face sélectionnée vers l'axe spécifié"""
+
+        self.orient = PointSelectionObserver(lambda point, doc, obj, element: self.faceSelected(point, doc, obj, element, axis))
+        self.orient.enable()
+
+    def faceSelected(self, point, doc, obj, element, axis):
+        """Appelé quand une face est sélectionnée pour l'orientation"""
+        # Vérifier que l'élément sélectionné est une face
+        sub = App.getDocument(doc).getObject(obj).getSubObject(element)
+
+        if axis == "X":
+            target = App.Vector(1, 0, 0)
+        elif axis == "Y":
+            target = App.Vector(0, 1, 0)
+        else:
+            # axis == "Z":
+            target = App.Vector(0, 0, 1)
+
+        if hasattr(sub, 'Surface') and sub.Surface.TypeId == 'Part::GeomCylinder':
+            pass
+        elif hasattr(sub, 'Surface') and sub.Surface.TypeId == 'Part::GeomPlane':
+            # Récupérer la normale de la face
+            normal = sub.Surface.Axis
+        elif hasattr(sub, 'Curve') and sub.Curve.TypeId == 'Part::GeomLine':
+            # Récupérer la direction de la ligne
+            normal = sub.Curve.Direction
+
+        # Calculer la rotation nécessaire pour aligner la cible
+        rotation = App.Rotation(normal, target)
+
+        # Appliquer la rotation au placement du model
+        model = self.obj.Model
+        if model:
+            current = model.Placement
+            new_rotation = rotation.multiply(current.Rotation)
+            model.Placement = App.Placement(current.Base, new_rotation)
+
+        self.orient.disable()
+        self.orient = None
+
     def placeModel(self):
-        App.Console.PrintMessage(f'placeModel\n')
+        App.Console.PrintMessage('placeModel\n')
         if self.sphere_manager_active:
             # Désactiver le mode de positionnement
             self.sphere_manager.clear_spheres()
@@ -376,10 +425,10 @@ class CamProjectTaskPanel:
         self.ui1.clickOnPartBtn.setEnabled(False)
 
         # Créer et activer l'observer
-        self.observer = PointSelectionObserver.PointSelectionObserver(self.pointSelected)
+        self.observer = PointSelectionObserver(self.pointSelected)
         self.observer.enable()
 
-    def pointSelected(self, point):
+    def pointSelected(self, point, _):
         """Appelé quand l'utilisateur a cliqué sur un point"""
         # Mettre à jour les coordonnées du stock origin
         self.stockOriginX.setValue(point.x)
@@ -396,7 +445,7 @@ class CamProjectTaskPanel:
 
     def updateVisual(self):
         """Met à jour la représentation visuelle"""
-        App.Console.PrintMessage(f'updateVisual\n')
+        App.Console.PrintMessage('updateVisual\n')
         # Mettre à jour les propriétés du projet
 
         self.obj.WorkPlane = self.ui1.workPlane.currentText()
@@ -469,8 +518,9 @@ class PostProcessorTaskPanel:
 
         label = QtGui.QLabel("Post Processor specific settings can be configured here.")
         layout.addWidget(label)
-        # Liste des PostProcessors disponibles
-        self.postProcessors = ["Siemens828", "ITnc530", "Fanuc"]  # TODO : récupérer dynamiquement la liste des postprocessors disponibles
+        # Liste des PostProcessors disponibles (découverte dynamique)
+        from BaptUtilities import getAvailablePostProcessors
+        self.postProcessors = getAvailablePostProcessors()
 
         # Groupe PostProcessors
         postProcGroup = QtGui.QGroupBox("PostProcessors")

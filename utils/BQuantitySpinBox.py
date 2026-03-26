@@ -4,8 +4,7 @@ import math
 
 import FreeCAD as App
 import FreeCADGui as Gui
-import PySide.QtGui as QtGui
-import PySide.QtCore as QtCore
+import PySide.QtCore as QtCore  # type: ignore
 from utils import Log
 
 DEBUG = False
@@ -121,7 +120,7 @@ class BQuantitySpinBox(QtCore.QObject):
             self.updateProperty()
 
             if o and name:
-                if type(attr) == int:
+                if isinstance(attr, int):
                     value = int(value)
                 setattr(o, name, value)
         # if hasattr(self.obj, self.prop):
@@ -132,9 +131,9 @@ class BQuantitySpinBox(QtCore.QObject):
         # #     App.Console.PrintError("BQuantitySpinBox updateValue error: {}\n".format(e))
 
     def onWidgetValueChanged(self):
-        App.Console.PrintMessage(f'Widget Value Changed\n')
+        App.Console.PrintMessage('Widget Value Changed\n')
         if hasattr(self.obj, self.prop):
-            App.Console.PrintMessage(f'Widget Value Changed hasattr\n')
+            App.Console.PrintMessage('Widget Value Changed hasattr\n')
             value = self.widget.property("rawValue")
             setattr(self.obj, self.prop, value)
         # self.widget.editingFinished.emit()
@@ -153,7 +152,7 @@ class BQuantitySpinBox(QtCore.QObject):
         return None
 
     def setValue(self, value):
-        attr = self.getProperty(self.obj, self.prop)
+        # attr = self.getProperty(self.obj, self.prop)
         if hasattr(self.obj, self.prop):
             setattr(self.obj, self.prop, value)
             self.updateWidget()
