@@ -29,7 +29,7 @@ class PointSelectionObserver:
         App.Console.PrintMessage(f"Point sélectionné: {point.x}, {point.y}, {point.z}\n")
 
         # Appeler le callback avec le point
-        self.callback(point)
+        self.callback(point, document, object, element)
 
         # Désactiver l'observer après la sélection
         self.disable()

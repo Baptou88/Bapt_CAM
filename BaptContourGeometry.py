@@ -262,7 +262,6 @@ class ContourGeometry(ContourBaseGeom):
         """
         Retourne un nouvel edge inversé, compatible avec les arcs et segments.
         """
-        import Part  # type: ignore
         curve = edge.Curve
         return edge.reversed()
         try:

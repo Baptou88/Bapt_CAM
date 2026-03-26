@@ -173,7 +173,6 @@ class GcodeAnimator:
     """
 
     def __init__(self, view_provider=None):
-        from PySide import QtCore
         self.vp = view_provider
         self.timer = QtCore.QTimer()
         self.timer.setInterval(30)  # ms, ~33 FPS default

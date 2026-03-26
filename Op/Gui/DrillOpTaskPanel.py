@@ -1,20 +1,21 @@
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtGui  # type: ignore
+
 import BaptDrillGeometry
 from BaptUtilities import find_cam_project
 from Gui.cuttingConditionTaskPanel import cuttingConditionTaskPanel
-import Op.DrillOp as DrillOp
-import FreeCAD as App
-import FreeCADGui as Gui
-from PySide import QtGui
+from Op import DrillOp
 
-from BaptTools import ToolDatabase
-from Tool.ToolTaskPannel import ToolTaskPanel
-from utils import BQuantitySpinBox
+from Tool.ToolsGUI import ToolTaskPanel
+from utils import BQuantitySpinBox, PointSelectionObserver
 
 
 class DrillOperationTaskPanel:
     def __init__(self, obj):
         # Garder une référence à l'objet
         self.obj = obj
+        self._click_observer = None
 
         App.activeDocument().openTransaction("Edit Drill Operation Parameters")
         self.cuttingCondition = cuttingConditionTaskPanel(obj)
@@ -131,17 +132,19 @@ class DrillOperationTaskPanel:
         peckWidget = QtGui.QWidget()
         peckLayout = QtGui.QFormLayout(peckWidget)
 
-        self.peckDepth = QtGui.QDoubleSpinBox()
-        self.peckDepth.setRange(0.1, 100.0)
-        self.peckDepth.setSingleStep(0.5)
-        self.peckDepth.setSuffix(" mm")
-        peckLayout.addRow("Profondeur de passe:", self.peckDepth)
+        # self.peckDepth = QtGui.QDoubleSpinBox()
+        # self.peckDepth.setRange(0.1, 100.0)
+        # self.peckDepth.setSingleStep(0.5)
+        # self.peckDepth.setSuffix(" mm")
+        self.peckDepth = BQuantitySpinBox.BQuantitySpinBox(obj, "PeckDepth")
+        peckLayout.addRow("Profondeur de passe:", self.peckDepth.getWidget())
 
-        self.retract = QtGui.QDoubleSpinBox()
-        self.retract.setRange(0.1, 100.0)
-        self.retract.setSingleStep(0.5)
-        self.retract.setSuffix(" mm")
-        peckLayout.addRow("Retrait:", self.retract)
+        # self.retract = QtGui.QDoubleSpinBox()
+        # self.retract.setRange(0.1, 100.0)
+        # self.retract.setSingleStep(0.5)
+        # self.retract.setSuffix(" mm")
+        self.retract = BQuantitySpinBox.BQuantitySpinBox(obj, "Retract")
+        peckLayout.addRow("Retrait:", self.retract.getWidget())
 
         self.dwellTimePeck = createDwellTimeSpinBox()
         peckLayout.addRow("Temps de pause:", self.dwellTimePeck)
@@ -151,11 +154,12 @@ class DrillOperationTaskPanel:
         tappingWidget = QtGui.QWidget()
         tappingLayout = QtGui.QFormLayout(tappingWidget)
 
-        self.threadPitch = QtGui.QDoubleSpinBox()
-        self.threadPitch.setRange(0.1, 10.0)
-        self.threadPitch.setSingleStep(0.1)
-        self.threadPitch.setSuffix(" mm")
-        tappingLayout.addRow("Pas de filetage:", self.threadPitch)
+        # self.threadPitch = QtGui.QDoubleSpinBox()
+        # self.threadPitch.setRange(0.1, 10.0)
+        # self.threadPitch.setSingleStep(0.1)
+        # self.threadPitch.setSuffix(" mm")
+        self.threadPitch = BQuantitySpinBox.BQuantitySpinBox(obj, "ThreadPitch")
+        tappingLayout.addRow("Pas de filetage:", self.threadPitch.getWidget())
 
         self.specificLayout.addWidget(tappingWidget)
 
@@ -180,6 +184,10 @@ class DrillOperationTaskPanel:
         contouringLayout.addRow("Profondeur de passe (ap):", self.Ap.getWidget())
         self.Diam = BQuantitySpinBox.BQuantitySpinBox(obj, "Diam")
         contouringLayout.addRow("Diam:", self.Diam.getWidget())
+
+        # btn pour recuperer le diametre
+        self.selectDiamButton = QtGui.QPushButton("Sélectionner le diamètre")
+        contouringLayout.addRow(self.selectDiamButton)
 
         self.specificLayout.addWidget(contouringWidget)
 
@@ -215,26 +223,21 @@ class DrillOperationTaskPanel:
         depthParamsLayout = QtGui.QFormLayout()
 
         # Profondeur finale
-        self.finalDepth = QtGui.QDoubleSpinBox()
-        self.finalDepth.setRange(-1000.0, 1000.0)
-        self.finalDepth.setSingleStep(1.0)
-        self.finalDepth.setSuffix(" mm")
-        depthParamsLayout.addRow("Profondeur finale:", self.finalDepth)
+        self.finalDepth = BQuantitySpinBox.BQuantitySpinBox(obj, "FinalDepth")
+        depthParamsLayout.addRow("Profondeur finale:", self.finalDepth.getWidget())
+
+        # btn pour selectionner la profondeur finale Z
+        self.selectFinalDepthButton = QtGui.QPushButton("Sélectionner la profondeur finale")
+        depthParamsLayout.addRow(self.selectFinalDepthButton)
 
         # Référence Z (pour le mode relatif)
-        self.zReference = QtGui.QDoubleSpinBox()
-        self.zReference.setRange(-1000.0, 1000.0)
-        self.zReference.setSingleStep(1.0)
-        self.zReference.setSuffix(" mm")
+        self.zReference = BQuantitySpinBox.BQuantitySpinBox(obj, "ZReference")
         self.zRefLabel = QtGui.QLabel("Référence Z:")
-        depthParamsLayout.addRow(self.zRefLabel, self.zReference)
+        depthParamsLayout.addRow(self.zRefLabel, self.zReference.getWidget())
 
         # Hauteur de sécurité
-        self.safeHeight = QtGui.QDoubleSpinBox()
-        self.safeHeight.setRange(0.0, 1000.0)
-        self.safeHeight.setSingleStep(1.0)
-        self.safeHeight.setSuffix(" mm")
-        depthParamsLayout.addRow("Hauteur de sécurité:", self.safeHeight)
+        self.safeHeight = BQuantitySpinBox.BQuantitySpinBox(obj, "SafeHeight")
+        depthParamsLayout.addRow("Hauteur de sécurité:", self.safeHeight.getWidget())
 
         depthParamsGroup.setLayout(depthParamsLayout)
         depthLayout.addWidget(depthParamsGroup)
@@ -248,8 +251,8 @@ class DrillOperationTaskPanel:
         # Connecter les signaux
         self.geometryCombo.currentIndexChanged.connect(self.geometryChanged)
 
-        self.safeHeight.valueChanged.connect(lambda: self.updateVisual())
-        self.finalDepth.valueChanged.connect(lambda: self.updateVisual())
+        self.selectFinalDepthButton.clicked.connect(self.selectFinalDepth)
+        self.selectDiamButton.clicked.connect(self.selectDiam)
 
         # u2.testButton.clicked.connect(lambda: u2.onTestButtonClicked())
         if self.obj.Tool:
@@ -280,29 +283,6 @@ class DrillOperationTaskPanel:
             # Mettre à jour la profondeur
             if hasattr(obj, "DrillDepth"):
                 self.finalDepth.setValue(obj.DrillDepth.Value)
-
-            # Trouver un outil correspondant au diamètre
-            diameter = obj.DrillDiameter.Value
-            try:
-                db = ToolDatabase()  # TODO Why?
-
-                tools = db.get_all_tools()
-
-                bestTool = None
-                bestDiff = float('inf')
-
-                for tool in tools:
-                    diff = abs(tool.diameter - diameter)
-                    if diff < bestDiff:
-                        bestDiff = diff
-                        bestTool = tool
-
-                # Sélectionner l'outil si trouvé
-                if bestTool:
-                    self.obj.ToolId = bestTool.id
-
-            except Exception as e:
-                App.Console.PrintError(f"Erreur lors de la recherche d'un outil adapté: {str(e)}\n")
 
     def updateGeometryList(self):
         """Met à jour la liste des géométries de perçage disponibles"""
@@ -373,14 +353,14 @@ class DrillOperationTaskPanel:
         #     if index >= 0:
         #         self.coolantMode.setCurrentIndex(index)
 
-        if hasattr(self.obj, "PeckDepth"):
-            self.peckDepth.setValue(self.obj.PeckDepth.Value)
+        # if hasattr(self.obj, "PeckDepth"):
+        #     self.peckDepth.setValue(self.obj.PeckDepth.Value)
 
-        if hasattr(self.obj, "Retract"):
-            self.retract.setValue(self.obj.Retract.Value)
+        # if hasattr(self.obj, "Retract"):
+        #     self.retract.setValue(self.obj.Retract.Value)
 
-        if hasattr(self.obj, "ThreadPitch"):
-            self.threadPitch.setValue(self.obj.ThreadPitch.Value)
+        # if hasattr(self.obj, "ThreadPitch"):
+        #     self.threadPitch.setValue(self.obj.ThreadPitch.Value)
 
         if hasattr(self.obj, "DwellTime"):
             # self.dwellTime.setValue(self.obj.DwellTime)
@@ -396,15 +376,15 @@ class DrillOperationTaskPanel:
             else:
                 self.relativeRadio.setChecked(True)
 
-        if hasattr(self.obj, "FinalDepth"):
-            self.finalDepth.setValue(self.obj.FinalDepth.Value)
+        # if hasattr(self.obj, "FinalDepth"):
+        #     self.finalDepth.setValue(self.obj.FinalDepth.Value)
 
-        if hasattr(self.obj, "ZReference"):
-            self.zReference.setValue(self.obj.ZReference.Value)
+        # if hasattr(self.obj, "ZReference"):
+        #     self.zReference.setValue(self.obj.ZReference.Value)
 
-        if hasattr(self.obj, "SafeHeight"):
-            App.Console.PrintMessage(f'safe height: {self.obj.SafeHeight}\n')
-            self.safeHeight.setValue(self.obj.SafeHeight.Value)
+        # if hasattr(self.obj, "SafeHeight"):
+        #     App.Console.PrintMessage(f'safe height: {self.obj.SafeHeight}\n')
+        #     self.safeHeight.setValue(self.obj.SafeHeight.Value)
 
         # Mettre à jour l'affichage du mode de profondeur
         self.depthModeChanged(self.absoluteRadio.isChecked())
@@ -420,25 +400,27 @@ class DrillOperationTaskPanel:
 
     def accept(self):
         """Appelé quand l'utilisateur clique sur OK"""
-        # Mettre à jour la géométrie
+        # Mettre à jour la géométrie (seulement si elle a changé, sinon
+        # updateFromGeometry écraserait les valeurs de profondeur)
         if self.geometryCombo.currentIndex() >= 0:
             objName = self.geometryCombo.itemData(self.geometryCombo.currentIndex())
             geom = App.ActiveDocument.getObject(objName)
-            if geom:
+            if geom and geom != self.obj.DrillGeometry:
                 self.obj.DrillGeometry = geom
+
+        if self._click_observer is not None:
+            self._click_observer.disable()
+            self._click_observer = None
 
         # Mettre à jour le type de cycle
         self.obj.CycleType = self.cycleTypeCombo.currentText()
 
         # Mettre à jour les paramètres communs
-        # self.obj.SpindleSpeed = self.spindleSpeed.value()
-        # self.obj.FeedRate = self.feedRate.value()
-        # self.obj.CoolantMode = self.coolantMode.currentText()
 
         # Mettre à jour les paramètres spécifiques
-        self.obj.PeckDepth = self.peckDepth.value()
-        self.obj.Retract = self.retract.value()
-        self.obj.ThreadPitch = self.threadPitch.value()
+        # self.obj.PeckDepth = self.peckDepth.value()
+        # self.obj.Retract = self.retract.value()
+        # self.obj.ThreadPitch = self.threadPitch.value()
 
         # Prendre la valeur du widget dwellTime visible actuellement
         if self.specificLayout.currentIndex() == 0:  # Simple
@@ -455,9 +437,6 @@ class DrillOperationTaskPanel:
         self.obj.DepthMode = "Absolute" if self.absoluteRadio.isChecked() else "Relative"
 
         # Mettre à jour les paramètres de profondeur
-        self.obj.FinalDepth = self.finalDepth.value()
-        self.obj.ZReference = self.zReference.value()
-        self.obj.SafeHeight = self.safeHeight.value()
 
         # Mettre à jour les paramètres d'affichage
         # self.obj.ShowPathLine = self.showPathLine.isChecked()
@@ -476,6 +455,10 @@ class DrillOperationTaskPanel:
 
     def reject(self):
         """Appelé quand l'utilisateur clique sur Cancel"""
+        if self._click_observer is not None:
+            self._click_observer.disable()
+            self._click_observer = None
+
         App.activeDocument().abortTransaction()
         if self.obj.Tool:
             self.obj.Tool.Visibility = False
@@ -503,4 +486,45 @@ class DrillOperationTaskPanel:
         """Appelé quand le mode de profondeur change"""
         # Mettre à jour la visibilité de la référence Z
         self.zRefLabel.setVisible(not checked)
-        self.zReference.setVisible(not checked)
+        self.zReference.widget.setVisible(not checked)
+        pass
+
+    def selectFinalDepth(self):
+        """Permet à l'utilisateur de sélectionner la profondeur finale en cliquant sur une face ou un point dans la vue 3D"""
+        # utilise un listener
+        self._start_observer("FinaleDepth")
+        self.selectFinalDepthButton.setEnabled(False)
+        pass
+
+    def selectDiam(self):
+        """Permet à l'utilisateur de sélectionner le diamètre en cliquant sur une face ou un point dans la vue 3D"""
+        # utilise un listener
+        self._start_observer("Diam")
+        self.selectDiamButton.setEnabled(False)
+        pass
+
+    def _start_observer(self, target):
+        """Démarre un observer pour écouter les clics dans la vue 3D"""
+        # Créer un observer qui écoute les clics dans la vue 3D
+        if self._click_observer is not None:
+            self._click_observer.disable()
+            self._click_observer = None
+        self._click_observer = PointSelectionObserver.PointSelectionObserver(
+            callback=lambda point, document, obj, element, t=target: self._on_point_selected(document, obj, element, point, t)
+        )
+        self._click_observer.enable()
+
+    def _on_point_selected(self, doc, obj, element, point, target):
+        """Callback appelé quand un point est sélectionné dans la vue 3D"""
+        App.Console.PrintMessage(f"Point sélectionné pour {target}: {point}\n")
+        if target == "FinaleDepth":
+            self.finalDepth.setValue(point.z)
+        elif target == "Diam":
+            App.Console.PrintMessage(f'{doc}-{obj}-{element}\n')
+            sub = App.getDocument(doc).getObject(obj).getSubObject(element)
+            # sub = obj.getSubObject(element)
+            if sub.Surface.TypeId == 'Part::GeomCylinder':
+                self.Diam.setValue(sub.Surface.Radius * 2)
+        self._click_observer = None
+        self.selectFinalDepthButton.setEnabled(True)
+        self.selectDiamButton.setEnabled(True)

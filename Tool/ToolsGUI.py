@@ -1,246 +1,12 @@
+from BaptUtilities import find_cam_project, getIconPath
 import FreeCAD as App
 import FreeCADGui as Gui
-import Part
-import os
-from PySide import QtCore, QtGui
-import json
-import sqlite3
-from BaptPreferences import BaptPreferences
-import BaptUtilities
-
-
-class Tool:
-    """Classe représentant un outil d'usinage"""
-
-    def __init__(self, id=None, name="", type="", diameter=0.0, length=0.0, flutes=0, material="", comment="",
-                 point_angle=118.0, torus_radius=0.0, thread_pitch=0.0, speed=0.0, feed=0.0):
-        self.id = id
-        self.name = name
-        self.type = type
-        self.diameter = diameter
-        self.length = length
-        self.flutes = flutes
-        self.material = material
-        self.comment = comment
-
-        # Paramètres spécifiques aux types d'outils
-        self.point_angle = point_angle  # Angle de pointe pour les forets (en degrés)
-        self.torus_radius = torus_radius  # Rayon du tore pour les fraises toriques (en mm)
-        self.thread_pitch = thread_pitch  # Pas pour les tarauds (en mm)
-
-        self.speed = speed  # Vitesse de coupe (en rpm)
-        self.feed = feed    # Avance (en mm/min)
-
-    def to_dict(self):
-        """Convertit l'outil en dictionnaire"""
-        return {
-            'id': self.id,
-            'name': self.name,
-            'type': self.type,
-            'diameter': self.diameter,
-            'length': self.length,
-            'flutes': self.flutes,
-            'material': self.material,
-            'comment': self.comment,
-            'point_angle': self.point_angle,
-            'torus_radius': self.torus_radius,
-            'thread_pitch': self.thread_pitch,
-            'speed': self.speed,
-            'feed': self.feed
-        }
-
-    @classmethod
-    def from_dict(cls, data):
-        """Crée un outil à partir d'un dictionnaire"""
-        return cls(
-            id=data.get('id'),
-            name=data.get('name', ""),
-            type=data.get('type', ""),
-            diameter=data.get('diameter', 0.0),
-            length=data.get('length', 0.0),
-            flutes=data.get('flutes', 0),
-            material=data.get('material', ""),
-            comment=data.get('comment', ""),
-            point_angle=data.get('point_angle', 118.0),
-            torus_radius=data.get('torus_radius', 0.0),
-            thread_pitch=data.get('thread_pitch', 0.0),
-            speed=data.get('speed', 0.0),
-            feed=data.get('feed', 0.0)
-        )
-
-
-class ToolDatabase:
-    """Classe gérant la base de données d'outils"""
-
-    def __init__(self):
-        # Récupérer le chemin depuis les préférences
-        prefs = BaptPreferences()
-        self.db_path = prefs.getToolsDbPath()
-
-        # Initialiser la base de données
-        self.init_database()
-
-    def init_database(self):
-        """Initialise la base de données si elle n'existe pas"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        # Vérifier si la table existe déjà
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tools'")
-        table_exists = cursor.fetchone()
-
-        if not table_exists:
-            # Créer la table des outils si elle n'existe pas
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS tools (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT,
-                type TEXT,
-                diameter REAL,
-                length REAL,
-                flutes INTEGER,
-                material TEXT,
-                comment TEXT,
-                point_angle REAL DEFAULT 118.0,
-                torus_radius REAL DEFAULT 0.0,
-                thread_pitch REAL DEFAULT 0.0,
-                speed REAL DEFAULT 0.0,
-                feed REAL DEFAULT 0.0
-            )
-            ''')
-        else:
-            # Vérifier si les nouvelles colonnes existent, sinon les ajouter
-            try:
-                cursor.execute("SELECT point_angle FROM tools LIMIT 1")
-            except sqlite3.OperationalError:
-                cursor.execute("ALTER TABLE tools ADD COLUMN point_angle REAL DEFAULT 118.0")
-
-            try:
-                cursor.execute("SELECT torus_radius FROM tools LIMIT 1")
-            except sqlite3.OperationalError:
-                cursor.execute("ALTER TABLE tools ADD COLUMN torus_radius REAL DEFAULT 0.0")
-
-            try:
-                cursor.execute("SELECT thread_pitch FROM tools LIMIT 1")
-            except sqlite3.OperationalError:
-                cursor.execute("ALTER TABLE tools ADD COLUMN thread_pitch REAL DEFAULT 0.0")
-
-            try:
-                cursor.execute("SELECT speed FROM tools LIMIT 1")
-            except sqlite3.OperationalError:
-                cursor.execute("ALTER TABLE tools ADD COLUMN speed REAL DEFAULT 0.0")
-
-            try:
-                cursor.execute("SELECT feed FROM tools LIMIT 1")
-            except sqlite3.OperationalError:
-                cursor.execute("ALTER TABLE tools ADD COLUMN feed REAL DEFAULT 0.0")
-
-        conn.commit()
-        conn.close()
-
-    def get_all_tools(self):
-        """Récupère tous les outils de la base de données"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch, speed, feed FROM tools")
-        rows = cursor.fetchall()
-
-        tools = []
-        for row in rows:
-            tool = Tool(
-                id=row[0],
-                name=row[1],
-                type=row[2],
-                diameter=row[3],
-                length=row[4],
-                flutes=row[5],
-                material=row[6],
-                comment=row[7],
-                point_angle=row[8],
-                torus_radius=row[9],
-                thread_pitch=row[10],
-                speed=row[11],
-                feed=row[12]
-            )
-            tools.append(tool)
-
-        conn.close()
-        return tools
-
-    def get_tool_by_id(self, tool_id):
-        """Récupère un outil par son ID"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch, speed, feed FROM tools WHERE id=?", (tool_id,))
-        row = cursor.fetchone()
-
-        if row:
-            tool = Tool(
-                id=row[0],
-                name=row[1],
-                type=row[2],
-                diameter=row[3],
-                length=row[4],
-                flutes=row[5],
-                material=row[6],
-                comment=row[7],
-                point_angle=row[8],
-                torus_radius=row[9],
-                thread_pitch=row[10],
-                speed=row[11],
-                feed=row[12]
-            )
-            conn.close()
-            return tool
-        else:
-            conn.close()
-            return None
-
-    def add_tool(self, tool):
-        """Ajoute un outil à la base de données"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute('''
-        INSERT INTO tools (name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (tool.name, tool.type, tool.diameter, tool.length, tool.flutes, tool.material, tool.comment,
-              tool.point_angle, tool.torus_radius, tool.thread_pitch))
-
-        # Récupérer l'ID généré
-        tool.id = cursor.lastrowid
-
-        conn.commit()
-        conn.close()
-        return tool
-
-    def update_tool(self, tool):
-        """Met à jour un outil dans la base de données"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute('''
-        UPDATE tools
-        SET name=?, type=?, diameter=?, length=?, flutes=?, material=?, comment=?, point_angle=?, torus_radius=?, thread_pitch=?, speed=?, feed=?
-        WHERE id=?
-        ''', (tool.name, tool.type, tool.diameter, tool.length, tool.flutes, tool.material, tool.comment,
-              tool.point_angle, tool.torus_radius, tool.thread_pitch, tool.speed, tool.feed, tool.id))
-
-        conn.commit()
-        conn.close()
-        return tool
-
-    def delete_tool(self, tool_id):
-        """Supprime un outil de la base de données"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute("DELETE FROM tools WHERE id=?", (tool_id,))
-
-        conn.commit()
-        conn.close()
+from Tool import ToolSelectorDialog, tool_utils
+from Tool.BaptTools import Tool
+from PySide import QtCore, QtGui  # type: ignore
+from Tool.tool_utils import get_tool_repository
+import utils.BQuantitySpinBox as BQantitySpinBox
+from utils import Log  # type: ignore
 
 
 class ToolsTableModel(QtCore.QAbstractTableModel):
@@ -472,6 +238,14 @@ class ToolDialog(QtGui.QDialog):
         self.feed_spin.setValue(self.tool.feed)
         form_layout.addRow("Avance:", self.feed_spin)
 
+        # Arrosage
+        self.coolant_combo = QtGui.QComboBox()
+        self.coolant_combo.addItem("Off", Tool.COOLANT_OFF)
+        self.coolant_combo.addItem("Flood", Tool.COOLANT_FLOOD)
+        self.coolant_combo.addItem("Mist", Tool.COOLANT_MIST)
+        self.coolant_combo.setCurrentIndex(self.tool.coolant)
+        form_layout.addRow("Arrosage:", self.coolant_combo)
+
         layout.addLayout(form_layout)
 
         # Groupe pour les paramètres spécifiques au type d'outil
@@ -575,8 +349,9 @@ class ToolDialog(QtGui.QDialog):
         # Vitesse et avance
         self.tool.speed = self.speed_spin.value()
         self.tool.feed = self.feed_spin.value()
+        self.tool.coolant = self.coolant_combo.currentIndex()
 
-        tb = ToolDatabase()
+        tb = get_tool_repository()
         tool = tb.update_tool(self.tool) if self.tool.id else tb.add_tool(self.tool)
         status = (tool is not None)
         App.Console.PrintMessage(f"Outil enregistré {status} avec les paramètres spécifiques: Angle={self.tool.point_angle}, Rayon={self.tool.torus_radius}, Pas={self.tool.thread_pitch}\n")
@@ -596,7 +371,7 @@ class ToolsManagerPanel:
         self.setup_ui()
 
         # Base de données d'outils
-        self.db = ToolDatabase()
+        self.db = get_tool_repository()
 
         # Charger les outils
         self.load_tools()
@@ -710,7 +485,7 @@ class ToolsManagerPanel:
         dialog = ToolDialog(parent=self.form)
         if dialog.exec_() == QtGui.QDialog.Accepted:
             # Ajouter l'outil à la base de données
-            tool = self.db.add_tool(dialog.tool)
+            self.db.add_tool(dialog.tool)
 
             # Mettre à jour le modèle
             tools = self.db.get_all_tools()
@@ -770,3 +545,258 @@ class ToolsManagerPanel:
             # Mettre à jour le modèle
             tools = self.db.get_all_tools()
             self.model.setTools(tools)
+
+
+class ToolTaskPanel:
+    def __init__(self, obj, parent=None):
+
+        self.obj = obj
+        self.parent = parent
+
+        self.form = QtGui.QWidget()
+        self.form.setWindowTitle("Sélection d'outil")
+        self.form.setWindowIcon(QtGui.QIcon(getIconPath("tool.svg")))
+
+        layout = QtGui.QVBoxLayout(self.form)
+
+        self.selectToolButton = QtGui.QPushButton("Sélectionner un outil")
+        layout.addWidget(self.selectToolButton)
+
+        self.toolComboBox = QtGui.QComboBox()
+        layout.addWidget(self.toolComboBox)
+
+        self.toolLayout = QtGui.QFormLayout()
+        # champ pour afficher l'outil sélectionné
+        self.selectedToolLabel = QtGui.QLabel("Aucun outil sélectionné")
+        layout.addWidget(self.selectedToolLabel)
+
+        # champ edit id
+        self.idTool = QtGui.QSpinBox()
+        self.idTool.setRange(0, 10000)
+        self.toolLayout.addRow("ID Outil:", self.idTool)
+
+        # champ edit name
+        self.nameTool = QtGui.QLineEdit()
+        self.toolLayout.addRow("Nom Outil:", self.nameTool)
+
+        # champ d'edition diametre
+        self.diameter = QtGui.QDoubleSpinBox()
+        self.diameter.setRange(0, 100)
+        self.toolLayout.addRow("Diamètre:", self.diameter)
+
+        # Type d'outil
+        self.toolTypeLabel = QtGui.QLabel("")
+        self.toolLayout.addRow("Type:", self.toolTypeLabel)
+
+        # Rayon de tore (visible seulement pour fraise torique)
+        self.torusRadiusSpin = QtGui.QDoubleSpinBox()
+        self.torusRadiusSpin.setRange(0.0, 50.0)
+        self.torusRadiusSpin.setSingleStep(0.1)
+        self.torusRadiusSpin.setSuffix(" mm")
+        self.torusRadiusLabel = QtGui.QLabel("Rayon du tore:")
+        self.toolLayout.addRow(self.torusRadiusLabel, self.torusRadiusSpin)
+        self.torusRadiusLabel.setVisible(False)
+        self.torusRadiusSpin.setVisible(False)
+
+        # Angle de pointe (visible seulement pour foret)
+        self.pointAngleSpin = QtGui.QDoubleSpinBox()
+        self.pointAngleSpin.setRange(60.0, 180.0)
+        self.pointAngleSpin.setSingleStep(1.0)
+        self.pointAngleSpin.setSuffix(" °")
+        self.pointAngleSpin.setValue(118.0)
+        self.pointAngleLabel = QtGui.QLabel("Angle de pointe:")
+        self.toolLayout.addRow(self.pointAngleLabel, self.pointAngleSpin)
+        self.pointAngleLabel.setVisible(False)
+        self.pointAngleSpin.setVisible(False)
+
+        # champ d'edition Speed
+        self.speed = QtGui.QDoubleSpinBox()
+        self.speed = BQantitySpinBox.BQuantitySpinBox(self.obj, "Tool.Speed")
+        # self.speed.setRange(0, 10000)
+        self.toolLayout.addRow("Vitesse de coupe (RPM):", self.speed.getWidget())
+
+        # champ d'edition Feed
+        # self.feed = QtGui.QDoubleSpinBox()
+        self.feed = BQantitySpinBox.BQuantitySpinBox(self.obj, "Tool.Feed")
+        # self.feed.setRange(0, 10000)
+        self.toolLayout.addRow("Vitesse d'avance:", self.feed.getWidget())
+
+        layout.addLayout(self.toolLayout)
+
+        self.initValues()
+
+        self.initListeners()
+
+    def _updateSpecificFieldsVisibility(self, tool_type):
+        """Show/hide specific fields depending on tool type."""
+        is_torus = (tool_type == "Fraise torique")
+        self.torusRadiusLabel.setVisible(is_torus)
+        self.torusRadiusSpin.setVisible(is_torus)
+        is_drill = (tool_type == "Foret")
+        self.pointAngleLabel.setVisible(is_drill)
+        self.pointAngleSpin.setVisible(is_drill)
+
+    def onToolComboBoxChanged(self):
+
+        tool = self.toolComboBox.currentText()
+        if not tool:
+            return
+        toolObj = App.ActiveDocument.getObject(tool)
+        if toolObj is None:
+            return
+        self.obj.Tool = toolObj
+        self.selectedToolLabel.setText(f"Outil sélectionné: {toolObj.Label} (ID: {toolObj.Id})")
+        self.diameter.setValue(toolObj.Radius * 2.0)
+        self.idTool.setValue(toolObj.Id)
+        self.nameTool.setText(toolObj.Label)
+        self.speed.updateWidget()
+        self.feed.updateWidget()
+        tool_type = getattr(toolObj, "ToolType", "Fraise")
+        self.toolTypeLabel.setText(tool_type)
+        self._updateSpecificFieldsVisibility(tool_type)
+        if hasattr(toolObj, "TorusRadius"):
+            self.torusRadiusSpin.setValue(toolObj.TorusRadius)
+        if hasattr(toolObj, "PointAngle"):
+            self.pointAngleSpin.setValue(toolObj.PointAngle)
+
+    def selectTool(self):
+        """Ouvre le dialogue de sélection d'outil"""
+
+        current_tool = getattr(self.obj, "Tool", None)
+
+        dialog = ToolSelectorDialog.ToolSelectorDialog(current_tool.Id if current_tool else -1, self.form)
+        result = dialog.exec_()
+        sel = dialog.selected_tool
+        if result == QtGui.QDialog.Rejected and sel is None:
+            return
+        # Récupérer le projet CAM actif
+        p = find_cam_project(self.obj)
+        if not p:
+            return
+
+        groupTools = p.Proxy.getToolsGroup()
+
+        if current_tool is None or current_tool.Id != sel.id:
+            new_tool = tool_utils.create_tool_obj(
+                sel.id, sel.name, sel.diameter, sel.speed, sel.feed,
+                tool_type=sel.type, torus_radius=sel.torus_radius,
+                length=sel.length, point_angle=sel.point_angle
+            )
+            groupTools.addObject(new_tool)
+            self.obj.Tool = new_tool
+
+            if current_tool is not None:
+                # Supprimer l'ancien outil s'il n'est utilisé par aucun autre objet
+                if len(current_tool.InList) <= 1:
+                    App.Console.PrintMessage("L'outil n'est utilisé par aucun autre objet, il sera supprimé.\n")
+                    groupTools.removeObject(current_tool)
+                    App.ActiveDocument.removeObject(current_tool.Name)
+        else:
+            # Même ID : mettre à jour les propriétés de l'outil existant
+            current_tool.Speed = f"{sel.speed} mm/min"
+            current_tool.Feed = f"{sel.feed} mm/min"
+            current_tool.Radius = sel.diameter / 2.0
+            current_tool.Height = sel.length
+            if hasattr(current_tool, "ToolType"):
+                current_tool.ToolType = sel.type
+            if hasattr(current_tool, "TorusRadius"):
+                current_tool.TorusRadius = sel.torus_radius
+            if hasattr(current_tool, "PointAngle"):
+                current_tool.PointAngle = sel.point_angle
+
+        # Mettre à jour l'UI avec les données sélectionnées
+        self._updateToolUI(sel)
+        self.obj.recompute()
+        self.initToolComboBox()
+
+    def _updateToolUI(self, sel):
+        """Met à jour tous les champs UI à partir d'un objet Tool (DB)."""
+        self.selectedToolLabel.setText(f"Outil sélectionné: {self.obj.Tool.Label} (ID: {self.obj.Tool.Id})")
+        self.idTool.setValue(sel.id)
+        self.nameTool.setText(sel.name)
+        self.diameter.setValue(sel.diameter)
+        self.speed.updateWidget()
+        self.feed.updateWidget()
+        self.toolTypeLabel.setText(sel.type)
+        self._updateSpecificFieldsVisibility(sel.type)
+        self.torusRadiusSpin.setValue(sel.torus_radius)
+        self.pointAngleSpin.setValue(sel.point_angle)
+
+    def initValues(self):
+
+        self.initToolComboBox()
+
+        if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
+            tool = self.obj.Tool
+            self.selectedToolLabel.setText(f"Outil sélectionné: {tool.Name} (ID: {tool.Id})")
+            self.diameter.setValue(tool.Radius * 2.0)
+            self.idTool.setValue(tool.Id)
+            self.nameTool.setText(tool.Name)
+            tool_type = getattr(tool, "ToolType", "Fraise")
+            self.toolTypeLabel.setText(tool_type)
+            self._updateSpecificFieldsVisibility(tool_type)
+            if hasattr(tool, "TorusRadius"):
+                self.torusRadiusSpin.setValue(tool.TorusRadius)
+            if hasattr(tool, "PointAngle"):
+                self.pointAngleSpin.setValue(tool.PointAngle)
+
+    def initToolComboBox(self):
+        '''populate tool combo box'''
+        p = find_cam_project(self.obj)
+        if not p:
+            return
+
+        groupTools = p.Proxy.getToolsGroup()
+
+        # Bloquer les signaux pour éviter les appels en cascade à onToolComboBoxChanged
+        self.toolComboBox.blockSignals(True)
+        self.toolComboBox.clear()
+        for t in groupTools.Group:
+            self.toolComboBox.addItem(t.Name)
+        if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
+            idx = self.toolComboBox.findText(self.obj.Tool.Name)
+            Log.baptDebug(f'Finding tool {self.obj.Tool.Name} in tool group idx {idx}')
+            if idx >= 0:
+                self.toolComboBox.setCurrentIndex(idx)
+        else:
+            self.toolComboBox.setCurrentIndex(-1)
+        self.toolComboBox.blockSignals(False)
+
+    def initListeners(self):
+        self.selectToolButton.clicked.connect(lambda: self.selectTool())
+        self.idTool.valueChanged.connect(lambda: self.updateToolId())
+        self.nameTool.textChanged.connect(lambda: self.updateToolName())
+        self.diameter.valueChanged.connect(lambda: self.updateToolDiameter())
+        self.torusRadiusSpin.valueChanged.connect(lambda: self.updateTorusRadius())
+        self.pointAngleSpin.valueChanged.connect(lambda: self.updatePointAngle())
+        self.toolComboBox.currentTextChanged.connect(lambda: self.onToolComboBoxChanged())
+
+    def updateToolDiameter(self):
+        if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
+            tool = self.obj.Tool
+            tool.Radius = self.diameter.value() / 2.0
+
+    def updateToolId(self):
+        if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
+            tool = self.obj.Tool
+            tool.Id = self.idTool.value()
+            self.selectedToolLabel.setText(f"Outil sélectionné: {tool.Name} (ID: {tool.Id})")
+
+    def updateToolName(self):
+        if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
+            tool = self.obj.Tool
+            tool.Label = self.nameTool.text()
+            self.selectedToolLabel.setText(f"Outil sélectionné: {tool.Label} (ID: {tool.Id})")
+
+    def updateTorusRadius(self):
+        if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
+            if hasattr(self.obj.Tool, "TorusRadius"):
+                self.obj.Tool.TorusRadius = self.torusRadiusSpin.value()
+
+    def updatePointAngle(self):
+        if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
+            if hasattr(self.obj.Tool, "PointAngle"):
+                self.obj.Tool.PointAngle = self.pointAngleSpin.value()
+
+    def getForm(self):
+        return self.form

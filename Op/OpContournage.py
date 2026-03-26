@@ -1,23 +1,25 @@
 import enum
-from BaptPath import GcodeEditorTaskPanel
-from Op.BaseOp import baseOpViewProviderProxy
-import BaptUtilities
+import sys
+import math
+
 import FreeCAD as App
 import FreeCADGui as Gui
-import Part
-from utils import Contour, GcodeWriter
-import PySide.QtGui as QtGui
-import PySide.QtCore as QtCore
-import Op.Gui.ContournageTaskPanel as ContournageTaskPanel
-from Op.BaseOp import baseOp
+import Part  # type: ignore
 
-import math
+import PySide.QtGui as QtGui  # type: ignore
+import PySide.QtCore as QtCore  # type: ignore
+
+from BaptPath import GcodeEditorTaskPanel
+import BaptUtilities
+from utils import Contour, GcodeWriter, Log
+from Op.Gui.ContournageTaskPanel import ContournageTaskPanel
+from Op.BaseOp import baseOp, baseOpViewProviderProxy
 
 
 # compensation = ["Ordinateur", "Machine", "Ordinateur + G41/G42", "Aucune"]
 
 
-class compensation(enum.Enum):
+class Compensation(enum.Enum):
     Ordinateur = 0
     Machine = 1
     Ordinateur_G41_G42 = 2
@@ -87,8 +89,8 @@ class ContournageCycle(baseOp):
 
         if not hasattr(obj, "Compensation"):
             obj.addProperty("App::PropertyEnumeration", "Compensation", "Toolpath", "Type de compensation d'outil")
-            obj.Compensation = list(compensation.__members__.keys())
-            obj.Compensation = compensation.Ordinateur.name
+            obj.Compensation = list(Compensation.__members__.keys())
+            obj.Compensation = Compensation.Ordinateur.name
 
         if not hasattr(obj, "SurepAxiale"):
             obj.addProperty("App::PropertyFloat", "SurepAxiale", "Toolpath", "Surépaisseur axiale")
@@ -195,7 +197,13 @@ class ContournageCycle(baseOp):
             # Utiliser base_wire directement — NE PAS reconstruire avec Part.Wire()
             # car Part.Wire() peut inverser la direction du wire pour les contours ouverts.
             # base_wire vient de ContourGeometry qui respecte déjà la Direction.
-            wire_z = base_wire
+
+            # Obtenir le wire à la profondeur de passe via polymorphisme
+            wire_z = contour_geom.Proxy.getWireAtZ(contour_geom, pass_z)
+            if wire_z is None:
+                Log.baptError(f"Pas de wire à Z={pass_z}")
+                continue
+            is_closed = wire_z.isClosed()
 
             # ── 4a. Appliquer l'offset outil ───────────────────────────────
 
@@ -208,7 +216,7 @@ class ContournageCycle(baseOp):
                 result = wire_z.makeOffset2D(offset_with_surep,
                                              openResult=not is_closed)
 
-                if obj.Compensation == compensation.Machine.name:
+                if obj.Compensation == Compensation.Machine.name:
                     # Compensation machine : offset complet puis contre-offset du rayon.
                     # La CNC appliquera G41/G42 pour le rayon outil.
                     result = result.Wires[0].makeOffset2D(
@@ -219,12 +227,13 @@ class ContournageCycle(baseOp):
                 elif result.Edges:
                     offset_wire = Part.Wire(result.Edges)
                 else:
-                    App.Console.PrintWarning(
-                        f"[Contournage] Pas de résultat d'offset Z={pass_z}\n")
+                    Log.baptError(
+                        f"Pas de résultat d'offset Z={pass_z}")
                     continue
             except Exception as e:
-                App.Console.PrintError(
-                    f"[Contournage] Erreur offset Z={pass_z}: {e}\n")
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                Log.baptError(
+                    f"Erreur offset Z={pass_z}: ligne {exc_tb.tb_lineno} - {e}")
                 continue
 
             offset_edges = list(offset_wire.Edges)
@@ -312,8 +321,8 @@ class ContournageCycle(baseOp):
             gcode.linearMove({'Z': pass_z}, feed=feed, rapid=False)
 
             comp = "G40"
-            if obj.Compensation in [compensation.Machine.name,
-                                    compensation.Ordinateur_G41_G42.name]:
+            if obj.Compensation in [Compensation.Machine.name,
+                                    Compensation.Ordinateur_G41_G42.name]:
                 comp = "G41" if tool_is_left else "G42"
 
             if p == 0:
@@ -341,8 +350,15 @@ class ContournageCycle(baseOp):
 
             for i, edge in enumerate(offset_edges):
                 bon_sens = self._edge_direction(offset_edges, i)
-                Contour.edgeToGcode(edge, bonSens=bon_sens, current_z=pass_z,
-                                    rapid=False, gcodeWriter=gcode)
+                try:
+                    Contour.edgeToGcode(edge, bonSens=bon_sens, current_z=pass_z,
+                                        rapid=False, gcodeWriter=gcode)
+                except Exception as e:
+                    App.Console.PrintError(f"message {str(e)}\n")
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
+                    Log.baptDebug(f"message {str(e)}")
+                    continue
 
             # ── 4g. Sortie ─────────────────────────────────────────────────
 

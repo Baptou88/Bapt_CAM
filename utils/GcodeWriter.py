@@ -12,6 +12,7 @@ class GcodeWriter:
         self.lines = []
         self.current_position = {'X': None, 'Y': None, 'Z': None}
         self.current_feed = None
+        self.labels = []
         prefs = BaptPreferences()
         self.DEBUG = prefs.debugGcode
 
@@ -44,7 +45,7 @@ class GcodeWriter:
             line += f" F{feed:.1f}"
             self.current_feed = feed
 
-        if rapid == False and self.current_feed is not None:
+        if rapid is False and self.current_feed is not None:
             # Estimation du temps pour ce déplacement
             feed_mm_per_sec = self.current_feed / 60.0  # Convertir de mm/min à mm/s
             d = (distance['X'] ** 2 + distance['Y'] ** 2 + distance['Z'] ** 2) ** 0.5
@@ -87,3 +88,17 @@ class GcodeWriter:
         if self.DEBUG:
             module, line_num, func = GcodeWriter._caller()
             self.lines[-1] += f" (at {module}:{line_num} in {func})"
+
+    def addLabel(self, label):
+        if label in self.labels:
+            raise ValueError(f"Label '{label}' already exists.")
+        self.labels.append(label)
+
+        self.lines.append(f"{label}:")
+
+    def endLabel(self):
+        label = self.labels.pop()
+        self.lines.append(f"{label}_FIN:")
+
+    def raw(self, line):
+        self.lines.append(line)

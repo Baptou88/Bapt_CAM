@@ -47,6 +47,19 @@ def getPostProPath(postPro: str):
     return os.path.join(get_module_path(), "PostPro", postPro)
 
 
+def getAvailablePostProcessors():
+    '''
+    Returns a sorted list of available post-processor names
+    by scanning Python files in the PostPro directory.
+    '''
+    postpro_dir = os.path.join(get_module_path(), "PostPro")
+    result = []
+    for filename in os.listdir(postpro_dir):
+        if filename.endswith(".py") and filename != "__init__.py":
+            result.append(filename[:-3])
+    return sorted(result)
+
+
 def getExamplesPath():
     '''
     Returns the examples path.

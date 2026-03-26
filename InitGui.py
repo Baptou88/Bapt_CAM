@@ -4,11 +4,11 @@
 InitGui.py for Bapt Workbench
 This file is executed when FreeCAD starts up and loads your workbench
 """
+import os
 
 import FreeCAD as App
 import FreeCADGui as Gui
 from FreeCADGui import Workbench
-import os
 
 
 class BaptWorkbench (Workbench):

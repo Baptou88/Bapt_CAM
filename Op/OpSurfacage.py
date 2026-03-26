@@ -1,16 +1,17 @@
-from Gui import cuttingConditionTaskPanel as cc
-from Op.BaseOp import baseOpViewProviderProxy
+import math
+
 import FreeCAD as App
 import FreeCADGui as Gui
-from Op.BaseOp import baseOp
 from PySide import QtGui, QtCore
-from Tool.ToolTaskPannel import ToolTaskPanel
+
+from Gui import cuttingConditionTaskPanel as cc
+from Op.BaseOp import baseOpViewProviderProxy, baseOp
+from Tool.ToolsGUI import ToolTaskPanel
 import BaptUtilities
 
 
 from utils import Log, PointSelectionObserver
 from utils import BQuantitySpinBox
-import math
 
 from utils.GcodeWriter import GcodeWriter
 

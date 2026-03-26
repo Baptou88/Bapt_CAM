@@ -11,7 +11,7 @@ from PySide import QtGui, QtCore
 import sys
 import traceback
 import BaptUtilities
-from Tool.ToolTaskPannel import ToolTaskPanel
+from Tool.ToolsGUI import ToolTaskPanel
 from utils import BQuantitySpinBox, GcodeWriter
 from utils import Log as Log
 from utils.Contour import getFirstPoint, edgeToGcode
@@ -185,11 +185,11 @@ class PocketOperation(BaseOp.baseOp):
                             start_point = edge.Vertexes[0].Point
                             end_point = edge.Vertexes[-1].Point
                             u1, v1 = edge.ParameterRange
-                            mid_param = (u1 + v1)/2
+                            mid_param = (u1 + v1) / 2
                             mid_point = edge.valueAt(mid_param)
                             # ajoute une sphere au millieu
                             # App.Console.PrintMessage(f"start {start_point}, end {end_point} mid {mid_point}\n")
-                            sphere = Part.makeSphere(tool_diam/4, mid_point)
+                            sphere = Part.makeSphere(tool_diam / 4, mid_point)
                             spheres.append(sphere)
 
             elif hasattr(obj, 'FillMode') and obj.FillMode == "offset2":
@@ -305,13 +305,13 @@ class PocketOperation(BaseOp.baseOp):
                         dz = safe_z - current_z
                         diam = tool_diam * 1.5
                         nbtour = math.ceil(dz / 1.0)  # 1mm par tour
-                        prisePasse = (dz/nbtour) / 2
-                        gcodeWriter.linearMove({'X': start_pt.x + diam/2, 'Y': start_pt.y, 'Z': safe_z}, feed=feed_rate)
+                        prisePasse = (dz / nbtour) / 2
+                        gcodeWriter.linearMove({'X': start_pt.x + diam / 2, 'Y': start_pt.y, 'Z': safe_z}, feed=feed_rate)
                         Log.baptDebug(f"Plongée hélicoïdale: {nbtour} tours, prise de passe {prisePasse:.3f}")
                         Log.baptDebug(f"safe_z {safe_z}, current_z {current_z}")
                         for i in range(nbtour):
-                            gcodeWriter.arcMove({'X': start_pt.x - diam/2, 'Y': start_pt.y, 'Z': safe_z - ((i+1)*prisePasse + i * prisePasse), 'CCW': True, 'I': -diam/2, 'J': 0}, feed=feed_rate)
-                            gcodeWriter.arcMove({'X': start_pt.x + diam/2, 'Y': start_pt.y, 'Z': safe_z - ((i+1)*(prisePasse * 2)), 'CCW': True, 'I': diam/2, 'J': 0}, feed=feed_rate)
+                            gcodeWriter.arcMove({'X': start_pt.x - diam / 2, 'Y': start_pt.y, 'Z': safe_z - ((i + 1) * prisePasse + i * prisePasse), 'CCW': True, 'I': -diam / 2, 'J': 0}, feed=feed_rate)
+                            gcodeWriter.arcMove({'X': start_pt.x + diam / 2, 'Y': start_pt.y, 'Z': safe_z - ((i + 1) * (prisePasse * 2)), 'CCW': True, 'I': diam / 2, 'J': 0}, feed=feed_rate)
                         gcodeWriter.linearMove({'X': start_pt.x, 'Y': start_pt.y, 'Z': current_z}, feed=feed_rate)
                     # Le parcours est continu : pas de repositionnement rapide
                     # On détermine bonSens par arête en suivant la position courante
@@ -382,9 +382,9 @@ class PocketOperation(BaseOp.baseOp):
         ymin, ymax = bbox.YMin, bbox.YMax
         pas = tool_diam * (1 - overlap)
         lines = []
-        y = ymin + tool_diam/2
+        y = ymin + tool_diam / 2
         direction = 1
-        while y <= ymax - tool_diam/2:
+        while y <= ymax - tool_diam / 2:
             # Cherche intersections entre la ligne y et la poche
             section = shape.slice(App.Vector(0, 0, 1), y)
             if section and hasattr(section, 'Edges'):
@@ -411,7 +411,7 @@ class PocketOperation(BaseOp.baseOp):
                     node.append(n)
                     if parentNode is not None:
                         parentNode.addChild(n)
-                    self.offsetting(w, offset_dist, maxGen, n, generation+1)
+                    self.offsetting(w, offset_dist, maxGen, n, generation + 1)
             except Exception as e:
                 print(f"Offsetting generation {generation} échouée: {e}\n")
                 pass
@@ -904,7 +904,7 @@ class PocketOperation(BaseOp.baseOp):
 
             edge_normal.normalize()
             candidates = []
-            ray: Part.Line = Part.Line(start_point, start_point + edge_normal*100 if is_ccw else start_point - edge_normal*100)
+            ray: Part.Line = Part.Line(start_point, start_point + edge_normal * 100 if is_ccw else start_point - edge_normal * 100)
 
             # Trouve le point le plus proche sur le parentWire
             for i, e in enumerate(parentWire.Edges):

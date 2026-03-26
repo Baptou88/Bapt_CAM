@@ -78,7 +78,7 @@ class MpfReader:
                 continue
             if line.startswith('N') or line[0].isdigit():  # Ligne de programme
                 space = line.index(' ')
-                line = line[space+1:]
+                line = line[space + 1:]
 
             if line.startswith(';'):  # Commentaire
                 continue
@@ -104,7 +104,7 @@ class MpfReader:
                 if match:
                     tool_number = match.group(1) or match.group(2) or match.group(3)
 
-                    tool_obj = tool_utils.create_tool_obj(id=int(tool_number), name=f"Tool_{tool_number}")
+                    tool_obj = tool_utils.create_tool_obj(Tid=int(tool_number), name=f"Tool_{tool_number}")
 
                     tool_group.addObject(tool_obj)
 
@@ -423,7 +423,7 @@ class Interpreter:
         tNumber = command['T']
 
         if self.hasPrevious():
-            previousCommand = self.commands[self.cursor-1]
+            previousCommand = self.commands[self.cursor - 1]
             if previousCommand['Type'] == 'commentaire':
                 tComment = previousCommand['Commentaire']
             else:

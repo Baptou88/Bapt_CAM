@@ -5,14 +5,15 @@ Génère un programme G-code à partir des opérations du projet CAM
 """
 import importlib
 import os
+import FreeCAD as App  # type: ignore
+from PySide import QtGui, QtCore  # type: ignore
+
 from BaptCamProject import CamProject
 from BaptPreferences import BaptPreferences
 from Gui.CamProjectTaskPanel import PostProcessorTaskPanel
 from BasePostPro import BasePostPro
-import FreeCAD as App  # type: ignore
 from Op import AdaptativeOp, BaseOp, DrillOp, OpContournage, OpSurfacage, PocketOp
 from Op.PathOp import pathOp
-from PySide import QtGui, QtCore  # type: ignore
 import BaptUtilities as BaptUtils
 
 
@@ -121,7 +122,6 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             safe_z = getattr(obj, 'SafeHeight').Value
             final_z = getattr(obj, 'FinalDepth', -5.0).Value
             cycle = getattr(obj, 'CycleType', "Simple")
-            peck = getattr(obj, 'PeckDepth', 2.0).Value
 
             gcode_lines.append(Postpro.writeComment(f"Perçage: {obj.Label}"))
             points = []
@@ -136,10 +136,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             elif cycle == "Peck":
                 commentaire = Postpro.writeComment("Cycle: G83 - Perçage par reprise")
                 gcode_lines.append(commentaire)
-                for pt in points:
-                    gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
-                    gcode_lines.append(f"G83 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} Q{peck:.3f} F{feed}")
-                    gcode_lines.append("G80")
+                gcode_lines.append(Postpro.G83(obj))
 
             elif cycle == "Tapping":
                 commentaire = Postpro.writeComment("Cycle: G84 - Taraudage")
@@ -186,7 +183,8 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
 
     gcode_lines.append(Postpro.writeFooter())
 
-    return '\n'.join(gcode_lines)
+    gcode = '\n'.join(gcode_lines)
+    return Postpro.addLineNumbers(gcode)
 
 
 def postprocess_gcode():
