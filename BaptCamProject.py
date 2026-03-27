@@ -86,11 +86,6 @@ class Stock:
             obj.WorkPlane = ["XY", "XZ", "YZ"]
             obj.WorkPlane = "XY"
 
-        if not hasattr(obj, "Material"):
-            obj.addProperty("App::PropertyMaterial", "Material",
-                            "Stock", "Matériau du brut")
-            obj.Material = App.Material()
-
         if not hasattr(obj, "testShape"):
             obj.addProperty("Part::PropertyPartShape", "testShape",
                             "Subsection", "Description for tooltip")

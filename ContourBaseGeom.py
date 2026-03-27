@@ -44,6 +44,20 @@ class ContourBaseGeom:
     def getDepths(self):
         raise NotImplementedError("La méthode getDepths doit être implémentée dans la classe dérivée.")
 
+    def getWireAtZ(self, obj, z):
+        """Retourne le wire 2D correspondant à une profondeur z.
+
+        Par défaut, retourne le wire à Zref (profil constant quelle que soit Z).
+        Les classes dérivées avec profil variable (ex. Contour25DGeom) surchargent.
+        """
+        zref = self.getDepths()[0]
+        if not obj.Shape or not obj.Shape.Wires:
+            return None
+        for w in obj.Shape.Wires:
+            if w.Edges and abs(w.Edges[0].Vertexes[0].Point.z - zref) < 1e-3:
+                return w
+        return obj.Shape.Wires[0] if obj.Shape.Wires else None
+
     def execute(self, obj):
         """Mettre à jour la représentation visuelle du contour"""
         if App.ActiveDocument.Restoring:

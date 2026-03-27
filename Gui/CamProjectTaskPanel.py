@@ -1,6 +1,9 @@
+
 import FreeCAD as App
 import FreeCADGui as Gui
-from PySide import QtCore, QtGui
+from PySide import QtCore, QtGui, QtWidgets
+import MatGui
+import Materials
 
 import BaptUtilities
 from utils.PointSelectionObserver import PointSelectionObserver
@@ -248,6 +251,9 @@ class CamProjectTaskPanel:
         if obj.Model:
             self.ui1.model.setCurrentText(obj.Model.Name)
 
+        if self.stock:
+            self.ui1.matName.setText(self.stock.ShapeMaterial.Name if self.stock.ShapeMaterial else "None")
+
         # Connecter les signaux
         self.ui1.workPlane.currentIndexChanged.connect(self.updateVisual)
         self.ui1.model.currentIndexChanged.connect(self.updateVisual)
@@ -257,10 +263,25 @@ class CamProjectTaskPanel:
         self.ui1.orientFaceZ.clicked.connect(lambda: self.orientFace("Z"))
 
         self.ui1.placeModel.clicked.connect(self.placeModel)
+        self.ui1.assignMaterial.clicked.connect(self.assignMaterial)
 
         # Initialiser le gestionnaire de sphères pour le positionnement du modèle
         self.sphere_manager = BoundBoxSphereManager(self)
         self.sphere_manager_active = False
+
+    def assignMaterial(self):
+        App.Console.PrintMessage('assignMaterial\n')
+        dialog = MaterialDialog()
+        result = dialog.exec_()
+
+        if result == QtWidgets.QDialog.Accepted:
+            App.Console.PrintMessage("Material assigned\n")
+            if dialog.uuid is not None:
+                material_manager = Materials.MaterialManager()
+                material = material_manager.getMaterial(dialog.uuid)
+                App.Console.PrintMessage(f"Material assigned: {material}\n")
+                self.stock.ShapeMaterial = material
+                self.ui1.matName.setText(material.Name if material else "None")
 
     def orientFace(self, axis):
         """Orienter la face sélectionnée vers l'axe spécifié"""
@@ -587,3 +608,47 @@ class PostProcessorTaskPanel:
             elif not isChecked and PostProcessorName in selected:
                 selected.remove(PostProcessorName)
             self.obj.PostProcessor = list(selected)
+
+
+class MaterialDialog(QtWidgets.QDialog):
+    """Dialog for selecting a machining material."""
+
+    def __init__(self, parent=None):
+        super(MaterialDialog, self).__init__(parent)
+
+        self.setWindowTitle("Assign Material")
+        self.uuid = None
+
+        self.materialTree = Gui.UiLoader().createWidget("MatGui::MaterialTreeWidget")
+        self.materialTreeWidget = MatGui.MaterialTreeWidget(self.materialTree)
+
+        material_filter = Materials.MaterialFilter()
+        material_filter.Name = "Machining Materials"
+        material_filter.RequiredModels = [Materials.UUIDs().Machinability]
+        self.materialTreeWidget.setFilter(material_filter)
+        self.materialTreeWidget.selectFilter("Machining Materials")
+
+        self.okButton = QtWidgets.QPushButton("OK")
+        self.cancelButton = QtWidgets.QPushButton("Cancel")
+
+        self.okButton.clicked.connect(self.accept)
+        self.cancelButton.clicked.connect(self.reject)
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self.materialTree)
+
+        buttonLayout = QtWidgets.QHBoxLayout()
+        buttonLayout.addStretch()
+        buttonLayout.addWidget(self.okButton)
+        buttonLayout.addWidget(self.cancelButton)
+
+        layout.addLayout(buttonLayout)
+        self.setLayout(layout)
+        self.materialTree.onMaterial.connect(self.onMaterial)
+
+    def onMaterial(self, uuid):
+        try:
+            print("Selected '{0}'".format(uuid))
+            self.uuid = uuid
+        except Exception as e:
+            print(e)
