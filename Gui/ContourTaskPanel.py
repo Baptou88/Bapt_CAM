@@ -75,6 +75,12 @@ class ContourTaskPanel:
         self.direction.setCurrentText(obj.Direction)
         contourLayout.addRow("Direction:", self.direction)
 
+        # Côté matière
+        self.coteMatiere = QtGui.QComboBox()
+        self.coteMatiere.addItems(["Gauche", "Droite"])
+        self.coteMatiere.setCurrentText(getattr(obj, "CoteMatiere", "Droite"))
+        contourLayout.addRow("Côté matière:", self.coteMatiere)
+
         contourGroup.setLayout(contourLayout)
         layout.addWidget(contourGroup)
 
@@ -163,6 +169,7 @@ class ContourTaskPanel:
         # Connecter les signaux pour l'actualisation en temps réel
         self.confirmSelectionButton.clicked.connect(self.confirmSelection)
         self.direction.currentTextChanged.connect(self.updateContour)
+        self.coteMatiere.currentTextChanged.connect(self.updateContour)
         # self.Zref.valueChanged.connect(self.updateZref)
         self.depth.valueChanged.connect(self.updateDepth)
 
@@ -402,8 +409,6 @@ class ContourTaskPanel:
     def depthModeChanged(self):
         """Gère le changement de mode de profondeur (absolu/relatif)"""
 
-        current_value = self.depth.value()
-
         if self.relativeDepthRadio.isChecked():
             #     App.Console.PrintMessage('passage en relatif\n')
             self.absoluteDepthRadio.clicked.connect(self.depthModeChanged)
@@ -434,6 +439,7 @@ class ContourTaskPanel:
         """Met à jour le contour en fonction des paramètres"""
         # Mettre à jour la direction
         self.obj.Direction = self.direction.currentText()
+        self.obj.CoteMatiere = self.coteMatiere.currentText()
 
         # Mettre à jour Zref
         # self.obj.Zref = self.Zref.value()
@@ -458,6 +464,7 @@ class ContourTaskPanel:
         """Appelé quand l'utilisateur clique sur OK"""
         # Mettre à jour toutes les propriétés
         self.obj.Direction = self.direction.currentText()
+        self.obj.CoteMatiere = self.coteMatiere.currentText()
 
         # Désactiver le mode de sélection si actif
         if self.selectionMode:

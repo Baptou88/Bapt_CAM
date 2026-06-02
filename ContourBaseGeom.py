@@ -1,5 +1,7 @@
 import FreeCAD as App
 import Part
+from Op.offset import _orientEdges
+from Op.offset import material_side_to_tool_side
 import sys
 
 DEBUG = False
@@ -14,7 +16,7 @@ class ContourBaseGeom:
             obj.DepthMode = ["Absolu", "Relatif"]
             obj.DepthMode = "Absolu"
 
-        if not hasattr(obj, "Direction"):
+        if not hasattr(obj, "Direction"):  # TODO: enlever cette propriété, elle est inutile
             obj.addProperty("App::PropertyEnumeration", "Direction", "Contour", "Direction de parcours du contour")
             obj.Direction = ["Horaire", "Anti-horaire"]
             obj.Direction = "Horaire"
@@ -43,6 +45,15 @@ class ContourBaseGeom:
 
     def getDepths(self):
         raise NotImplementedError("La méthode getDepths doit être implémentée dans la classe dérivée.")
+
+    def getMaterialSide(self, obj=None):
+        """Retourne le côté matière déclaré sur le contour."""
+        target = obj or self.Object
+        return getattr(target, "CoteMatiere", "Droite") if target else "Droite"
+
+    def getToolSide(self, obj=None):
+        """Retourne le côté outil opposé au côté matière du contour."""
+        return material_side_to_tool_side(self.getMaterialSide(obj))
 
     def getWireAtZ(self, obj, z):
         """Retourne le wire 2D correspondant à une profondeur z.
@@ -95,6 +106,8 @@ class ContourBaseGeom:
             # sorted_edges = edges.copy()  # Faire une copie des arêtes pour le tri
             # sorted_edges = edges
 
+            sorted_edges = _orientEdges(sorted_edges)
+
             if obj.Direction == "Anti-horaire":
                 sorted_edges.reverse()
 
@@ -117,49 +130,20 @@ class ContourBaseGeom:
                 # if edge.Vertexes[0].Orientation == "Reversed":
                 #     App.Console.PrintMessage(f"Edge {i} est inversée, inversion de l'arête pour correspondre au sens.\n")
                 #     edge = edge.reversed()
-                current_edge = edge
-                bon_sens = None
-                if i < len(sorted_edges) - 1:
-                    next_edge = sorted_edges[i + 1]
-                    if current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[0].Point) < 1e-6:
-                        bon_sens = True
-                        # App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
-                    elif current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[-1].Point) < 1e-6:
-                        bon_sens = True
-                        # App.Console.PrintMessage(f"Edge {i} Ok ,Edge {i+1} est inversée, inversion de l'arête pour correspondre au sens.\n")
-                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[-1].Point) < 1e-6:
-                        bon_sens = False
-                        # App.Console.PrintMessage(f"Edge {i} et Edge {i+1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
-                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[0].Point) < 1e-6:
-                        bon_sens = False
-                        # App.Console.PrintMessage(f"Edge {i} est inversée, inversion de l'arête pour correspondre au sens.\n")
-                    else:
-                        # App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")
-                        pass
-                else:
-                    prev_edge = sorted_edges[i - 1]
-
-                    if prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[0].Point) < 1e-6:
-                        bon_sens = True
-                        # App.Console.PrintMessage(f"Edge {i} est dans le bon sens.\n")
-                    elif prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[-1].Point) < 1e-6:
-                        bon_sens = False
-                        # App.Console.PrintMessage(f"Edge {i} NOk ,Edge {i-1} est inversée, inversion de l'arête pour correspondre au sens.\n")
-                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[-1].Point) < 1e-6:
-                        bon_sens = False
-                        # App.Console.PrintMessage(f"Edge {i} et Edge {i-1} sont inversées, inversion de l'arête pour correspondre au sens.\n")
-                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[0].Point) < 1e-6:
-                        bon_sens = True
-                        # App.Console.PrintMessage(f"Edge {i} Ok, inversion de l'arête pour correspondre au sens.\n")
-                    else:
-                        # App.Console.PrintMessage(f"Edge {i} n'est pas connectée à l'arête suivante, le contour ne sera pas fermé.\n")
-                        pass
+                edge_forward = self._edge_forward_in_chain(sorted_edges, i)
 
                 if DEBUG:
                     self.debugEdge(edge, i, "")
 
                 # Créer une flèche pour indiquer la direction de l'arête
-                arrow = self._create_direction_arrow(obj, edge, depths[0], size=2.0, invert_direction=(bon_sens is not None and not bon_sens))
+                arrow = self._create_direction_arrow(
+                    obj,
+                    edge,
+                    depths[0],
+                    size=2.0,
+                    cm=obj.CoteMatiere,
+                    invert_direction=(not edge_forward),
+                )
                 if arrow:
                     direction_arrows.append(arrow)
 
@@ -244,12 +228,45 @@ class ContourBaseGeom:
             line_number = exc_traceback.tb_lineno
             App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
 
-    def _create_direction_arrow(self, obj, edge, zref, size=2.0, invert_direction=False):
+    @staticmethod
+    def _edge_forward_in_chain(edges, index, tol=1e-6):
+        """Retourne True si l'arête est parcourue dans son sens paramétrique, sinon False."""
+        edge = edges[index]
+
+        if len(edges) == 1:
+            return True
+
+        if index < len(edges) - 1:
+            nxt = edges[index + 1]
+            if edge.Vertexes[-1].Point.distanceToPoint(nxt.Vertexes[0].Point) < tol:
+                return True
+            if edge.Vertexes[-1].Point.distanceToPoint(nxt.Vertexes[-1].Point) < tol:
+                return True
+            if edge.Vertexes[0].Point.distanceToPoint(nxt.Vertexes[-1].Point) < tol:
+                return False
+            if edge.Vertexes[0].Point.distanceToPoint(nxt.Vertexes[0].Point) < tol:
+                return False
+        else:
+            prev = edges[index - 1]
+            if prev.Vertexes[-1].Point.distanceToPoint(edge.Vertexes[0].Point) < tol:
+                return True
+            if prev.Vertexes[-1].Point.distanceToPoint(edge.Vertexes[-1].Point) < tol:
+                return False
+            if prev.Vertexes[0].Point.distanceToPoint(edge.Vertexes[-1].Point) < tol:
+                return False
+            if prev.Vertexes[0].Point.distanceToPoint(edge.Vertexes[0].Point) < tol:
+                return True
+
+        # Fallback: ne pas inverser si la connectivité n'est pas claire.
+        return True
+
+    def _create_direction_arrow(self, obj, edge, zref, size=2.0, cm=None, invert_direction=False):
         """Crée une petite flèche au milieu de l'arête pour indiquer la direction
 
         Args:
             edge: L'arête d'origine
             size: Taille de la flèche en mm
+            cm: Côté matière
             invert_direction: Si True, inverse la direction de la flèche
 
         Returns:
@@ -286,14 +303,14 @@ class ContourBaseGeom:
 
             # Décalage côté matière : basé sur la direction de parcours réelle
             # normal_xy = perpendiculaire GAUCHE du sens de parcours
-            # Les flèches sont placées CÔTÉ MATIÈRE pour visualisation :
-            #   CoteMatiere Droite → matière à droite → flèches à droite (offset négatif = -normal_xy)
-            #   CoteMatiere Gauche → matière à gauche → flèches à gauche (offset positif = normal_xy)
-            offset_distance = size * 0.6
-            if hasattr(obj, "CoteMatiere") and obj.CoteMatiere == "Droite":
+            # Les flèches sont placées CÔTÉ USINAGE pour visualisation :
+            #   CoteMatiere Gauche → matière à gauche → flèche à DROITE (offset négatif)
+            #   CoteMatiere Droite → matière à droite → flèche à GAUCHE (offset positif)
+            offset_distance = size * 0.8
+            if cm == "Gauche":
                 offset_distance = -offset_distance
 
-            # Point milieu décalé le long de la normale
+            # Point milieu décalé le long de la normale (offset)
             shifted_mid = mid_point_z.add(App.Vector(normal_xy.x * offset_distance,
                                                      normal_xy.y * offset_distance,
                                                      0.0))
@@ -305,14 +322,12 @@ class ContourBaseGeom:
 
             arrow_line = Part.makeLine(start_point, end_point)
 
-            # Pointe de la flèche (petites lignes perpendiculaires)
+            # Pointe de la flèche (petites lignes latérales)
             third_t = App.Vector(tangent_z.x * size / 3.0, tangent_z.y * size / 3.0, 0.0)
             quarter_n = App.Vector(normal_xy.x * size / 4.0, normal_xy.y * size / 4.0, 0.0)
 
             arrow_p1 = end_point - third_t + quarter_n
             arrow_p2 = end_point - third_t - quarter_n
-
-            # perp_line = Part.makeLine(mid_point, shifted_mid )
 
             arrow_line1 = Part.makeLine(end_point, arrow_p1)
             arrow_line2 = Part.makeLine(end_point, arrow_p2)

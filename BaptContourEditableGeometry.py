@@ -40,48 +40,21 @@ class ContourEditableGeometry(ContourBaseGeom):
 
     def getDepths(self):
         """Retourne la profondeur de ref et finale en fonction du mode"""
+        if not self.Object.Sketch:
+            return 0.0, 0.0
         Zref = self.Object.Sketch.Placement.Base.z
         if self.Object.DepthMode == "Relatif":
             return Zref, Zref - self.Object.depth
         else:  # Absolu
             return Zref, self.Object.depth
 
-    # def execute(self, obj):
-    #     """Met à jour la forme à partir du Sketch"""
-    #     if not obj.Sketch and len(obj.Sketch.Shape.Edges) <= 0:
-    #         obj.Shape = Part.Shape()
-    #         return
-    #     try:
-    #         shape = obj.Sketch.Shape
-
-    #         edges = self.getEdges(obj)
-    #         if not edges:
-    #             obj.Shape = Part.Shape()
-    #             return
-
-    #         adjusted_edges_depth = []
-
-    #         for i, edge in enumerate(edges):
-    #             if obj.DepthMode == "Relatif":
-    #                 z_offset = obj.depth
-    #                 translation = App.Vector(0, 0, z_offset)
-    #             else:  # Absolu
-    #                 z_value = obj.depth
-    #                 translation = App.Vector(0, 0, z_value - edge.Vertexes[0].Z)
-
-    #             moved_edge = edge.translate(translation)
-    #             adjusted_edges_depth.append(moved_edge)
-
-    #         wire_z_final = Part.Wire(adjusted_edges_depth)
-    #         # shape = Part.Shape([wire_z_final])
-    #         shapes = [shape, wire_z_final]
-    #         coumpound = Part.Compound(shapes)
-    #         obj.Shape = coumpound
-    #     except Exception as e:
-    #         App.Console.PrintError(f"Erreur lors de la récupération du shape du sketch : {e}\n")
-    #         exc_type, exc_obj, exc_tb = sys.exc_info()
-    #         App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
-    #         obj.Shape = Part.Shape()
+    def execute(self, obj):
+        """Met à jour la forme à partir du Sketch via ContourBaseGeom"""
+        if not obj.Sketch or not obj.Sketch.Shape or not obj.Sketch.Shape.Edges:
+            import Part
+            obj.Shape = Part.Shape()
+            return
+        super().execute(obj)
 
     def onDocumentRestored(self, obj):
         """Restaure les liens après le chargement du document"""
@@ -91,7 +64,7 @@ class ContourEditableGeometry(ContourBaseGeom):
     def onChanged(self, obj, prop):
         """Synchronise la forme si le Sketch change"""
 
-        if prop in ["Sketch", "depth", "Direction", "DepthMode"]:
+        if prop in ["Sketch", "depth", "Direction", "DepthMode", "CoteMatiere"]:
             self.execute(obj)
 
     def __getstate__(self):

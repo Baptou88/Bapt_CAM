@@ -41,16 +41,18 @@ class BaptWorkbench (Workbench):
 
         self.list = ["Bapt_CreateCamProject", "Bapt_CreateSurfacage", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_HoleRecognition", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateContourEditableGeometry", "Bapt_CreateContour25DGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreatePocketOperation", "Bapt_CreateOrigin", "ImportMpf", "Bapt_PostProcessGCode", "Bapt_CreateProbeFace", "Bapt_TestPath", "Bapt_HighlightCollisions", "Bapt_CreateAdaptativeOperation", "Bapt_RapportProgrammation"]  # Ajout des commandes d'opération, poche et origine
         self.appendToolbar("Bapt Tools", self.list)
-        self.appendToolbar("Bapt Debug", ["Bapt_CreateHotReload", "Bapt_createTestFPO"],)  # Ajout de la barre d'outils de debug
+        self.appendToolbar("Bapt Debug", ["Bapt_CreateHotReload", "Bapt_createTestFPO", "Bapt_CreateContournageTest"],)  # Ajout de la barre d'outils de debug
         self.appendMenu("Bapt", self.list)
-        self.appendMenu(["Bapt", "Debug"], ["Separator"] + ["Bapt_CreateHotReload", "Bapt_createTestFPO"],)
+        self.appendMenu(["Bapt", "Debug"], ["Separator"] + ["Bapt_CreateHotReload", "Bapt_createTestFPO", "Bapt_CreateContournageTest"],)
 
     def Activated(self):
         """This function is executed whenever the workbench is activated"""
+        self.setWatcher()
         return
 
     def Deactivated(self):
         """This function is executed whenever the workbench is deactivated"""
+        Gui.Control.clearTaskWatcher()
         return
 
     def GetClassName(self):
@@ -123,6 +125,30 @@ class BaptWorkbench (Workbench):
             #         self.close()
 
             # form = addExamplePath()
+
+    def ContextMenu(self, recipient):
+        """
+        This function is executed when the user right-clicks in the 3D view or tree view
+        recipient will be either "view" or "tree"
+        """
+
+        pass
+
+    def setWatcher(self):
+        '''based on FreeCAD/src/Mod/Assembly/InitGui.py'''
+        class Watcher():
+            def __init__(self):
+                self.commands = ["Bapt_CreateCamProject"]
+                self.title = "Bapt Watcher"
+                pass
+
+            def shouldShow(self):
+                return True
+        Watchers = [
+            Watcher()
+        ]
+        Gui.Control.addTaskWatcher(Watchers)
+        pass
 
 
 Gui.addWorkbench(BaptWorkbench())

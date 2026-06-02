@@ -52,6 +52,7 @@ class MpfReader:
         current_tool = None
         current_op = None
         current_origin = None
+        self.labels = {}
 
         cam_project = BaptUtilities.find_cam_project(obj)
 
@@ -64,128 +65,145 @@ class MpfReader:
         current_origin = cam_project.Proxy.getOrigin()
 
         test = ""
-        gen = self.load_file_gen(obj.FilePath)
+        num, gen = self.load_file_gen(obj.FilePath)
         # for line in gen:
-        while True:
-            line = ""
-            try:
-                line = next(gen)
-            except StopIteration:
-                App.Console.PrintMessage(f'Stop Iter\n')
-                break
-            App.Console.PrintMessage(f'{line}\n')
-            if line == "":
-                continue
-            if line.startswith('N') or line[0].isdigit():  # Ligne de programme
-                space = line.index(' ')
-                line = line[space + 1:]
-
-            if line.startswith(';'):  # Commentaire
-                continue
-            elif line.startswith('* -'):
-                continue
-            elif line.startswith(('WORKPIECE')):
-                continue
-            elif line.startswith('BLK FORM'):
-                line = next(gen)
-                continue
-
-            elif line.startswith('S'):
-                line = line.replace('S', '')
-                space = line.index(' ')
-                speed_value = line[:space]
-                if current_tool is not None and hasattr(current_tool, 'Speed'):
-                    current_tool.Speed = int(speed_value)
-
-            elif line.startswith('T'):  # Changement d'outil
-                # Tool call can be like 'T1'  or 'T="1"' or 'TOOL CALL 1'
-                match = re.match(r'T(?:="?(\d+)"?|(\d+))|TOOL\s+CALL\s+(\d+)', line)
-
-                if match:
-                    tool_number = match.group(1) or match.group(2) or match.group(3)
-
-                    tool_obj = tool_utils.create_tool_obj(Tid=int(tool_number), name=f"Tool_{tool_number}")
-
-                    tool_group.addObject(tool_obj)
-
-                    current_tool = tool_obj
-
-                if current_op is not None:
-                    current_op.Gcode = test
-                    test = ""
-
-                # we suppose new operation starts with tool call
-                current_op = App.ActiveDocument.addObject("App::FeaturePython", f"Operation_T{tool_number}")
-                PathOp.pathOp(current_op)
-                operations_group.addObject(current_op)
-                current_op.Tool = current_tool
-                current_op.Proxy.installAttachment(current_op)
-                current_op.recompute()
-                if False and hasattr(current_op, "AttachmentSupport"):
-                    current_op.AttachmentSupport = current_origin
-                    current_op.MapMode = 'ObjectXY'  # "InertialCS"
-                current_op.recompute()
-                PathOp.pathOpViewProviderProxy(current_op.ViewObject)
-
-            elif line.startswith('MSG('):
-                # can be handled later
-                continue
-            elif line.startswith(('M0', 'M00', 'M1', 'M01', 'M2', 'M02', 'M30')):
-                continue  # program stop/pause, can be handled later
-            elif line.startswith('M6'):  # Tool change command
-                continue  # already handled with T command
-            elif line.startswith(('M3', 'M4', 'M5')):
-                continue  # spindle commands, can be handled later
-            elif line.startswith(('M7', 'M8', 'M9')):
-                continue  # coolant commands, can be handled later
-            elif line.startswith('G54') or line.startswith('G55') or line.startswith('G56') or line.startswith('G57') or line.startswith('G58') or line.startswith('G59'):
-                continue  # work coordinate system change, can be handled later
-            elif line.startswith(('G0', 'G1', 'G2', 'G3')):  # G-code command
-                if line.find('G17'):
-                    line.replace('G17', '')
-                    # plane selection, can be handled later
-
-                if current_op is None:
-                    Log.baptDebug("G-code command found before any tool call. Skipping.")
+        def process(self):
+            while True:
+                line: str = ""
+                try:
+                    num, line = next(gen)
+                except StopIteration:
+                    App.Console.PrintMessage(f'Stop Iter\n')
+                    break
+                App.Console.PrintMessage(f'{line}\n')
+                if line == "":
                     continue
-                # Append G-code command to current operation
+                if line.startswith('N') or line[0].isdigit():  # Ligne de programme
+                    space = line.index(' ')
+                    line = line[space + 1:]
 
-                # current_op.Gcode.append(line)
-                test += line + '\n'
-            elif line.startswith('L'):  # G-code command
-                App.Console.PrintMessage(f'par là {line}\n')
-                is_rapid = line.find('FMAX') != -1
-                is_G40 = line.find('R0') != -1
-                is_G41 = line.find('RL') != -1
-                is_G42 = line.find('RR') != -1
-                line = line.replace('FMAX', '').replace('R0', '').replace('RL', '').replace('RR', '').strip()
-                line = line.replace(',', '.')
-                # Verifie que G40, G41, G42 ne sont pas combinés
-                if sum([is_G40, is_G41, is_G42]) > 1:
-                    Log.baptDebug("G-code command L with multiple cutter compensation codes found. Skipping.")
+                if line.startswith(';'):  # Commentaire
                     continue
-                new = f"{'G0 ' if is_rapid else 'G1 '} {'G40 ' if is_G40 else ''}{'G41 ' if is_G41 else ''}{'G42 ' if is_G42 else ''}"
-                line = line.replace('L', new)
-                if not any(['X' in line, 'Y' in line, 'Z' in line]):
+                elif line.startswith('* -'):
                     continue
-                test += line + '\n'
-            elif line.startswith(('X', 'Y', 'Z')):
-                if current_op is None:
-                    Log.baptDebug("G-code command found before any tool call. Skipping.")
+                elif line.startswith('%'): #definition de label
+                    line = line.replace('%', '').strip()
+                    name = line.split(' ')[0]
+                    if name in self.labels:
+                        raise Exception(f"Label {name} already exists")    
+                    self.labels[name] = (self.f.tell(),line)
                     continue
-                # Append G-code command to current operation
-                test += line + '\n'
-            elif line.startswith('CYCL DEF '):
-                line = line.replace('CYCL DEF ', '')
-                cycle_type = int(line.split(' ')[0])
-                if cycle_type == 247:
+                elif line.startswith(('WORKPIECE')):
+                    continue
+                elif line.startswith('BLK FORM'):
                     line = next(gen)
-                continue
-            elif line.startswith(('CC', 'CR', 'C')):
-                Log.baptError("Circular interpolation commands CC and CR are not implemented yet.")
-                raise NotImplementedError("Circular interpolation commands CC and CR are not implemented yet.")
-            else:
-                Log.baptDebug(f"Unknown command: {line}")
+                    continue
+
+                elif line.startswith('S'):
+                    line = line.replace('S', '')
+                    space = line.index(' ')
+                    speed_value = line[:space]
+                    if current_tool is not None and hasattr(current_tool, 'Speed'):
+                        current_tool.Speed = int(speed_value)
+
+                elif line.startswith('T'):  # Changement d'outil
+                    # Tool call can be like 'T1'  or 'T="1"' or 'TOOL CALL 1'
+                    match = re.match(r'T(?:="?(\d+)"?|(\d+))|TOOL\s+CALL\s+(\d+)', line)
+
+                    if match:
+                        tool_number = match.group(1) or match.group(2) or match.group(3)
+
+                        tool_obj = tool_utils.create_tool_obj(Tid=int(tool_number), name=f"Tool_{tool_number}")
+
+                        tool_group.addObject(tool_obj)
+
+                        current_tool = tool_obj
+
+                    if current_op is not None:
+                        current_op.Gcode = test
+                        test = ""
+
+                    # we suppose new operation starts with tool call
+                    current_op = App.ActiveDocument.addObject("App::FeaturePython", f"Operation_T{tool_number}")
+                    PathOp.pathOp(current_op)
+                    operations_group.addObject(current_op)
+                    current_op.Tool = current_tool
+                    current_op.Proxy.installAttachment(current_op)
+                    current_op.recompute()
+                    if False and hasattr(current_op, "AttachmentSupport"):
+                        current_op.AttachmentSupport = current_origin
+                        current_op.MapMode = 'ObjectXY'  # "InertialCS"
+                    current_op.recompute()
+                    PathOp.pathOpViewProviderProxy(current_op.ViewObject)
+
+                elif line.startswith('MSG('):
+                    # can be handled later
+                    continue
+                elif line.startswith(('M0', 'M00', 'M1', 'M01', 'M2', 'M02', 'M30')):
+                    continue  # program stop/pause, can be handled later
+                elif line.startswith('M6'):  # Tool change command
+                    continue  # already handled with T command
+                elif line.startswith(('M3', 'M4', 'M5')):
+                    continue  # spindle commands, can be handled later
+                elif line.startswith(('M7', 'M8', 'M9')):
+                    continue  # coolant commands, can be handled later
+                elif line.startswith('M17'):
+                    continue  # fin de sous programm , can be handled later
+                elif line.startswith('G54') or line.startswith('G55') or line.startswith('G56') or line.startswith('G57') or line.startswith('G58') or line.startswith('G59'):
+                    continue  # work coordinate system change, can be handled later
+                elif line.startswith(('G0', 'G1', 'G2', 'G3')):  # G-code command
+                    if line.find('G17'):
+                        line.replace('G17', '')
+                        # plane selection, can be handled later
+
+                    if current_op is None:
+                        Log.baptDebug("G-code command found before any tool call. Skipping.")
+                        continue
+                    # Append G-code command to current operation
+
+                    # current_op.Gcode.append(line)
+                    test += line + '\n'
+                elif line.startswith('L'):  # G-code command
+                    App.Console.PrintMessage(f'par là {line}\n')
+                    is_rapid = line.find('FMAX') != -1
+                    is_G40 = line.find('R0') != -1
+                    is_G41 = line.find('RL') != -1
+                    is_G42 = line.find('RR') != -1
+                    line = line.replace('FMAX', '').replace('R0', '').replace('RL', '').replace('RR', '').strip()
+                    line = line.replace(',', '.')
+                    # Verifie que G40, G41, G42 ne sont pas combinés
+                    if sum([is_G40, is_G41, is_G42]) > 1:
+                        Log.baptDebug("G-code command L with multiple cutter compensation codes found. Skipping.")
+                        continue
+                    new = f"{'G0 ' if is_rapid else 'G1 '} {'G40 ' if is_G40 else ''}{'G41 ' if is_G41 else ''}{'G42 ' if is_G42 else ''}"
+                    line = line.replace('L', new)
+                    if not any(['X' in line, 'Y' in line, 'Z' in line]):
+                        continue
+                    test += line + '\n'
+                elif line.startswith(('X', 'Y', 'Z')):
+                    if current_op is None:
+                        Log.baptDebug("G-code command found before any tool call. Skipping.")
+                        continue
+                    # Append G-code command to current operation
+                    test += line + '\n'
+                elif line.startswith('CYCL DEF '):
+                    line = line.replace('CYCL DEF ', '')
+                    cycle_type = int(line.split(' ')[0])
+                    if cycle_type == 247:
+                        line = next(gen)
+                    continue
+                elif line.startswith(('CC', 'CR', 'C')):
+                    Log.baptError("Circular interpolation commands CC and CR are not implemented yet.")
+                    raise NotImplementedError("Circular interpolation commands CC and CR are not implemented yet.")
+                elif  line.split(' ')[0] in self.labels: # appel de sous programme
+                    current = self.f.tell(), num
+                    pos, num = self.labels[line.split(' ')[0]]
+                    process(self, self.file_path, pos, num)
+                    self.revenir(self.file_path, current[0], current[1])
+                    continue
+                else:
+                    Log.baptDebug(f"Unknown command: {line}")
+        process(self)
 
         if current_op is not None:
             current_op.Gcode = test
@@ -226,8 +244,15 @@ class MpfReader:
         """Générateur pour lire un fichier ligne par ligne"""
 
         with open(file_path, 'r') as file:
-            for line in file:
-                yield line.strip()
+            self.f = file
+            for num,line in enumerate(file,start=1):
+                yield num, line.strip()
+
+    def revenir(self, file_path, pos,num):
+        with open(file_path, 'r') as file:
+            file.seek(pos)
+            for num,line in enumerate(file,start=num):
+                yield num, line.strip()
 
 
 class MpfReaderTaskPanel:

@@ -57,6 +57,11 @@ class ContourGeometry(ContourBaseGeom):
         self.Object = obj
         self.__init__(obj)
 
+        # migration
+        # if hasattr(obj,"Direction"):
+        #     #remove Direction property
+        #     obj.removeProperty("Direction")
+
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
         if prop in ["DepthMode"]:
@@ -86,7 +91,7 @@ class ContourGeometry(ContourBaseGeom):
         end = App.Vector(round(end.x, 3), round(end.y, 3), round(end.z, 3))
         App.Console.PrintMessage(f"[DEBUG] Edge {i}: orientation={edge.Orientation}, start={start}, end={end}, firstParam={round(edge.FirstParameter, 3)}, lastParam={round(edge.LastParameter, 3)}\n")
 
-    def getEdges(self, obj):
+    def getEdges(self, obj) -> list[Part.Edge]:
         """Collecter toutes les arêtes sélectionnées"""
         edges = []
         for sub in obj.Edges:
@@ -317,14 +322,6 @@ class ContourGeometry(ContourBaseGeom):
             new_edge = edge.copy()
             new_edge.reverse()
             return new_edge
-
-    def __getstate__(self):
-        """Sérialisation"""
-        return None
-
-    def __setstate__(self, state):
-        """Désérialisation"""
-        return None
 
     def dumps(self):
         """__getstat__(self) ... called when receiver is saved.

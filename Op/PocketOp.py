@@ -100,22 +100,23 @@ class PocketOperation(BaseOp.baseOp):
         return False
 
     def collectEdges(self, obj) -> list[Part.Edge]:
+        edges = obj.Proxy.getEdges(obj)
         # Collecter toutes les arêtes sélectionnées
-        edges = []
-        for sub in obj.Edges:
-            obj_ref = sub[0]  # L'objet référencé
-            sub_names = sub[1]  # Les noms des sous-éléments (arêtes)
+        # edges = []
+        # for sub in obj.Edges:
+        #     obj_ref = sub[0]  # L'objet référencé
+        #     sub_names = sub[1]  # Les noms des sous-éléments (arêtes)
 
-            for sub_name in sub_names:
-                if "Edge" in sub_name:
-                    try:
-                        edge = obj_ref.Shape.getElement(sub_name)
-                        edges.append(edge)
-                        # App.Console.PrintMessage(f"Arête ajoutée: {sub_name} de {obj_ref.Name}\n")
-                    except Exception as e:
-                        App.Console.PrintError(f"Execute : Erreur lors de la récupération de l'arête {sub_name}: {str(e)}\n")
-                        exc_type, exc_obj, exc_tb = sys.exc_info()
-                        App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
+        #     for sub_name in sub_names:
+        #         if "Edge" in sub_name:
+        #             try:
+        #                 edge = obj_ref.Shape.getElement(sub_name)
+        #                 edges.append(edge)
+        #                 # App.Console.PrintMessage(f"Arête ajoutée: {sub_name} de {obj_ref.Name}\n")
+        #             except Exception as e:
+        #                 App.Console.PrintError(f"Execute : Erreur lors de la récupération de l'arête {sub_name}: {str(e)}\n")
+        #                 exc_type, exc_obj, exc_tb = sys.exc_info()
+        #                 App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
         # App.Console.PrintMessage(f'nb collecté {len(edges)}\n')
         return edges
 
@@ -152,7 +153,7 @@ class PocketOperation(BaseOp.baseOp):
 
             if not shape:
                 App.Console.PrintError("PocketOperation: Aucun parent ContourGeometry valide trouvé.\n")
-                obj.Shape = None
+                obj.Shape = Part.Shape()
                 return
 
             if not self.is_shape_valid(shape):
@@ -174,23 +175,34 @@ class PocketOperation(BaseOp.baseOp):
 
             elif hasattr(obj, 'FillMode') and obj.FillMode == "offset":
                 edges = self.collectEdges(obj.Contour)
+                if not edges:
+                    App.Console.PrintError("Aucune arête trouvée pour l'offset.\n")
+                    return
+                # Utilisation de la nouvelle classe independante pour "offset"
+                want_ccw = (obj.Direction == Direction[0])  # Climb = CCW
 
-                path = self.generate_offset_path(edges, tool_diam, overlap, obj.maxGeneration)
+                # step_over = tool_diam * (1 - overlap)
+                step_over = overlap
+                surep = obj.SurepRadiale if hasattr(obj, 'SurepRadiale') else 0.0
+                first_offset_dist = tool_diam / 2.0 + surep
+
+                algo = PocketOffsetAlgorithm(tool_diam, first_offset_dist, step_over, obj.maxGeneration, want_ccw, obj.useMiddleofFirstEdge)
+
+                try:
+                    source_wire = Part.Wire(edges)
+                    path = algo.run(source_wire)
+                except Exception as e:
+                    App.Console.PrintError(f"Erreur PocketOffsetAlgorithm: {e}\n")
+                    path = []
 
                 if obj.debugMode:
-                    for i in range(len(path)):
-                        for j in range(len(path[i].Wires)):
-                            edge = path[i].Wires[j].Edges[0]
-                            # recupere le premier point
-                            start_point = edge.Vertexes[0].Point
-                            end_point = edge.Vertexes[-1].Point
-                            u1, v1 = edge.ParameterRange
-                            mid_param = (u1 + v1) / 2
-                            mid_point = edge.valueAt(mid_param)
-                            # ajoute une sphere au millieu
-                            # App.Console.PrintMessage(f"start {start_point}, end {end_point} mid {mid_point}\n")
-                            sphere = Part.makeSphere(tool_diam / 4, mid_point)
-                            spheres.append(sphere)
+                    for s in path:
+                        if hasattr(s, "Edges"):
+                            for edge in s.Edges:
+                                u1, v1 = edge.ParameterRange
+                                mid_param = u1 + (v1 - u1) / 2
+                                sphere = Part.makeSphere(tool_diam / 4, edge.valueAt(mid_param))
+                                spheres.append(sphere)
 
             elif hasattr(obj, 'FillMode') and obj.FillMode == "offset2":
                 edges = self.collectEdges(obj.Contour)
@@ -259,8 +271,25 @@ class PocketOperation(BaseOp.baseOp):
                                     Log.baptDebug(
                                         f'Climb {node} → {next_node}')
                                 else:
+                                    # Fallback : liaison directe entre les points les plus proches
+                                    try:
+                                        src_pt = node.wires.Edges[0].Vertexes[0].Point
+                                        best_pt = None
+                                        best_d = float('inf')
+                                        for e in next_node.wires.Edges:
+                                            for v in e.Vertexes:
+                                                d = (v.Point - src_pt).Length
+                                                if d < best_d:
+                                                    best_d = d
+                                                    best_pt = v.Point
+                                        if best_pt:
+                                            path.append(Part.makeLine(src_pt, best_pt))
+                                            next_node.shiftWire(best_pt)
+                                    except Exception as e_fallback:
+                                        App.Console.PrintWarning(
+                                            f'Fallback climb transition échoué: {e_fallback}\n')
                                     App.Console.PrintWarning(
-                                        f'Pas de transition climb {node} → {next_node}\n')
+                                        f'Pas de transition climb {node} → {next_node}, fallback liaison directe\n')
 
                 App.Console.PrintMessage(
                     f'Parcours terminé : {len(path)} segments, '
@@ -268,9 +297,11 @@ class PocketOperation(BaseOp.baseOp):
 
                 # Paramètres d'usinage
                 step_down = abs(obj.StepDown)
-                final_depth = obj.Contour.depth if hasattr(obj.Contour, "depth") else -5.0
+                if step_down < 1e-6:
+                    App.Console.PrintError("PocketOperation: StepDown est nul ou trop petit.\n")
+                    return
+                start_depth, final_depth = obj.Contour.Proxy.getDepths()
                 final_depth += obj.SurepAxiale
-                start_depth = obj.Contour.Zref if hasattr(obj.Contour, "Zref") else 0.0
                 feed_rate = float(obj.FeedRate.getValueAs('mm/min')) if hasattr(obj, 'FeedRate') else 1000.0
                 safe_z = start_depth + 5.0
 
@@ -402,10 +433,20 @@ class PocketOperation(BaseOp.baseOp):
 
     def offsetting(self, wires, offset_dist, maxGen, parentNode=None, generation=0):
         """Fonction récursive pour générer les offsets et construire l'arbre des offsets"""
+        if generation >= maxGen:
+            return []
         node: list[noeud] = []
         for wire in wires.Wires:
             try:
-                o = wire.makeOffset2D(-offset_dist, join=0, fill=False, openResult=False)
+                # makeOffset2D(-dist) va vers l'intérieur pour CCW, l'extérieur pour CW
+                # On détecte l'orientation et on ajuste le signe pour toujours aller vers l'intérieur
+                try:
+                    face = Part.Face(wire)
+                    is_ccw = face.normalAt(0, 0).z > 0
+                except Exception:
+                    is_ccw = True
+                sign = -1 if is_ccw else 1
+                o = wire.makeOffset2D(sign * offset_dist, join=0, fill=False, openResult=False)
                 for j, w in enumerate(o.Wires):
                     n = noeud(generation, j, w)
                     node.append(n)
@@ -480,9 +521,8 @@ class PocketOperation(BaseOp.baseOp):
                     break
 
                 if not offset or not hasattr(offset, 'Wires') or not offset.Wires:
-                    App.Console.Warning("PocketOperation: Offset invalide ou vide.\n")
+                    App.Console.PrintWarning("PocketOperation: Offset invalide ou vide.\n")
                     break
-                    return None
 
                 path_edges.append(offset)
 
@@ -655,8 +695,11 @@ class PocketOperation(BaseOp.baseOp):
         """
         Transition de remontée : depuis le point de départ de l'enfant
         (fin du tour = début du wire fermé) vers le parent.
+        Essaie d'abord depuis le point logique de début du wire,
+        puis échantillonne le long du wire en fallback.
         Retourne {'point_on_source', 'point_on_target'} ou None.
         """
+        # 1) Essayer depuis le point de début du wire (position de l'outil après le tour)
         edge = child_wire.Edges[0]
         u1, u2 = edge.ParameterRange
 
@@ -676,6 +719,25 @@ class PocketOperation(BaseOp.baseOp):
                 'point_on_source': start_point,
                 'point_on_target': target_pt,
             }
+
+        # 2) Fallback : échantillonner le long de tout le wire
+        for edge in child_wire.Edges:
+            u1, u2 = edge.ParameterRange
+            samples = max(5, int(edge.Length / (offset_dist * 0.3)))
+
+            for s in range(samples + 1):
+                param = u1 + (u2 - u1) * s / samples
+                source_pt = edge.valueAt(param)
+
+                target_pt = self._find_perp_intersection(
+                    source_pt, edge, param, parent_wire, offset_dist)
+
+                if target_pt:
+                    return {
+                        'point_on_source': source_pt,
+                        'point_on_target': target_pt,
+                    }
+
         return None
 
     def _find_interrupt_transition(self, parent_wire: Part.Wire,
@@ -1220,3 +1282,244 @@ def buildParentDepthLevel(node):
             depth[child] = d + 1
             q.append(child)
     return parent, depth, levels
+
+
+class PocketOffsetAlgorithm:
+    def __init__(self, tool_diam, first_offset_dist, step_over, max_gen, want_ccw, use_middle):
+        self.tool_diam = tool_diam
+        self.first_offset_dist = first_offset_dist
+        self.step_over = step_over
+        self.max_gen = max_gen
+        self.want_ccw = want_ccw
+        self.use_middle = use_middle
+        self.visited = set()
+        self.path = []
+
+    def _wire_is_ccw(self, wire):
+        n = noeud(0, 0, wire)
+        if hasattr(n, "isCCW"):
+            return n.isCCW()
+        return True
+
+    def run(self, shape):
+        self.offset_sign = -1.0  # 1.0 if self._wire_is_ccw(shape) else -1.0
+        self.visited = set()
+        self.path = []
+        nodes = self._build_tree(shape)
+        if not nodes:
+            return []
+
+        for root in nodes:
+            self._ensure_direction(root, self.want_ccw)
+
+        for root in nodes:
+            deepest = self._find_deepest_leaf(root)
+            chain = self._get_chain_to_root(deepest)
+
+            self._link_chain(chain)
+
+            for i, node in enumerate(chain):
+                self._process_node(node)
+                if i < len(chain) - 1:
+                    parent = chain[i + 1]
+                    try:
+                        pt_child_end = node.wires.Edges[-1].Vertexes[-1].Point
+                    except:
+                        pt_child_end = node.entry_point
+                    self.path.append(Part.makeLine(pt_child_end, parent.entry_point))
+
+        return self.path
+
+    def _build_tree(self, wire):
+        nodes = []
+        try:
+            o = wire.makeOffset2D(self.offset_sign * self.first_offset_dist, join=0, fill=False, openResult=False)
+            if o and hasattr(o, "Wires"):
+                for j, w in enumerate(o.Wires):
+                    n = noeud(1, j, w)
+                    n.parent_node = None
+                    nodes.append(n)
+                    self._offsetting(w, n, 2)
+        except Exception as e:
+            Log.baptDebug(f"PocketOffsetAlgorithm._build_tree err: {e}")
+        return nodes
+
+    def _offsetting(self, wire, parent_node, generation):
+        if generation > self.max_gen:
+            return
+        try:
+            o = wire.makeOffset2D(self.offset_sign * self.step_over, join=0, fill=False, openResult=False)
+            if o and hasattr(o, "Wires"):
+                for j, w in enumerate(o.Wires):
+                    n = noeud(generation, j, w)
+                    n.parent_node = parent_node
+                    parent_node.addChild(n)
+                    self._offsetting(w, n, generation + 1)
+        except:
+            pass
+
+    def _ensure_direction(self, node, want_ccw):
+        is_ccw = node.isCCW()
+        if (want_ccw and not is_ccw) or (not want_ccw and is_ccw):
+            reversed_edges = [e.reversed() for e in reversed(list(node.wires.Edges))]
+            node.wires = Part.Wire(reversed_edges)
+        for child in node.children:
+            self._ensure_direction(child, want_ccw)
+
+    def _find_deepest_leaf(self, root_node):
+        best = root_node
+        best_depth = 0
+
+        def dfs(node, depth):
+            nonlocal best, best_depth
+            if depth > best_depth:
+                best = node
+                best_depth = depth
+            for child in node.children:
+                dfs(child, depth + 1)
+        dfs(root_node, 0)
+        return best
+
+    def _get_chain_to_root(self, node):
+        chain = []
+        current = node
+        while current is not None:
+            chain.append(current)
+            current = getattr(current, "parent_node", None)
+        return chain
+
+    def _link_chain(self, chain):
+        for i in range(len(chain) - 1):
+            child = chain[i]
+            parent = chain[i + 1]
+            try:
+                if hasattr(child, "entry_point"):
+                    pt_child = child.entry_point
+                else:
+                    if self.use_middle and len(child.wires.Edges) > 0:
+                        e0 = child.wires.Edges[0]
+                        u1, v1 = e0.ParameterRange
+                        pt_child = e0.valueAt((u1 + v1) / 2)
+                    else:
+                        pt_child = child.wires.Edges[0].Vertexes[0].Point
+                    child.entry_point = pt_child
+                    child.shiftWire(pt_child)
+
+                tp = self._find_perp_inter(pt_child, parent.wires)
+                if not tp:
+                    tp = parent.wires.Edges[0].Vertexes[0].Point
+
+                parent.entry_point = tp
+                parent.shiftWire(tp)
+            except Exception as e:
+                Log.baptDebug(f"_link_chain err: {e}")
+
+    def _process_node(self, node):
+        self.visited.add(id(node))
+
+        unvisited = [c for c in node.children if id(c) not in self.visited]
+        if not unvisited:
+            self.path.append(node.wires)
+            return
+
+        interruptions = []
+        for child in unvisited:
+            tp = self._find_interruption(node.wires, child.wires)
+            if tp:
+                interruptions.append((child, tp))
+
+        if not interruptions:
+            self.path.append(node.wires)
+            return
+
+        interruptions.sort(key=lambda x: (x[1]['edge_idx'], x[1]['param']))
+
+        edges = list(node.wires.Edges)
+        collected = []
+        current_idx = 0
+
+        for child, tp in interruptions:
+            edge_idx = tp['edge_idx']
+            param = tp['param']
+            pt_parent = tp['pt_parent']
+            pt_child = tp['pt_child']
+
+            for i in range(current_idx, edge_idx):
+                collected.append(edges[i])
+
+            trans_edge = edges[edge_idx]
+            u1, u2 = trans_edge.ParameterRange
+            if abs(param - u1) > 1e-4:
+                try:
+                    collected.append(trans_edge.Curve.trim(u1, param).toShape())
+                except:
+                    pass
+
+            if collected:
+                self._flush(collected)
+                collected = []
+
+            self.path.append(Part.makeLine(pt_parent, pt_child))
+
+            child.entry_point = pt_child
+            child.shiftWire(pt_child)
+
+            self._process_node(child)
+
+            try:
+                pt_child_end = child.wires.Edges[-1].Vertexes[-1].Point
+            except:
+                pt_child_end = pt_child
+            self.path.append(Part.makeLine(pt_child_end, pt_parent))
+
+            if abs(u2 - param) > 1e-4:
+                try:
+                    collected.append(trans_edge.Curve.trim(param, u2).toShape())
+                except:
+                    pass
+
+            current_idx = edge_idx + 1
+
+        for i in range(current_idx, len(edges)):
+            collected.append(edges[i])
+
+        if collected:
+            self._flush(collected)
+
+    def _flush(self, collected):
+        try:
+            self.path.append(Part.Wire(collected))
+        except:
+            self.path.extend(collected)
+
+    def _find_perp_inter(self, source_pt, target_wire):
+        try:
+            res = target_wire.distToShape(Part.Vertex(source_pt))
+            return res[1][0][0]
+        except:
+            return None
+
+    def _find_interruption(self, parent_wire, child_wire):
+        best_tp = None
+        best_diff = float('inf')
+        for e_idx, e in enumerate(parent_wire.Edges):
+            u1, u2 = e.ParameterRange
+            samples = max(10, int(e.Length / (self.step_over * 0.2)))
+            for s in range(samples + 1):
+                param = u1 + (u2 - u1) * s / samples
+                try:
+                    src_pt = e.valueAt(param)
+                    res = child_wire.distToShape(Part.Vertex(src_pt))
+                    dist = res[0]
+                    diff = abs(dist - self.step_over)
+                    if diff < best_diff and diff < self.step_over * 0.6:
+                        best_diff = diff
+                        best_tp = {
+                            'edge_idx': e_idx,
+                            'param': param,
+                            'pt_parent': src_pt,
+                            'pt_child': res[1][0][0]
+                        }
+                except:
+                    pass
+        return best_tp

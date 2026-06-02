@@ -12,6 +12,7 @@ import PySide.QtCore as QtCore  # type: ignore
 from BaptPath import GcodeEditorTaskPanel
 import BaptUtilities
 from utils import Contour, GcodeWriter, Log
+from Op.offset import Side, material_side_to_tool_side, offsetWire, offset_sign_from_material_side, reverse_toolpath_for_mode
 from Op.Gui.ContournageTaskPanel import ContournageTaskPanel
 from Op.BaseOp import baseOp, baseOpViewProviderProxy
 
@@ -181,8 +182,9 @@ class ContournageCycle(baseOp):
         #     Gauche → matière à gauche → outil à droite → offset -R
         #   Climb/Conventional change le SENS DE PARCOURS, pas le côté.
 
-        offset_value = tool_radius if cote_matiere == "Droite" else -tool_radius
-        is_conventional = (direction_usinage == "Conventional")
+        offset_value = offset_sign_from_material_side(cote_matiere) * tool_radius
+        machining_side = material_side_to_tool_side(cote_matiere)
+        is_conventional = reverse_toolpath_for_mode(direction_usinage)
 
         App.Console.PrintMessage(
             f"[Contournage] CoteMatiere={cote_matiere}, Dir={direction_usinage}, "
@@ -213,23 +215,57 @@ class ContournageCycle(baseOp):
                 else:
                     offset_with_surep = offset_value - obj.SurepRadiale
 
-                result = wire_z.makeOffset2D(offset_with_surep,
-                                             openResult=not is_closed)
+                def _to_wire(shape):
+                    if getattr(shape, "Wires", None):
+                        return shape.Wires[0]
+                    if getattr(shape, "Edges", None):
+                        return Part.Wire(shape.Edges)
+                    return None
+
+                offset_wire = None
+
+                # Utiliser la nouvelle méthode d'offset en priorité quand possible.
+
+                side_for_offset = machining_side
+                if side_for_offset == Side.NONE:
+                    side_for_offset = Side.LEFT if offset_with_surep >= 0 else Side.RIGHT
+                try:
+                    offset_wire = offsetWire(
+                        wire_z,
+                        offset_with_surep,
+                        forward=not is_conventional,
+                        side=side_for_offset,
+                    )
+                except NotImplementedError:
+                    offset_wire = None
+
+                # Fallback: offset natif FreeCAD pour les wires non supportés par offsetWire().
+                if offset_wire is None:
+                    result = wire_z.makeOffset2D(
+                        offset_with_surep,
+                        openResult=not is_closed)
+                    offset_wire = _to_wire(result)
+
+                if offset_wire is None:
+                    Log.baptError(f"Pas de résultat d'offset Z={pass_z}")
+                    continue
 
                 if obj.Compensation == Compensation.Machine.name:
                     # Compensation machine : offset complet puis contre-offset du rayon.
                     # La CNC appliquera G41/G42 pour le rayon outil.
-                    result = result.Wires[0].makeOffset2D(
-                        -offset_value, openResult=not is_closed)
-
-                if result.Wires:
-                    offset_wire = result.Wires[0]
-                elif result.Edges:
-                    offset_wire = Part.Wire(result.Edges)
-                else:
-                    Log.baptError(
-                        f"Pas de résultat d'offset Z={pass_z}")
-                    continue
+                    # comp_result = offset_wire.makeOffset2D(
+                    #     -offset_value,
+                    #     openResult=not is_closed)
+                    comp_result = offsetWire(
+                        offset_wire,
+                        -offset_value,
+                        forward=not is_conventional,
+                        side=machining_side,
+                    )
+                    offset_wire = _to_wire(comp_result)
+                    if offset_wire is None:
+                        Log.baptError(f"Pas de résultat de compensation machine Z={pass_z}")
+                        continue
             except Exception as e:
                 exc_type, exc_obj, exc_tb = sys.exc_info()
                 Log.baptError(
@@ -294,20 +330,21 @@ class ContournageCycle(baseOp):
             #   distToShape(vertex) → (dist, [(pt_sur_self, pt_sur_other), ...], ...)
             #     [1][0][0] = point le plus proche sur self (= wire_z)
             #     [1][0][1] = point le plus proche sur other (= le vertex passé)
+            if False:
+                dist_info = wire_z.distToShape(Part.Vertex(start_pt))
+                closest_on_wire = dist_info[1][0][0]  # Point sur le wire original
+                toward_tool = App.Vector(
+                    start_pt.x - closest_on_wire.x,
+                    start_pt.y - closest_on_wire.y, 0)
+                left_normal = App.Vector(-tangent_start.y, tangent_start.x, 0)
+                tool_is_left = toward_tool.dot(left_normal) > 0
 
-            dist_info = wire_z.distToShape(Part.Vertex(start_pt))
-            closest_on_wire = dist_info[1][0][0]  # Point sur le wire original
-            toward_tool = App.Vector(
-                start_pt.x - closest_on_wire.x,
-                start_pt.y - closest_on_wire.y, 0)
-            left_normal = App.Vector(-tangent_start.y, tangent_start.x, 0)
-            tool_is_left = toward_tool.dot(left_normal) > 0
-
-            self._tool_side_is_left = tool_is_left
+                self._tool_side_is_left = tool_is_left
+            self._tool_side_is_left = machining_side == Side.LEFT
 
             App.Console.PrintMessage(
                 f"[Contournage] Pass Z={pass_z:.2f} — outil côté "
-                f"{'GAUCHE' if tool_is_left else 'DROITE'} (géométrique)\n")
+                f"{'GAUCHE' if self._tool_side_is_left else 'DROITE'} (géométrique)\n")
 
             # ── 4e. Approche ───────────────────────────────────────────────
 
@@ -323,7 +360,7 @@ class ContournageCycle(baseOp):
             comp = "G40"
             if obj.Compensation in [Compensation.Machine.name,
                                     Compensation.Ordinateur_G41_G42.name]:
-                comp = "G41" if tool_is_left else "G42"
+                comp = "G41" if self._tool_side_is_left else "G42"
 
             if p == 0:
                 gcode.lines.append(f"{obj.Label}_start:")
@@ -532,7 +569,8 @@ class ContournageCycle(baseOp):
         Zref = depths[0]
         Zfinal = depths[1]
         prise = obj.StepDown
-        dz = Zref - Zfinal
+        surep = obj.SurepAxiale
+        dz = Zref - (Zfinal + surep)
 
         passes = []
 
@@ -673,7 +711,7 @@ class ViewProviderContournageCycle(baseOpViewProviderProxy):
     def setEdit(self, vobj, mode=0):
         """Ouvre le panneau de tâche pour l'édition"""
         if mode == 0:
-            self.panel = ContournageTaskPanel.ContournageTaskPanel(self.Object, self.deleteObjectOnReject)
+            self.panel = ContournageTaskPanel(self.Object, self.deleteObjectOnReject)
             Gui.Control.showDialog(self.panel)
             self.deleteOnReject = False
             # self.panel.setupUi()

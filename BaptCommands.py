@@ -5,7 +5,10 @@ BaptCommands.py
 Contient les commandes principales du workbench
 """
 
+import FreeCAD as App
+import FreeCADGui as Gui
 import BaptCamProject
+import ContourBaseGeom
 import BaptContour25DGeom
 import BaptContourEditableGeometry
 import BaptContourGeometry
@@ -19,13 +22,11 @@ import BaptPostProcess
 import BaptPreferences
 import Tool.BaptTools as BaptTools
 import BaptUtilities
-import FreeCAD as App
-import FreeCADGui as Gui
 
 
 import BaptOrigin
 
-from Op import DrillOp, OpContournage, OpSurfacage, PathOp
+from Op import DrillOp, OpContournage, OpSurfacage, PathOp, OpContournageTest
 from Probe import probeFace
 import Tool.ToolsGUI
 import testFPO
@@ -84,7 +85,7 @@ class CreatePocketOperationCommand:
 
     def IsActive(self):
         sel = Gui.Selection.getSelection()
-        return sel and hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, BaptContourGeometry.ContourGeometry)
+        return sel and hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, ContourBaseGeom.ContourBaseGeom)
 
     def Activated(self):
         doc = App.ActiveDocument
@@ -167,6 +168,81 @@ class CreateContourCommand:
         # Ouvrir le panneau de tâches pour l'édition
         if App.GuiUp and obj.ViewObject:
             obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+
+        doc.commitTransaction()
+
+        # Message de confirmation
+        App.Console.PrintMessage(f"Contournage créé et lié à {contour_geometry.Label}.\n")
+
+
+class CreateContourTestCommand:
+    """Commande pour créer un Contournage test"""
+
+    def GetResources(self):
+        return {'Pixmap': BaptUtilities.getIconPath("Contournage.svg"),
+                'MenuText': "Nouveau Contournage Test",
+                'ToolTip': "Créer un nouveau contournage test pour l'usinage"}
+
+    def IsActive(self):
+        """La commande est active si une geometrie de contour est sélectionné"""
+        sel = Gui.Selection.getSelection()
+        if not sel:
+            return False
+
+        return hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, (BaptContourGeometry.ContourGeometry, BaptContourEditableGeometry.ContourEditableGeometry))
+
+    def Activated(self):
+        """Créer un nouveau contournage test"""
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Contour Test')
+
+        # Obtenir la géométrie de contour sélectionnée
+        contour_geometry = Gui.Selection.getSelection()[0]
+
+        # Créer l'objet de contournage
+        obj = doc.addObject("Part::FeaturePython", "ContournageTest")
+
+        # Ajouter la fonctionnalité
+        OpContournageTest.opContournageTest(obj)
+
+        pref = BaptPreferences.BaptPreferences()
+        modeAjout = pref.getModeAjout()
+
+        # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
+        # 1 = ajouter à la géométrie comme enfant (pas conseillé)
+        # 2 = ajouter au groupe opérations du projet CAM
+
+        if modeAjout == 1 or modeAjout == 0:
+
+            # Ajouter le contournage comme enfant de la géométrie du contour
+            contour_geometry.addObject(obj)
+            contour_geometry.Group.append(obj)
+
+        if modeAjout == 2 or modeAjout == 0:
+            camProject = BaptUtilities.find_cam_project(contour_geometry)
+            if camProject:
+                operations_group = camProject.Proxy.getOperationsGroup(camProject)
+                if modeAjout == 2:
+                    operations_group.addObject(obj)
+                    operations_group.Group.append(obj)
+                elif modeAjout == 0:
+                    link = doc.addObject('App::Link', f'Link_{obj.Label}')
+                    link.setLink(obj)
+                    operations_group.addObject(link)
+                    operations_group.Group.append(link)
+
+        # Lier à la géométrie du contour
+        obj.ContourGeometry = contour_geometry
+
+        # Ajouter le ViewProvider
+        if App.GuiUp and obj.ViewObject:
+            OpContournageTest.opContournageTestViewProvider(obj.ViewObject)
+
+        doc.recompute()
+
+        # Ouvrir le panneau de tâches pour l'édition
+        # if App.GuiUp and obj.ViewObject:
+        #     obj.ViewObject.Proxy.setEdit(obj.ViewObject)
 
         doc.commitTransaction()
 
@@ -484,7 +560,8 @@ class CreateHotReloadCommand:
     def GetResources(self):
         return {'Pixmap': BaptUtilities.getIconPath("hotreload.svg"),
                 'MenuText': "Hot Reload",
-                'ToolTip': "Recharge les modules Bapt"}
+                'ToolTip': "Recharge les modules Bapt",
+                'Accel': "Ctrl+R"}
 
     def IsActive(self):
         return App.ActiveDocument is not None
@@ -518,14 +595,15 @@ class CreateHotReloadCommand:
             reload(DrillOpTaskPanel)
             import utils.BQuantitySpinBox as BQuantitySpinBox
             reload(BQuantitySpinBox)
-            import Tool.ToolTaskPannel as ToolTaskPannel
-            reload(ToolTaskPannel)
+
             import BaptHoleRecognition
             reload(BaptHoleRecognition)
             import Gui.HoleRecognitionTaskPanel as HoleRecognitionTaskPanel
             reload(HoleRecognitionTaskPanel)
             import Op.PocketOp as PocketOp
             reload(PocketOp)
+            import Op.OpContournageTest as OpContournageTest
+            reload(OpContournageTest)
 
             # dossier = BaptUtilities.get_module_path()
 
@@ -867,3 +945,4 @@ if App.GuiUp:
     Gui.addCommand('Bapt_CreateAdaptativeOperation', CreateAdaptativeOperationCommand())
     Gui.addCommand('Bapt_createTestFPO', testFPOCommand())
     Gui.addCommand('Bapt_RapportProgrammation', rapportProgrammationCommand())
+    Gui.addCommand('Bapt_CreateContournageTest', CreateContourTestCommand())
