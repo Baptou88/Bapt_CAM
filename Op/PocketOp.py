@@ -21,11 +21,83 @@ if True:
 else:
     Log.setLevel(Log.Level.INFO, Log.thisModule())
 
-pocketFillMode = ["offset", "offset2", "zigzag", "spirale"]
+pocketFillMode = ["offset", "zigzag", "spirale"]
 
 Direction = ["Climb (Avalant)", "Conventional (opposition)"]
 
 Plongee = ["Directe", "Helicoidale", "Rampante"]
+
+
+def shift_wire_local(wire: Part.Wire, new_start_point: App.Vector, tol: float = 1e-6) -> Part.Wire:
+    """Reordonne un wire pour démarrer à new_start_point sans dépendre de utils.Contour.shiftWire."""
+    if not wire or not getattr(wire, "Edges", None):
+        return wire
+
+    edges = list(wire.Edges)
+    is_closed = wire.isClosed()
+
+    target_idx = -1
+    for i, edge in enumerate(edges):
+        try:
+            if edge.distToShape(Part.Vertex(new_start_point))[0] < tol:
+                target_idx = i
+                break
+        except Exception:
+            continue
+
+    if target_idx < 0:
+        return wire
+
+    target = edges[target_idx]
+    u1, u2 = target.ParameterRange
+
+    try:
+        param = target.Curve.parameter(new_start_point)
+    except Exception:
+        # Fallback: si impossible de projeter, choisir l'extrémité la plus proche.
+        d_start = (target.Vertexes[0].Point - new_start_point).Length
+        d_end = (target.Vertexes[-1].Point - new_start_point).Length
+        param = u1 if d_start <= d_end else u2
+
+    # Si point au voisinage d'une extrémité, rotation simple.
+    if abs(param - u1) < tol:
+        ordered = edges[target_idx:] + edges[:target_idx]
+        try:
+            return Part.Wire(ordered)
+        except Exception:
+            return wire
+    if abs(param - u2) < tol:
+        ordered = edges[(target_idx + 1):] + edges[:(target_idx + 1)]
+        try:
+            return Part.Wire(ordered)
+        except Exception:
+            return wire
+
+    try:
+        first_part = target.Curve.trim(u1, param).toShape()
+        second_part = target.Curve.trim(param, u2).toShape()
+    except Exception:
+        return wire
+
+    if is_closed:
+        # En fermé, on conserve la continuité en terminant par la partie "avant".
+        ordered = [second_part] + edges[(target_idx + 1):] + edges[:target_idx] + [first_part]
+    else:
+        # En ouvert, on parcourt seulement vers l'avant depuis le nouveau point.
+        ordered = [second_part] + edges[(target_idx + 1):]
+
+    try:
+        return Part.Wire(ordered)
+    except Exception:
+        return wire
+
+
+def shift_node_wire_local(node: noeud, new_start_point: App.Vector) -> Part.Wire:
+    """Décale le wire d'un nœud en local, sans appeler node.shiftWire()."""
+    node.wires = shift_wire_local(node.wires, new_start_point)
+    if hasattr(node, "hasChangend"):
+        node.hasChangend = True
+    return node.wires
 
 
 class PocketOperation(BaseOp.baseOp):
@@ -63,7 +135,7 @@ class PocketOperation(BaseOp.baseOp):
         obj.SurepRadiale = 0.0
 
         obj.addProperty("App::PropertyEnumeration", "FillMode", "Pocket", "Mode de remplissage").FillMode = pocketFillMode
-        obj.FillMode = pocketFillMode[1]
+        obj.FillMode = pocketFillMode[0]
 
         obj.addProperty("App::PropertyEnumeration", "PlungeType", "Pocket", "Type de plongée").PlungeType = Plongee
         obj.PlungeType = Plongee[0]
@@ -130,24 +202,7 @@ class PocketOperation(BaseOp.baseOp):
 
         super().execute(obj)  # Appelle la logique de base (vérifications, etc.)
 
-        # Chercher le parent ContourGeometry dans l'arborescence
-        # if not self.initialized:
-        #     Log.baptDebug("execute ignored")
-        #     return
-        # Log.baptDebug("execute")
         try:
-            # parent = None
-            # for p in obj.InList:
-            #     if hasattr(p, "Proxy") and getattr(p.Proxy, "Type", "") == "ContourGeometry":
-            #         parent = p
-            #         break
-
-            # if not parent or not hasattr(parent, "Shape"):
-            #     App.Console.PrintError("PocketOperation: Aucun parent ContourGeometry valide trouvé.\n")
-            #     obj.Path = Part.Shape()
-            #     return
-
-            # shape = parent.Shape
 
             shape = obj.Contour.Shape if obj.Contour and hasattr(obj.Contour, "Shape") else None
 
@@ -181,8 +236,8 @@ class PocketOperation(BaseOp.baseOp):
                 # Utilisation de la nouvelle classe independante pour "offset"
                 want_ccw = (obj.Direction == Direction[0])  # Climb = CCW
 
-                # step_over = tool_diam * (1 - overlap)
-                step_over = overlap
+                step_over = tool_diam * (1 - overlap)
+                # step_over = overlap
                 surep = obj.SurepRadiale if hasattr(obj, 'SurepRadiale') else 0.0
                 first_offset_dist = tool_diam / 2.0 + surep
 
@@ -204,186 +259,6 @@ class PocketOperation(BaseOp.baseOp):
                                 sphere = Part.makeSphere(tool_diam / 4, edge.valueAt(mid_param))
                                 spheres.append(sphere)
 
-            elif hasattr(obj, 'FillMode') and obj.FillMode == "offset2":
-                edges = self.collectEdges(obj.Contour)
-
-                path = []
-                nodes = self.generate_offset_path2(edges, tool_diam, overlap, obj.maxGeneration, obj.SurepRadiale)
-
-                if not nodes:
-                    App.Console.PrintError("Aucun offset généré\n")
-                    obj.Shape = Part.Shape()
-                    return
-
-                offset_dist = tool_diam * (1 - overlap)
-
-                # Optionnel : décaler la feuille la plus profonde
-                if obj.useMiddleofFirstEdge:
-                    for root_node in nodes:
-                        _, _, levels_tmp = buildParentDepthLevel(root_node)
-                        md = max(levels_tmp.keys())
-                        if md in levels_tmp and levels_tmp[md]:
-                            dn = levels_tmp[md][0]
-                            e0 = dn.wires.Edges[0]
-                            u1, v1 = e0.ParameterRange
-                            dn.shiftWire(e0.valueAt((u1 + v1) / 2))
-
-                # ===== ALGORITHME D'ÉVIDEMENT DE POCHE =====
-                # Principe : partir de la feuille la plus profonde (centre),
-                # remonter en usinant chaque nœud, et interrompre un nœud
-                # dès qu'une transition perpendiculaire vers un enfant non visité
-                # est possible. Après avoir traité le sous-arbre enfant, revenir
-                # et finir le nœud interrompu.
-                visited = set()
-
-                # S'assurer que le sens de rotation correspond au paramètre Direction
-                # Climb (Avalant) = CCW (sens anti-horaire, fraisage en avalant)
-                # Conventional (opposition) = CW (sens horaire, fraisage en opposition)
-                want_ccw = (obj.Direction == Direction[0])  # Direction[0] = "Climb (Avalant)"
-                for root_node in nodes:
-                    self._ensure_direction(root_node, want_ccw)
-
-                for root_node in nodes:
-                    parent_map = self._build_parent_map(root_node)
-                    deepest = self._find_deepest_leaf(root_node)
-                    chain = self._get_chain_to_root(deepest, parent_map)
-
-                    App.Console.PrintMessage(
-                        f'Chaîne de {len(chain)} nœuds, profondeur max={deepest.depth}\n')
-
-                    for i, node in enumerate(chain):
-                        if id(node) in visited:
-                            continue
-
-                        # Usiner le nœud (avec interruptions pour ses enfants non visités)
-                        self._machine_node(obj, node, offset_dist, visited, path)
-
-                        # Transition perpendiculaire vers le nœud suivant (parent)
-                        if i + 1 < len(chain):
-                            next_node = chain[i + 1]
-                            if id(next_node) not in visited:
-                                tp = self._find_climb_transition(
-                                    node.wires, next_node.wires, offset_dist)
-                                if tp:
-                                    path.append(Part.makeLine(
-                                        tp['point_on_source'], tp['point_on_target']))
-                                    next_node.shiftWire(tp['point_on_target'])
-                                    Log.baptDebug(
-                                        f'Climb {node} → {next_node}')
-                                else:
-                                    # Fallback : liaison directe entre les points les plus proches
-                                    try:
-                                        src_pt = node.wires.Edges[0].Vertexes[0].Point
-                                        best_pt = None
-                                        best_d = float('inf')
-                                        for e in next_node.wires.Edges:
-                                            for v in e.Vertexes:
-                                                d = (v.Point - src_pt).Length
-                                                if d < best_d:
-                                                    best_d = d
-                                                    best_pt = v.Point
-                                        if best_pt:
-                                            path.append(Part.makeLine(src_pt, best_pt))
-                                            next_node.shiftWire(best_pt)
-                                    except Exception as e_fallback:
-                                        App.Console.PrintWarning(
-                                            f'Fallback climb transition échoué: {e_fallback}\n')
-                                    App.Console.PrintWarning(
-                                        f'Pas de transition climb {node} → {next_node}, fallback liaison directe\n')
-
-                App.Console.PrintMessage(
-                    f'Parcours terminé : {len(path)} segments, '
-                    f'{len(visited)} nœuds visités\n')
-
-                # Paramètres d'usinage
-                step_down = abs(obj.StepDown)
-                if step_down < 1e-6:
-                    App.Console.PrintError("PocketOperation: StepDown est nul ou trop petit.\n")
-                    return
-                start_depth, final_depth = obj.Contour.Proxy.getDepths()
-                final_depth += obj.SurepAxiale
-                feed_rate = float(obj.FeedRate.getValueAs('mm/min')) if hasattr(obj, 'FeedRate') else 1000.0
-                safe_z = start_depth + 5.0
-
-                total_depth = abs(final_depth - start_depth)
-                num_passes = math.ceil(total_depth / step_down)
-
-                Log.baptDebug(
-                    f"Génération G-code: {num_passes} passes, "
-                    f"step={step_down}, final={final_depth}")
-
-                # Trouver le premier point du parcours
-                if path:
-                    first_edge = path[0].Edges[0]
-                    start_pt = first_edge.Vertexes[0].Point
-                else:
-                    start_pt = App.Vector(0, 0, 0)
-
-                for pass_num in range(num_passes):
-                    if pass_num == num_passes - 1:
-                        current_z = final_depth
-                    else:
-                        current_z = start_depth - (pass_num + 1) * step_down
-
-                    gcodeWriter.comment(f"Passe {pass_num + 1}/{num_passes} à Z={current_z:.3f}")
-
-                    # Positionnement rapide et plongée
-                    gcodeWriter.linearMove({'X': start_pt.x, 'Y': start_pt.y}, rapid=True)
-                    gcodeWriter.linearMove({'Z': safe_z}, rapid=True)
-                    if obj.PlungeType == "Directe":
-                        gcodeWriter.linearMove({'Z': current_z}, feed=feed_rate, rapid=False)
-                    elif obj.PlungeType == "Helicoidale":
-                        dz = safe_z - current_z
-                        diam = tool_diam * 1.5
-                        nbtour = math.ceil(dz / 1.0)  # 1mm par tour
-                        prisePasse = (dz / nbtour) / 2
-                        gcodeWriter.linearMove({'X': start_pt.x + diam / 2, 'Y': start_pt.y, 'Z': safe_z}, feed=feed_rate)
-                        Log.baptDebug(f"Plongée hélicoïdale: {nbtour} tours, prise de passe {prisePasse:.3f}")
-                        Log.baptDebug(f"safe_z {safe_z}, current_z {current_z}")
-                        for i in range(nbtour):
-                            gcodeWriter.arcMove({'X': start_pt.x - diam / 2, 'Y': start_pt.y, 'Z': safe_z - ((i + 1) * prisePasse + i * prisePasse), 'CCW': True, 'I': -diam / 2, 'J': 0}, feed=feed_rate)
-                            gcodeWriter.arcMove({'X': start_pt.x + diam / 2, 'Y': start_pt.y, 'Z': safe_z - ((i + 1) * (prisePasse * 2)), 'CCW': True, 'I': diam / 2, 'J': 0}, feed=feed_rate)
-                        gcodeWriter.linearMove({'X': start_pt.x, 'Y': start_pt.y, 'Z': current_z}, feed=feed_rate)
-                    # Le parcours est continu : pas de repositionnement rapide
-                    # On détermine bonSens par arête en suivant la position courante
-                    current_pos = App.Vector(start_pt)
-                    for segment in path:
-                        for edge in segment.Edges:
-                            # Déterminer le sens de parcours de l'arête
-                            d0 = (edge.Vertexes[0].Point - current_pos).Length
-                            d1 = (edge.Vertexes[-1].Point - current_pos).Length
-                            bonSens = d0 <= d1
-                            edge_gcode = edgeToGcode(
-                                edge, bonSens=bonSens,
-                                current_z=current_z,
-                                rapid=False,
-                                feed_rate=feed_rate, gcodeWriter=gcodeWriter)
-
-                            # Mettre à jour la position courante
-                            if bonSens:
-                                current_pos = edge.Vertexes[-1].Point
-                            else:
-                                current_pos = edge.Vertexes[0].Point
-
-                    gcodeWriter.linearMove({'Z': safe_z}, rapid=True)
-
-                obj.Gcode = "\n".join(gcodeWriter.lines)
-                obj.TimeEstimate = gcodeWriter.time_estimate
-                obj.LastCoordinate = App.Vector(gcodeWriter.current_position['X'], gcodeWriter.current_position['Y'], gcodeWriter.current_position['Z'])
-
-                Log.baptDebug(f"G-code généré: {len(obj.Gcode)} caractères")
-
-                # for n in nodes:
-                #     wires = n.getWires()
-                #     path.extend(wires)
-                if obj.debugMode:
-                    for segment in path:
-                        for edge in segment.Edges:
-                            u1, v1 = edge.ParameterRange
-                            mid_param = u1 + (v1 - u1) / 4
-                            mid_point = edge.valueAt(mid_param)
-                            sphere = Part.makeSphere(tool_diam / 4, mid_point)
-                            spheres.append(sphere)
             else:
                 path = self.generate_spiral_path(shape, tool_diam, overlap)
             # obj.Path = path if path else Part.Shape()
@@ -391,11 +266,100 @@ class PocketOperation(BaseOp.baseOp):
             if path is None:
                 App.Console.PrintError("PocketOperation: Échec de la génération du chemin d'usinage.\n")
                 obj.Shape = Part.Shape()
+                if hasattr(obj, 'Gcode'):
+                    obj.Gcode = ""
                 return
-            a = path
+
+            # Normaliser le chemin en liste de segments exploitables.
+            if isinstance(path, list):
+                path_segments = list(path)
+            elif hasattr(path, "Edges"):
+                path_segments = [path]
+            else:
+                path_segments = []
+
+            # Génération G-code commune à tous les FillMode.
+            try:
+                step_down = abs(obj.StepDown)
+                if step_down < 1e-6:
+                    App.Console.PrintError("PocketOperation: StepDown est nul ou trop petit.\n")
+                    obj.Gcode = ""
+                else:
+                    start_depth, final_depth = obj.Contour.Proxy.getDepths()
+                    final_depth += obj.SurepAxiale
+                    feed_rate = float(obj.FeedRate.getValueAs('mm/min')) if hasattr(obj, 'FeedRate') else 1000.0
+                    safe_z = start_depth + 5.0
+
+                    total_depth = abs(final_depth - start_depth)
+                    num_passes = max(1, math.ceil(total_depth / step_down))
+
+                    first_edge = None
+                    for segment in path_segments:
+                        if hasattr(segment, "Edges") and segment.Edges:
+                            first_edge = segment.Edges[0]
+                            break
+
+                    if first_edge is not None:
+                        start_pt = first_edge.Vertexes[0].Point
+
+                        for pass_num in range(num_passes):
+                            if pass_num == num_passes - 1:
+                                current_z = final_depth
+                            else:
+                                current_z = start_depth - (pass_num + 1) * step_down
+
+                            gcodeWriter.comment(f"Passe {pass_num + 1}/{num_passes} à Z={current_z:.3f}")
+                            gcodeWriter.linearMove({'X': start_pt.x, 'Y': start_pt.y}, rapid=True)
+                            gcodeWriter.linearMove({'Z': safe_z}, rapid=True)
+
+                            if obj.PlungeType == "Helicoidale":
+                                dz = safe_z - current_z
+                                diam = tool_diam * 1.5
+                                nbtour = max(1, math.ceil(dz / 1.0))
+                                prisePasse = (dz / nbtour) / 2
+                                gcodeWriter.linearMove({'X': start_pt.x + diam / 2, 'Y': start_pt.y, 'Z': safe_z}, feed=feed_rate)
+                                for i in range(nbtour):
+                                    gcodeWriter.arcMove({'X': start_pt.x - diam / 2, 'Y': start_pt.y, 'Z': safe_z - ((i + 1) * prisePasse + i * prisePasse), 'CCW': True, 'I': -diam / 2, 'J': 0}, feed=feed_rate)
+                                    gcodeWriter.arcMove({'X': start_pt.x + diam / 2, 'Y': start_pt.y, 'Z': safe_z - ((i + 1) * (prisePasse * 2)), 'CCW': True, 'I': diam / 2, 'J': 0}, feed=feed_rate)
+                                gcodeWriter.linearMove({'X': start_pt.x, 'Y': start_pt.y, 'Z': current_z}, feed=feed_rate)
+                            else:
+                                gcodeWriter.linearMove({'Z': current_z}, feed=feed_rate, rapid=False)
+
+                            current_pos = App.Vector(start_pt)
+                            for segment in path_segments:
+                                if not hasattr(segment, "Edges"):
+                                    continue
+                                for edge in segment.Edges:
+                                    d0 = (edge.Vertexes[0].Point - current_pos).Length
+                                    d1 = (edge.Vertexes[-1].Point - current_pos).Length
+                                    bonSens = d0 <= d1
+                                    edgeToGcode(
+                                        edge,
+                                        bonSens=bonSens,
+                                        current_z=current_z,
+                                        rapid=False,
+                                        feed_rate=feed_rate,
+                                        gcodeWriter=gcodeWriter,
+                                    )
+                                    current_pos = edge.Vertexes[-1].Point if bonSens else edge.Vertexes[0].Point
+
+                            gcodeWriter.linearMove({'Z': safe_z}, rapid=True)
+
+                    obj.Gcode = "\n".join(gcodeWriter.lines)
+                    obj.TimeEstimate = gcodeWriter.time_estimate
+                    obj.LastCoordinate = App.Vector(
+                        gcodeWriter.current_position['X'],
+                        gcodeWriter.current_position['Y'],
+                        gcodeWriter.current_position['Z'],
+                    )
+            except Exception as e_gcode:
+                App.Console.PrintWarning(f"PocketOperation: génération G-code échouée: {e_gcode}\n")
+                obj.Gcode = ""
+
+            a = list(path_segments)
             for s in spheres:
                 a.append(s)
-            compound = Part.makeCompound(a)
+            compound = Part.makeCompound(a) if a else Part.Shape()
             # Part.show(compound)
             obj.Shape = compound
         except Exception as e:
@@ -430,75 +394,6 @@ class PocketOperation(BaseOp.baseOp):
         if lines:
             return Part.Wire(lines)
         return None
-
-    def offsetting(self, wires, offset_dist, maxGen, parentNode=None, generation=0):
-        """Fonction récursive pour générer les offsets et construire l'arbre des offsets"""
-        if generation >= maxGen:
-            return []
-        node: list[noeud] = []
-        for wire in wires.Wires:
-            try:
-                # makeOffset2D(-dist) va vers l'intérieur pour CCW, l'extérieur pour CW
-                # On détecte l'orientation et on ajuste le signe pour toujours aller vers l'intérieur
-                try:
-                    face = Part.Face(wire)
-                    is_ccw = face.normalAt(0, 0).z > 0
-                except Exception:
-                    is_ccw = True
-                sign = -1 if is_ccw else 1
-                o = wire.makeOffset2D(sign * offset_dist, join=0, fill=False, openResult=False)
-                for j, w in enumerate(o.Wires):
-                    n = noeud(generation, j, w)
-                    node.append(n)
-                    if parentNode is not None:
-                        parentNode.addChild(n)
-                    self.offsetting(w, offset_dist, maxGen, n, generation + 1)
-            except Exception as e:
-                print(f"Offsetting generation {generation} échouée: {e}\n")
-                pass
-
-        return node
-
-    def generate_offset_path2(self, shape: Part.Shape, tool_diam: float, overlap: float, maxGen: int, surepRadiale: float):
-        # Génère un offset intérieur de la forme
-        path_edges = []
-        try:
-            current = Part.Wire(shape)
-
-            # offset_dist = tool_diam * (1 - overlap)
-            offset_dist = tool_diam / 2 + surepRadiale
-            # generation = 0
-
-            nodes = self.offsetting(current, offset_dist, maxGen)
-
-            # print de l'arbre
-            for n in nodes:
-                n.printTree()
-
-            if False:
-                deepest_nodes = findDeepestNodes(nodes)
-                App.Console.PrintMessage(f"Deepest nodes: {len(deepest_nodes)}\n")
-                App.Console.PrintMessage(f'Deepest {deepest_nodes[0]}\n')
-
-                arbore_nodes = arbore(nodes)
-                App.Console.PrintMessage(f"Arbore nodes: {len(arbore_nodes)}\n")
-                for n in arbore_nodes:
-                    App.Console.PrintMessage(f'Arbore {n}\n')
-
-            # for n in nodes:
-            #     wires = n.getWires()
-            #     # for w in wires:
-            #     path_edges.append(wires)
-
-            # App.Console.PrintMessage(f"Offset généré: nb {len(path_edges)}\n")
-            return nodes
-
-        except Exception as e:
-            App.Console.PrintError(f"Erreur offset gen: : {e}\n")
-            exc_type, exc_value, exc_traceback = sys.exc_info()
-            line_number = exc_traceback.tb_lineno
-            App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
-            return path_edges
 
     def generate_offset_path(self, shape, tool_diam, overlap, maxGen):
         # Génère un offset intérieur de la forme
@@ -882,7 +777,7 @@ class PocketOperation(BaseOp.baseOp):
                 f'dist={(pt_target - pt_source).Length:.3f}')
 
             # 5) Décaler le wire enfant pour qu'il commence à pt_target
-            child.shiftWire(pt_target)
+            shift_node_wire_local(child, pt_target)
 
             # 6) Traiter récursivement le sous-arbre enfant
             self._machine_node(obj, child, offset_dist, visited, path)
@@ -915,118 +810,6 @@ class PocketOperation(BaseOp.baseOp):
 
         Log.baptDebug(f'  Fin usinage {node}')
 
-    def makeTransitionToParent(self, obj, childNode: noeud, parentNode: noeud):
-        """
-        Crée une transition perpendiculaire entre un noeud enfant et son parent
-        La transition est perpendiculaire à la première arête du wire enfant
-
-        :param obj: L'objet PocketOperation
-        :param childNode: Noeud enfant (intérieur)
-        :param parentNode: Noeud parent (extérieur)
-        """
-
-        offset_dist = obj.ToolDiameter * (1 - obj.Overlap)
-
-        childWire = childNode.wires
-        parentWire = parentNode.wires
-        try:
-            is_ccw = childNode.isCCW()  # TODO: à implémenter le sens de fraisage
-
-            edge = childWire.Edges[0]
-            indice_start_point = getFirstPoint(childWire.Edges)
-            u1, u2 = edge.ParameterRange
-            if is_ccw:
-
-                start_point: App.Vector = edge.Vertexes[indice_start_point].Point
-                end_point: App.Vector = edge.Vertexes[-1 if indice_start_point == 0 else 0].Point
-                Log.baptDebug(f'start_point: {start_point} is ccw: {is_ccw}')
-                # for i,e in enumerate(childWire.Edges):
-                #     Log.baptDebug(f'Edge {i}: {e.Vertexes[0].Point} to {e.Vertexes[-1].Point}')
-
-            else:
-                Log.baptDebug("Inverse le sens de l'arête pour CCW")
-                # Inverse le sens de l'arête
-                start_point: App.Vector = edge.Vertexes[-1 if indice_start_point == 0 else 0].Point
-                end_point: App.Vector = edge.Vertexes[0 if indice_start_point == 0 else -1].Point
-                utemp = u1
-                u1 = u2
-                u2 = utemp
-
-            Log.baptDebug(f'start_point: {start_point}, end_point: {end_point}, is_ccw: {is_ccw}')
-            # perpendiculaire à l'arête de début du childWire
-            if edge.Curve.TypeId == 'Part::GeomLine':
-                edge_normal = edge.tangentAt(u1).cross(App.Vector(0, 0, 1))
-            elif edge.Curve.TypeId == 'Part::GeomCircle':
-
-                if is_ccw:
-                    edge_normal = edge.tangentAt(edge.Curve.parameter(start_point)).cross(App.Vector(0, 0, 1))
-                else:
-                    # start_point = childWire.Edges[0].Vertexes[-1].Point
-                    edge_normal = edge.tangentAt(edge.Curve.parameter(start_point)).cross(App.Vector(0, 0, 1))
-
-            edge_normal.normalize()
-            candidates = []
-            ray: Part.Line = Part.Line(start_point, start_point + edge_normal * 100 if is_ccw else start_point - edge_normal * 100)
-
-            # Trouve le point le plus proche sur le parentWire
-            for i, e in enumerate(parentWire.Edges):
-                # calul le point d'intersection entre la droite perpendiculaire et l'arête
-
-                # inter = ray.distToShape(e)
-                inter: list[Part.Point] = ray.intersect(e.Curve)
-
-                def pointToVector(p: Part.Point) -> App.Vector:
-                    return App.Vector(p.X, p.Y, p.Z)
-
-                new_start: App.Vector = None
-                for i, p in enumerate(inter):
-                    # Part.show(Part.makeSphere(0.5, pointToVector(p)))
-                    d = (pointToVector(p) - start_point).Length
-                    if math.fabs(d - offset_dist) < 1e-6:
-                        # candidates.append((inter[1][0][1], i))
-                        if obj.debugMode:
-                            Part.show(Part.makeSphere(0.5, pointToVector(p)))
-                        new_start = pointToVector(p)
-                        if obj.debugMode:
-                            Part.show(Part.makeLine(start_point, new_start))
-                        # Décaler le parent pour commencer au point trouvé
-                        parentNode.shiftWire(new_start)
-                        # Ajouter la ligne de transition au wire enfant
-                        transition_line = Part.makeLine(start_point, new_start)
-                        childNode.wires.add(transition_line)
-                        Log.baptDebug(f'Transition vers parent: distance={d:.3f}mm\n')
-                        return True
-
-            # Si aucune intersection trouvée à la distance exacte, chercher la plus proche
-            Log.baptDebug(f'Recherche transition approximative...')
-            min_dist_diff = float('inf')
-            best_intersection = None
-
-            for i, e in enumerate(parentWire.Edges):
-                inter: list[Part.Point] = ray.intersect(e.Curve)
-                for p in inter:
-                    point = pointToVector(p)
-                    d = (point - start_point).Length
-                    dist_diff = abs(d - offset_dist)
-                    if dist_diff < min_dist_diff:
-                        min_dist_diff = dist_diff
-                        best_intersection = point
-
-            if best_intersection and min_dist_diff < offset_dist * 0.2:  # Tolérance 20%
-                parentNode.shiftWire(best_intersection)
-                transition_line = Part.makeLine(start_point, best_intersection)
-                childNode.wires.add(transition_line)
-                Log.baptDebug(f'Transition approximative: diff={min_dist_diff:.3f}mm')
-                return True
-
-            App.Console.PrintWarning(f'Aucune transition trouvée pour {childNode}\n')
-            return False
-
-        except Exception as e:
-            line_nr = traceback.extract_tb(sys.exc_info()[2])[-1][1]
-            App.Console.PrintError(f"makeTransitionToParent : {e} at line {line_nr}")
-            return False
-
 
 class PocketOperationTaskPanel():
     def __init__(self, obj):
@@ -1038,6 +821,7 @@ class PocketOperationTaskPanel():
             self.form = [self.ui1, self.uiTool.getForm()]
 
             self.overlapSpin = BQuantitySpinBox.BQuantitySpinBox(obj=obj, prop="Overlap", widget=self.ui1.overlapSpin)
+            # self.overlapSpin.widget.setSingleStep(0.05)
             self.toolSpin = BQuantitySpinBox.BQuantitySpinBox(obj=obj, prop="ToolDiameter", widget=self.ui1.toolSpin)
             self.nbGenSpin = BQuantitySpinBox.BQuantitySpinBox(obj=obj, prop="maxGeneration", widget=self.ui1.nbGenSpin)
             self.surepAxialeSpin = BQuantitySpinBox.BQuantitySpinBox(obj=obj, prop="SurepAxiale", widget=self.ui1.surepAxialeSpin)
@@ -1227,63 +1011,6 @@ def createPocketOperation(contour=None) -> Part.Feature:
     return obj
 
 
-def findDeepestNodes(rootNodes: list[noeud]):
-    deepest_nodes = []
-    max_depth = -1
-
-    queue = deque()
-    for root in rootNodes:
-        queue.append((root, 0))  # (node, depth)
-
-    while queue:
-        node, depth = queue.popleft()
-
-        if depth > max_depth:
-            max_depth = depth
-            deepest_nodes = [node]
-        elif depth == max_depth:
-            deepest_nodes.append(node)
-
-        for child in node.children:
-            queue.append((child, depth + 1))
-
-    return deepest_nodes
-
-
-def arbore(rootNodes):
-    result = []
-
-    def visite(n):
-        result.append(n)
-        for c in n.children:
-            visite(c)
-    for r in rootNodes:
-        visite(r)
-    return result
-
-
-def buildParentDepthLevel(node):
-    """
-    Docstring for buildParentDepthLevel
-
-    :param node: node of the tree to start from
-    :return: parent, depth, levels
-    """
-    parent = {node: None}
-    depth = {node: 0}
-    levels = {}
-    q = deque([node])
-    while q:
-        current = q.popleft()
-        d = depth[current]
-        levels.setdefault(d, []).append(current)
-        for child in current.children:
-            parent[child] = current
-            depth[child] = d + 1
-            q.append(child)
-    return parent, depth, levels
-
-
 class PocketOffsetAlgorithm:
     def __init__(self, tool_diam, first_offset_dist, step_over, max_gen, want_ccw, use_middle):
         self.tool_diam = tool_diam
@@ -1302,7 +1029,7 @@ class PocketOffsetAlgorithm:
         return True
 
     def run(self, shape):
-        self.offset_sign = -1.0  # 1.0 if self._wire_is_ccw(shape) else -1.0
+
         self.visited = set()
         self.path = []
         nodes = self._build_tree(shape)
@@ -1333,7 +1060,7 @@ class PocketOffsetAlgorithm:
     def _build_tree(self, wire):
         nodes = []
         try:
-            o = wire.makeOffset2D(self.offset_sign * self.first_offset_dist, join=0, fill=False, openResult=False)
+            o = wire.makeOffset2D(-math.fabs(self.first_offset_dist), join=0, fill=False, openResult=False)
             if o and hasattr(o, "Wires"):
                 for j, w in enumerate(o.Wires):
                     n = noeud(1, j, w)
@@ -1348,7 +1075,7 @@ class PocketOffsetAlgorithm:
         if generation > self.max_gen:
             return
         try:
-            o = wire.makeOffset2D(self.offset_sign * self.step_over, join=0, fill=False, openResult=False)
+            o = wire.makeOffset2D(-math.fabs(self.step_over), join=0, fill=False, openResult=False)
             if o and hasattr(o, "Wires"):
                 for j, w in enumerate(o.Wires):
                     n = noeud(generation, j, w)
@@ -1403,14 +1130,14 @@ class PocketOffsetAlgorithm:
                     else:
                         pt_child = child.wires.Edges[0].Vertexes[0].Point
                     child.entry_point = pt_child
-                    child.shiftWire(pt_child)
+                    shift_node_wire_local(child, pt_child)
 
                 tp = self._find_perp_inter(pt_child, parent.wires)
                 if not tp:
                     tp = parent.wires.Edges[0].Vertexes[0].Point
 
                 parent.entry_point = tp
-                parent.shiftWire(tp)
+                shift_node_wire_local(parent, tp)
             except Exception as e:
                 Log.baptDebug(f"_link_chain err: {e}")
 
@@ -1462,7 +1189,7 @@ class PocketOffsetAlgorithm:
             self.path.append(Part.makeLine(pt_parent, pt_child))
 
             child.entry_point = pt_child
-            child.shiftWire(pt_child)
+            shift_node_wire_local(child, pt_child)
 
             self._process_node(child)
 
