@@ -12,7 +12,7 @@ import PySide.QtCore as QtCore  # type: ignore
 from BaptPath import GcodeEditorTaskPanel
 import BaptUtilities
 from utils import Contour, GcodeWriter, Log
-from Op.offset import Side, material_side_to_tool_side, offsetWire, offset_sign_from_material_side, reverse_toolpath_for_mode
+from Op.offset import Side, material_side_to_tool_side, offsetWire, is_conventional
 from Op.Gui.ContournageTaskPanel import ContournageTaskPanel
 from Op.BaseOp import baseOp, baseOpViewProviderProxy
 
@@ -169,27 +169,34 @@ class ContournageCycle(baseOp):
         # ── 2. Paramètres d'usinage ────────────────────────────────────────
 
         tool_radius = obj.ToolDiameter.Value / 2.0
-        cote_matiere = getattr(contour_geom, "CoteMatiere", "Gauche")
+        cote_matiere = getattr(contour_geom, "CoteMatiere", "NC")
         direction_usinage = obj.Direction  # Climb / Conventional
         is_closed = base_wire.isClosed()
         rapid_z = zref + 2.0
         feed = float(obj.FeedRate.getValueAs('mm/min'))
         passes = self.calculatePasse(obj)
 
-        # ── 3. Calcul du signe d'offset ────────────────────────────────────
-        #   Le côté outil dépend UNIQUEMENT de CoteMatiere :
-        #     Droite → matière à droite → outil à gauche → offset +R
-        #     Gauche → matière à gauche → outil à droite → offset -R
-        #   Climb/Conventional change le SENS DE PARCOURS, pas le côté.
+        if cote_matiere == "NC":
+            App.Console.PrintWarning("CoteMatiere is not defined for contour geometry, defaulting to 'Droite'.\n")
+            cote_matiere = "Droite"
 
-        offset_value = offset_sign_from_material_side(cote_matiere) * tool_radius
+        # ── 3. Calcul du signe d'offset ────────────────────────────────────
+
+        offset_value = tool_radius
         machining_side = material_side_to_tool_side(cote_matiere)
-        is_conventional = reverse_toolpath_for_mode(direction_usinage)
+        _is_conventional = is_conventional(direction_usinage)
+        self._tool_side_is_left = not _is_conventional
+
+        reverse_path = (_is_conventional and machining_side == Side.LEFT) or (not _is_conventional and machining_side == Side.RIGHT)
 
         App.Console.PrintMessage(
-            f"[Contournage] CoteMatiere={cote_matiere}, Dir={direction_usinage}, "
+            f"[Contournage] CoteMatiere={cote_matiere} {machining_side}, Dir={direction_usinage}, "
             f"{'fermé' if is_closed else 'ouvert'}, "
-            f"offset={'GAUCHE' if offset_value > 0 else 'DROITE'} ({offset_value:.3f})\n")
+            f"({offset_value:.3f}) {'reverse' if reverse_path else 'normal'}\n")
+
+        App.Console.PrintMessage(
+            f"[Contournage] outil côté "
+            f"{'GAUCHE' if self._tool_side_is_left else 'DROITE'} \n")
 
         # ── 4. Boucle sur les passes ───────────────────────────────────────
 
@@ -202,49 +209,52 @@ class ContournageCycle(baseOp):
 
             # Obtenir le wire à la profondeur de passe via polymorphisme
             wire_z = contour_geom.Proxy.getWireAtZ(contour_geom, pass_z)
+            # if reverse_path:
+            #     # Inverser le sens du wire pour cette passe si nécessaire
+            #     wire_z = Part.Wire(reversed(wire_z.Edges))
+            #     _orientEdges(wire_z.Edges)  # Réorienter les edges pour que les Vertexes soient dans le bon ordre
             if wire_z is None:
                 Log.baptError(f"Pas de wire à Z={pass_z}")
                 continue
             is_closed = wire_z.isClosed()
 
+            # Règle de sens effective pour cette passe.
+            reverse_path_pass = reverse_path
+
             # ── 4a. Appliquer l'offset outil ───────────────────────────────
 
+            if offset_value > 0:
+                offset_with_surep = offset_value + obj.SurepRadiale
+            else:
+                offset_with_surep = offset_value - obj.SurepRadiale
+
+            def _to_wire(shape):
+                if getattr(shape, "Wires", None):
+                    return shape.Wires[0]
+                if getattr(shape, "Edges", None):
+                    return Part.Wire(shape.Edges)
+                return None
+
+            offset_wire = None
+
+            # Utiliser la nouvelle méthode d'offset en priorité quand possible.
+
+            side_for_offset = machining_side
+
+            if side_for_offset == Side.NONE:
+                App.Console.PrintWarning(f'No machining side specified, using default based on offset: {offset_with_surep}\n')
+                side_for_offset = Side.LEFT if offset_with_surep >= 0 else Side.RIGHT
+
             try:
-                if offset_value > 0:
-                    offset_with_surep = offset_value + obj.SurepRadiale
-                else:
-                    offset_with_surep = offset_value - obj.SurepRadiale
+                App.Console.PrintMessage(f'Applying compensation offset dist {offset_with_surep} forward={not reverse_path_pass}\n')
 
-                def _to_wire(shape):
-                    if getattr(shape, "Wires", None):
-                        return shape.Wires[0]
-                    if getattr(shape, "Edges", None):
-                        return Part.Wire(shape.Edges)
-                    return None
+                offset_wire = offsetWire(
+                    wire_z,
+                    offset_with_surep,
+                    not reverse_path_pass,
+                    side=side_for_offset,
 
-                offset_wire = None
-
-                # Utiliser la nouvelle méthode d'offset en priorité quand possible.
-
-                side_for_offset = machining_side
-                if side_for_offset == Side.NONE:
-                    side_for_offset = Side.LEFT if offset_with_surep >= 0 else Side.RIGHT
-                try:
-                    offset_wire = offsetWire(
-                        wire_z,
-                        offset_with_surep,
-                        forward=not is_conventional,
-                        side=side_for_offset,
-                    )
-                except NotImplementedError:
-                    offset_wire = None
-
-                # Fallback: offset natif FreeCAD pour les wires non supportés par offsetWire().
-                if offset_wire is None:
-                    result = wire_z.makeOffset2D(
-                        offset_with_surep,
-                        openResult=not is_closed)
-                    offset_wire = _to_wire(result)
+                )
 
                 if offset_wire is None:
                     Log.baptError(f"Pas de résultat d'offset Z={pass_z}")
@@ -256,16 +266,19 @@ class ContournageCycle(baseOp):
                     # comp_result = offset_wire.makeOffset2D(
                     #     -offset_value,
                     #     openResult=not is_closed)
+                    App.Console.PrintMessage(f'Applying machine compensation offset dist {offset_value}\n')
                     comp_result = offsetWire(
                         offset_wire,
-                        -offset_value,
-                        forward=not is_conventional,
-                        side=machining_side,
+                        offset_value,
+                        forward=True,
+                        # side=Side.LEFT if machining_side == Side.RIGHT else Side.RIGHT,
+                        side=Side.LEFT if side_for_offset == Side.RIGHT else Side.RIGHT,
                     )
                     offset_wire = _to_wire(comp_result)
                     if offset_wire is None:
                         Log.baptError(f"Pas de résultat de compensation machine Z={pass_z}")
                         continue
+
             except Exception as e:
                 exc_type, exc_obj, exc_tb = sys.exc_info()
                 Log.baptError(
@@ -291,13 +304,17 @@ class ContournageCycle(baseOp):
 
             # ── 4b2. Conventional : inverser le sens de parcours ───────────
 
-            if is_conventional:
-                offset_edges.reverse()
+            # if is_conventional:
+            #     offset_edges.reverse()
 
             # ── 4c. Points de départ/fin et tangentes ──────────────────────
 
             if len(offset_edges) == 1:
-                idx_first, idx_last = 0, -1
+                # Cas mono-arête: forcer l'inversion des points en Conventional.
+                if False and reverse_path_pass:
+                    idx_first, idx_last = -1, 0
+                else:
+                    idx_first, idx_last = 0, -1
             else:
                 idx_first = Contour.getFirstPoint(offset_edges)
                 idx_last = Contour.getLastPoint(offset_edges)
@@ -326,6 +343,13 @@ class ContournageCycle(baseOp):
             else:
                 tangent_end = App.Vector(tangent_start)
 
+            # # En Conventional mono-arête, l'orientation interne de l'edge peut rester
+            # # opposée au sens d'usinage utilisé pour le G-code. On réaligne ici
+            # # uniquement les vecteurs d'approche/sortie.
+            # if len(offset_edges) == 1 and reverse_path_pass:
+            #     tangent_start = tangent_start * -1.0
+            #     tangent_end = tangent_end * -1.0
+
             # ── 4d. Détection géométrique du côté outil ────────────────────
             #   distToShape(vertex) → (dist, [(pt_sur_self, pt_sur_other), ...], ...)
             #     [1][0][0] = point le plus proche sur self (= wire_z)
@@ -340,11 +364,6 @@ class ContournageCycle(baseOp):
                 tool_is_left = toward_tool.dot(left_normal) > 0
 
                 self._tool_side_is_left = tool_is_left
-            self._tool_side_is_left = machining_side == Side.LEFT
-
-            App.Console.PrintMessage(
-                f"[Contournage] Pass Z={pass_z:.2f} — outil côté "
-                f"{'GAUCHE' if self._tool_side_is_left else 'DROITE'} (géométrique)\n")
 
             # ── 4e. Approche ───────────────────────────────────────────────
 
@@ -386,7 +405,14 @@ class ContournageCycle(baseOp):
             # ── 4f. Parcours des edges ─────────────────────────────────────
 
             for i, edge in enumerate(offset_edges):
-                bon_sens = self._edge_direction(offset_edges, i)
+                if len(offset_edges) == 1:
+                    bon_sens = self._edge_direction(offset_edges, i)
+                    # if reverse_path_pass:
+                    #     bon_sens = not bon_sens
+                else:
+                    # Pour les wires multi-arêtes, conserver l'orientation native
+                    # du wire offseté est plus robuste que la détection locale.
+                    bon_sens = True
                 try:
                     Contour.edgeToGcode(edge, bonSens=bon_sens, current_z=pass_z,
                                         rapid=False, gcodeWriter=gcode)
@@ -496,8 +522,13 @@ class ContournageCycle(baseOp):
         approach_type = obj.ApproachType
         length = float(obj.ApproachRetractLength)
         t = travel_direction
-        tool_left = getattr(self, '_tool_side_is_left', True)
+        tool_left = getattr(self, '_tool_side_is_left', 'NC')
+        App.Console.PrintMessage(f'_build_approach travel_direction {travel_direction}, tool_left={tool_left}\n')
 
+        if tool_left == 'NC':
+            App.Console.PrintWarning('Tool side is not defined, defaulting to left for approach.\n')
+            tool_left = True
+        # App.Console.PrintMessage(f'Building approach: type={approach_type}, length={length}, tool_left={tool_left}\n')
         if approach_type == "Tangentielle":
             pt = entry_point - t * length
             return pt, [Part.makeLine(pt, entry_point)]
@@ -523,6 +554,7 @@ class ContournageCycle(baseOp):
         length = float(obj.ApproachRetractLength)
         t = travel_direction
         tool_left = getattr(self, '_tool_side_is_left', True)
+        App.Console.PrintMessage(f'_build_retract travel_direction {travel_direction}, tool_left={tool_left}\n')
 
         if retract_type == "Tangentielle":
             pt = exit_point + t * length

@@ -69,12 +69,6 @@ class ContourTaskPanel:
         # Connecter le signal de sélection du tableau
         self.edgesTable.itemSelectionChanged.connect(self.onTableSelectionChanged)
 
-        # Direction
-        self.direction = QtGui.QComboBox()
-        self.direction.addItems(["Horaire", "Anti-horaire"])
-        self.direction.setCurrentText(obj.Direction)
-        contourLayout.addRow("Direction:", self.direction)
-
         # Côté matière
         self.coteMatiere = QtGui.QComboBox()
         self.coteMatiere.addItems(["Gauche", "Droite"])
@@ -168,7 +162,7 @@ class ContourTaskPanel:
 
         # Connecter les signaux pour l'actualisation en temps réel
         self.confirmSelectionButton.clicked.connect(self.confirmSelection)
-        self.direction.currentTextChanged.connect(self.updateContour)
+
         self.coteMatiere.currentTextChanged.connect(self.updateContour)
         # self.Zref.valueChanged.connect(self.updateZref)
         self.depth.valueChanged.connect(self.updateDepth)
@@ -437,8 +431,7 @@ class ContourTaskPanel:
 
     def updateContour(self):
         """Met à jour le contour en fonction des paramètres"""
-        # Mettre à jour la direction
-        self.obj.Direction = self.direction.currentText()
+
         self.obj.CoteMatiere = self.coteMatiere.currentText()
 
         # Mettre à jour Zref
@@ -463,7 +456,6 @@ class ContourTaskPanel:
     def accept(self):
         """Appelé quand l'utilisateur clique sur OK"""
         # Mettre à jour toutes les propriétés
-        self.obj.Direction = self.direction.currentText()
         self.obj.CoteMatiere = self.coteMatiere.currentText()
 
         # Désactiver le mode de sélection si actif

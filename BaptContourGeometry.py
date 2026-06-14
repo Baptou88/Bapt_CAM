@@ -58,9 +58,9 @@ class ContourGeometry(ContourBaseGeom):
         self.__init__(obj)
 
         # migration
-        # if hasattr(obj,"Direction"):
-        #     #remove Direction property
-        #     obj.removeProperty("Direction")
+        if hasattr(obj, "Direction"):
+            # remove Direction property
+            obj.removeProperty("Direction")
 
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
@@ -70,7 +70,7 @@ class ContourGeometry(ContourBaseGeom):
             else:
                 obj.depth = obj.Zref + obj.depth
             self.execute(obj)
-        elif prop in ["Edges", "Zref", "Direction", "depth", "debugArrow", "CoteMatiere"]:
+        elif prop in ["Edges", "Zref", "depth", "debugArrow", "CoteMatiere"]:
             self.execute(obj)
         # elif prop == "SelectedEdgeIndex":
         #     # Mettre à jour les couleurs des arêtes lorsque la sélection change

@@ -16,11 +16,6 @@ class ContourBaseGeom:
             obj.DepthMode = ["Absolu", "Relatif"]
             obj.DepthMode = "Absolu"
 
-        if not hasattr(obj, "Direction"):  # TODO: enlever cette propriété, elle est inutile
-            obj.addProperty("App::PropertyEnumeration", "Direction", "Contour", "Direction de parcours du contour")
-            obj.Direction = ["Horaire", "Anti-horaire"]
-            obj.Direction = "Horaire"
-
         if not hasattr(obj, "CoteMatiere"):
             obj.addProperty("App::PropertyEnumeration", "CoteMatiere", "Contour",
                             "Côté matière par rapport au sens de parcours du contour")
@@ -96,9 +91,6 @@ class ContourBaseGeom:
             # Créer des flèches pour indiquer la direction
             direction_arrows = []
 
-            if obj.Direction == "Anti-horaire":
-                edges.reverse()
-
             # sorted_edges = self.order_edges(edges)  # Trier les arêtes par ordre croissant de edges
             # sorted_edges = Part.__sortEdges__(edges)
             sorted_edges = Part.sortEdges(list(edges))[0]  # https://github.com/FreeCAD/FreeCAD/commit/1031644fa
@@ -107,9 +99,6 @@ class ContourBaseGeom:
             # sorted_edges = edges
 
             sorted_edges = _orientEdges(sorted_edges)
-
-            if obj.Direction == "Anti-horaire":
-                sorted_edges.reverse()
 
             if DEBUG:
                 self.debugEdges(sorted_edges, "Sorted Edges")
