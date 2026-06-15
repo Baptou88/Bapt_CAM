@@ -11,7 +11,7 @@ import PySide.QtCore as QtCore  # type: ignore
 
 from BaptPath import GcodeEditorTaskPanel
 import BaptUtilities
-from utils import Contour, GcodeWriter, Log
+from utils import Contour, GcodeWriter, Log, formatFloat
 from Op.offset import Side, material_side_to_tool_side, offsetWire, is_conventional
 from Op.Gui.ContournageTaskPanel import ContournageTaskPanel
 from Op.BaseOp import baseOp, baseOpViewProviderProxy
@@ -370,7 +370,7 @@ class ContournageCycle(baseOp):
             approach_pt, approach_edges = self._build_approach(
                 obj, start_pt, tangent_start)
 
-            gcode.comment(f"Pass at Z={pass_z}")
+            gcode.comment(f"Pass at Z={formatFloat.format_float(pass_z, 3)}")
             gcode.linearMove({'X': approach_pt.x, 'Y': approach_pt.y}, rapid=True)
             gcode.linearMove({'Z': rapid_z}, rapid=True)
             gcode.linearMove({'Z': pass_z + 2}, rapid=True)

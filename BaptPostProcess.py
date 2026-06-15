@@ -108,7 +108,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             gcode_lines.append(obj.Gcode)
 
         # --- Contournage ---
-        if isinstance(obj.Proxy, OpContournage.ContournageCycle) and hasattr(obj, 'Shape'):
+        elif isinstance(obj.Proxy, OpContournage.ContournageCycle) and hasattr(obj, 'Shape'):
             transformed = Postpro.transformGCode(obj.Gcode)
             gcode_lines.append(Postpro.writeComment(f"Contournage operation: {obj.Label}"))
 
@@ -432,7 +432,7 @@ class PostProcessDialog(QtGui.QDialog):
             return
         gcode = generate_gcode_for_ops(ops, self.cam_project, pp)
         prefs = BaptPreferences()
-        filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Enregistrer le G-code", prefs.getGCodeFolderPath(), "Fichiers G-code (*.nc *.gcode *.tap);;Tous les fichiers (*)")
+        filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Enregistrer le G-code", f"{prefs.getGCodeFolderPath()}/bapt.mpf", "Fichiers G-code (*.nc *.gcode *.tap);;Tous les fichiers (*)")
         if not filename:
             return
         try:
