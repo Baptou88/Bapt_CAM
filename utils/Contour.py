@@ -54,7 +54,7 @@ def getLastPoint(edges):
         return 0
 
 
-def edgeToGcode(edge, bonSens: bool = True, current_z: float = 0.0, rapid: bool = False, feed_rate: float = 1000, gcodeWriter: GcodeWriter = None):
+def edgeToGcode(edge, bonSens: bool = True, current_z: float = 0.0, rapid: bool = False, feed_rate: float = None, gcodeWriter: GcodeWriter = None):
     """
     Convert an edge to G-code.
     :param edge: The edge to convert.
@@ -84,7 +84,8 @@ def edgeToGcode(edge, bonSens: bool = True, current_z: float = 0.0, rapid: bool 
         if rapid:
             gcode += f"G0 X{end_point.x:.3f} Y{end_point.y:.3f} Z{current_z:.3f}\n"
         else:
-            gcode += f"G1 X{end_point.x:.3f} Y{end_point.y:.3f} Z{current_z:.3f} F{feed_rate}\n"
+            gcode += f"G1 X{end_point.x:.3f} Y{end_point.y:.3f} Z{current_z:.3f} "
+            gcode += f"F{feed_rate}\n" if feed_rate is not None else "\n"
         if gcodeWriter:
             gcodeWriter.linearMove({'X': end_point.x, 'Y': end_point.y, 'Z': current_z}, feed=feed_rate, rapid=rapid)
 
@@ -141,7 +142,8 @@ def edgeToGcode(edge, bonSens: bool = True, current_z: float = 0.0, rapid: bool 
         else:
             arc = "G2"  # Clockwise
 
-        gcode += f"{arc} X{end_point.x:.3f} Y{end_point.y:.3f} I{center.x - start_point.x:.3f} J{center.y - start_point.y:.3f} F{feed_rate}\n"
+        gcode += f"{arc} X{end_point.x:.3f} Y{end_point.y:.3f} I{center.x - start_point.x:.3f} J{center.y - start_point.y:.3f} "
+        gcode += f"F{feed_rate}\n" if feed_rate is not None else "\n"
         if gcodeWriter:
             gcodeWriter.arcMove({'X': end_point.x, 'Y': end_point.y, 'Z': current_z, 'CCW': is_ccw, 'I': center.x - start_point.x, 'J': center.y - start_point.y}, feed=feed_rate)
 
@@ -169,7 +171,8 @@ def edgeToGcode(edge, bonSens: bool = True, current_z: float = 0.0, rapid: bool 
             if rapid:
                 gcode += f"G0 X{end_point.x:.3f} Y{end_point.y:.3f} Z{current_z:.3f}\n"
             else:
-                gcode += f"G1 X{end_point.x:.3f} Y{end_point.y:.3f} Z{current_z:.3f} F{feed_rate}\n"
+                gcode += f"G1 X{end_point.x:.3f} Y{end_point.y:.3f} Z{current_z:.3f} "
+                gcode += f"F{feed_rate}\n" if feed_rate is not None else "\n"
             if gcodeWriter:
                 gcodeWriter.linearMove({'X': end_point.x, 'Y': end_point.y, 'Z': current_z}, feed=feed_rate, rapid=rapid)
 
@@ -181,7 +184,8 @@ def edgeToGcode(edge, bonSens: bool = True, current_z: float = 0.0, rapid: bool 
             if not bonSens:
                 is_ccw = not is_ccw
             arc = "G3" if is_ccw else "G2"
-            gcode += f"{arc} X{end_point.x:.3f} Y{end_point.y:.3f} I{center.x - start_point.x:.3f} J{center.y - start_point.y:.3f} F{feed_rate}\n"
+            gcode += f"{arc} X{end_point.x:.3f} Y{end_point.y:.3f} I{center.x - start_point.x:.3f} J{center.y - start_point.y:.3f} "
+            gcode += f"F{feed_rate}\n" if feed_rate is not None else "\n"
             if gcodeWriter:
                 gcodeWriter.arcMove({'X': end_point.x, 'Y': end_point.y, 'Z': current_z, 'CCW': is_ccw, 'I': center.x - start_point.x, 'J': center.y - start_point.y}, feed=feed_rate)
 
@@ -196,7 +200,8 @@ def edgeToGcode(edge, bonSens: bool = True, current_z: float = 0.0, rapid: bool 
                 else:
                     param = edge.LastParameter - span * t
                 pt = edge.valueAt(param)
-                gcode += f"G1 X{pt.x:.3f} Y{pt.y:.3f} Z{current_z:.3f} F{feed_rate}\n"
+                gcode += f"G1 X{pt.x:.3f} Y{pt.y:.3f} Z{current_z:.3f} "
+                gcode += f"F{feed_rate}\n" if feed_rate is not None else "\n"
                 if gcodeWriter:
                     gcodeWriter.linearMove({'X': pt.x, 'Y': pt.y, 'Z': current_z}, feed=feed_rate, rapid=False)
     else:

@@ -46,9 +46,9 @@ class PostPro(BasePostPro.BasePostPro):
         return f"WORKPIECE(,\"\",,\"BOX\",112,{format_float(bb.ZMax)},{format_float(bb.ZMin)},-80,{format_float(bb.XMin)},{format_float(bb.YMin)},{format_float(bb.XMax)},{format_float(bb.YMax)})"
 
     def toolChange(self, tool, cam_project):
-        tool_name = getattr(tool, 'Name', None)
+        tool_name = getattr(tool, 'Label', None)
         spindle = getattr(tool, 'Speed', None).getValueAs("mm/min")  # FIXME Speed
-        return f"\nT=\"{tool_name}\" D1\nM6\nS{spindle} M3\n"
+        return f"\nT=\"{tool_name}\" D1\nM6\nS{format_float(spindle, 0)} M3\n"
 
     def G81(self, obj):
         geom = obj.DrillGeometry
@@ -65,13 +65,13 @@ class PostPro(BasePostPro.BasePostPro):
         z0 = None
         Speed = getattr(obj, 'SpindleSpeed', None).getValueAs("mm/min")  # FIXME Speed
         Feed = getattr(obj, 'FeedRate', None).getValueAs("mm/min")
-        gcode_lines = f"S{Speed}\n"
+        gcode_lines = f"S{format_float(Speed, 0)}\n"
         gcode_lines += f"F{Feed}\n"
         gcode_lines += f"M{self.coolantModeToCode(coolant)}\n"
         for pt in points:
             if z0 is None or z0 != pt.z:
                 z0 = pt.z
-                gcode_lines += (f"CYCLE81({z0 + planDeRetrait},{z0},{DistSecurite},{final_z},,{dwell},0,1,12)\n")
+                gcode_lines += (f"MCALL CYCLE81({z0 + planDeRetrait},{z0},{DistSecurite},{final_z},,{dwell},0,1,12)\n")
             gcode_lines += (f"G0 X{pt.x:.3f} Y{pt.y:.3f} \n")
         gcode_lines += "MCALL\n"
         return gcode_lines
@@ -92,13 +92,13 @@ class PostPro(BasePostPro.BasePostPro):
         z0 = None
         Speed = getattr(obj, 'SpindleSpeed', None).getValueAs("mm/min")  # FIXME Speed
         Feed = getattr(obj, 'FeedRate', None).getValueAs("mm/min")
-        gcode_lines = f"S{Speed}\n"
+        gcode_lines = f"S{format_float(Speed, 0)}\n"
         gcode_lines += f"F{Feed}\n"
         gcode_lines += f"M{self.coolantModeToCode(coolant)}\n"
         for pt in points:
             if z0 is None or z0 != pt.z:
                 z0 = pt.z
-                gcode_lines += (f"CYCLE83({z0 + planDeRetrait},{z0},{DistSecurite},{final_z},,,{peckDepth},{peckDepth},0,0,100,1,0,0,,,{dwell},0,0,1,11111112)\n")
+                gcode_lines += (f"MCALL CYCLE83({z0 + planDeRetrait},{z0},{DistSecurite},{final_z},,,{peckDepth},{peckDepth},0,0,100,1,0,0,,,{dwell},0,0,1,11111112)\n")
             gcode_lines += (f"G0 X{pt.x:.3f} Y{pt.y:.3f} \n")
         gcode_lines += "MCALL\n"
         return gcode_lines
@@ -123,7 +123,7 @@ class PostPro(BasePostPro.BasePostPro):
         for pt in points:
             if z0 is None or z0 != pt.z:
                 z0 = pt.z
-                gcode_lines += (f"CYCLE84({z0 + planDeRetrait},{z0},{DistSecurite},{final_z},,1,12)\n")
+                gcode_lines += (f"MCALL CYCLE84({z0 + planDeRetrait},{z0},{DistSecurite},{final_z},,1,12)\n")
             gcode_lines += (f"G0 X{pt.x:.3f} Y{pt.y:.3f} \n")
         gcode_lines += "MCALL\n"
         return gcode_lines
