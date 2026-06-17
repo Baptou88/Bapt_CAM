@@ -39,7 +39,7 @@ class BaptWorkbench (Workbench):
         Gui.addPreferencePage(BaptPreferencesPage, QT_TRANSLATE_NOOP("QObject", "Bapt"))
         Gui.addIconPath(os.path.join(BaptUtilities.getResourcesPath(), "icons"))
 
-        self.list = ["Bapt_CreateCamProject", "Bapt_CreateSurfacage", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_HoleRecognition", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateContourEditableGeometry", "Bapt_CreateContour25DGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreatePocketOperation", "Bapt_CreateOrigin", "ImportMpf", "Bapt_PostProcessGCode", "Bapt_CreateProbeFace", "Bapt_TestPath", "Bapt_HighlightCollisions", "Bapt_CreateAdaptativeOperation", "Bapt_RapportProgrammation"]  # Ajout des commandes d'opération, poche et origine
+        self.list = ["Bapt_CreateCamProject", "Bapt_CreateSurfacage", "Bapt_CreateDrillGeometry", "Bapt_CreateDrillOperation", "Bapt_CreateSpiraleOp", "Bapt_HoleRecognition", "Bapt_ToolsManager", "Bapt_CreateContourGeometry", "Bapt_CreateContourEditableGeometry", "Bapt_CreateContour25DGeometry", "Bapt_CreateMachiningCycle", "Bapt_CreatePocketOperation", "Bapt_CreateOrigin", "ImportMpf", "Bapt_PostProcessGCode", "Bapt_CreateProbeFace", "Bapt_TestPath", "Bapt_HighlightCollisions", "Bapt_CreateAdaptativeOperation", "Bapt_RapportProgrammation"]  # Ajout des commandes d'opération, poche et origine
         self.appendToolbar("Bapt Tools", self.list)
         self.appendToolbar("Bapt Debug", ["Bapt_CreateHotReload", "Bapt_createTestFPO", "Bapt_CreateContournageTest"],)  # Ajout de la barre d'outils de debug
         self.appendMenu("Bapt", self.list)

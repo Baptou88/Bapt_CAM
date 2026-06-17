@@ -26,7 +26,7 @@ import BaptUtilities
 
 import BaptOrigin
 
-from Op import DrillOp, OpContournage, OpSurfacage, PathOp, OpContournageTest
+from Op import DrillOp, OpContournage, OpSurfacage, PathOp, OpContournageTest, SpiraleOp
 from Probe import probeFace
 import Tool.ToolsGUI
 import testFPO
@@ -722,6 +722,84 @@ class CreateDrillOperationCommand:
         doc.commitTransaction()
 
 
+class CreateSpiraleOpCommand:
+    """Commande pour créer une opération d'usinage de spirale"""
+
+    def GetResources(self):
+        return {'Pixmap': BaptUtilities.getIconPath("Tree_Drilling.svg"),
+                'MenuText': "Nouvelle opération de spirale",
+                'ToolTip': "Créer une nouvelle opération d'usinage pour les géométries de percage"}
+
+    def IsActive(self):
+        """La commande est active si une géométrie de perçage est sélectionnée"""
+        sel = Gui.Selection.getSelection()
+        if not sel:
+            return False
+
+        return hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, BaptDrillGeometry.DrillGeometry)
+
+    def Activated(self):
+        """Créer une nouvelle opération de perçage"""
+
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Drill Operation')
+
+        # Obtenir la géométrie de perçage sélectionnée
+        drill_geometry = Gui.Selection.getSelection()[0]
+
+        # Créer l'objet avec le bon type pour avoir une Shape
+        obj = doc.addObject("Part::FeaturePython", "SpiraleOperation")
+
+        # Ajouter la fonctionnalité
+        SpiraleOp.SpiraleOp(obj)
+
+        # Définir le nom de la géométrie de perçage associée (au lieu d'un lien direct)
+        obj.DrillGeometry = drill_geometry
+
+        pref = BaptPreferences.BaptPreferences()
+        modeAjout = pref.getModeAjout()
+
+        # 0 = ajouter à la géométrie comme enfant et au groupe opérations du projet CAM comme lien
+        # 1 = ajouter à la géométrie comme enfant (pas conseillé)
+        # 2 = ajouter au groupe opérations du projet CAM
+
+        if modeAjout == 1 or modeAjout == 0:
+
+            # Ajouter le contournage comme enfant de la géométrie du contour
+            drill_geometry.addObject(obj)
+            drill_geometry.Group.append(obj)
+
+        if modeAjout == 2 or modeAjout == 0:
+            camProject = BaptUtilities.find_cam_project(drill_geometry)
+            if camProject:
+                operations_group = camProject.Proxy.getOperationsGroup(camProject)
+                if modeAjout == 2:
+                    operations_group.addObject(obj)
+                    operations_group.Group.append(obj)
+                elif modeAjout == 0:
+                    link = doc.addObject('App::Link', f'Link_{obj.Label}')
+                    link.setLink(obj)
+                    operations_group.addObject(link)
+                    operations_group.Group.append(link)
+
+        # Ajouter le ViewProvider
+        if App.GuiUp and obj.ViewObject:
+            SpiraleOp.ViewProviderSpiraleOp(obj.ViewObject)
+
+        # Recomputer
+        doc.recompute()
+
+        # Ouvrir l'éditeur
+        if obj.ViewObject:
+            pass
+            # obj.ViewObject.Proxy.setEdit(obj.ViewObject)
+
+        # Message de confirmation
+        App.Console.PrintMessage("Opération de spirale créée et ajoutée comme enfant de la géométrie de perçage.\n")
+
+        doc.commitTransaction()
+
+
 class PostProcessGCodeCommand:
     """Commande pour générer un programme G-code à partir du projet CAM"""
 
@@ -935,6 +1013,7 @@ if App.GuiUp:
     Gui.addCommand('Bapt_CreateHotReload', CreateHotReloadCommand())
     Gui.addCommand('Bapt_ToolsManager', ToolsManagerCommand())
     Gui.addCommand('Bapt_CreateDrillOperation', CreateDrillOperationCommand())  # Ajouter la nouvelle commande
+    Gui.addCommand('Bapt_CreateSpiraleOp', CreateSpiraleOpCommand())  # Ajouter la nouvelle commande
     Gui.addCommand('ImportMpf', BaptMpfReader.ImportMpfCommand())  # Ajouter la commande d'importation MPF
     Gui.addCommand('Bapt_PostProcessGCode', PostProcessGCodeCommand())
     Gui.addCommand('Bapt_CreateSurfacage', CreateSurfacageCommand())
