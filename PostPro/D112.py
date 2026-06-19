@@ -12,9 +12,10 @@ Ext: str = ""
 class PostPro(BasePostPro.BasePostPro):
     def __init__(self) -> None:
         super().__init__()
+        self.useLineNumbers = True
 
     def writeHeader(self) -> str:
-        return "O0001\nG21 (mm)\nG90 (absolute programming)\nG40 (cutter radius compensation off)\nG80 (cancel canned cycle)\nG17 (XY plane selection)\n"
+        return "O0001\nG21 (mm)\nG90 (absolute programming)\nG40 (cutter radius compensation off)\nG80 (cancel canned cycle)\nG17 (XY plane selection)\nG54 (work coordinate system)\n"
 
     def coolantModeToCode(self, mode) -> str:
         if mode == "Off":
@@ -28,26 +29,104 @@ class PostPro(BasePostPro.BasePostPro):
 
     def transformGCode(self, gcode) -> str:
         lines: list[str] = gcode.split('\n')
+        current_pos = {'X': 0.0, 'Y': 0.0, 'Z': 0.0}
+
+        def circular_move(line: str, clockwise: bool = True):
+
+            cc_pos = {'I': None, 'J': None, 'K': None}
+
+            for axis in ['I', 'J', 'K']:
+                if axis in line:
+                    parts = line.split(axis)
+                    coord_part = parts[1]
+                    coord_str = ''
+                    for c in coord_part:
+                        if c in ' XYZIJKFMGR':
+                            break
+                        coord_str += c
+                    if coord_str != '':
+
+                        if axis == 'I':
+                            cc_pos[axis] = current_pos['X'] + float(coord_str)
+                        elif axis == 'J':
+                            cc_pos[axis] = current_pos['Y'] + float(coord_str)
+                        elif axis == 'K':
+                            cc_pos[axis] = current_pos['Z'] + float(coord_str)
+
+            new_line = "G2 " if clockwise else "G3 "
+
+            for axis in ['X', 'Y', 'Z']:
+                if axis in line:
+                    parts = line.split(axis)
+                    coord_part = parts[1]
+                    coord_str = ''
+                    for c in coord_part:
+                        if c in ' XYZIJKFMGR':
+                            break
+                        coord_str += c
+                    if coord_str != '':
+                        current_pos[axis] = float(coord_str)
+                        new_line += f"{axis}{current_pos[axis]:.3f} "
+
+            for axis in cc_pos:
+                if cc_pos[axis] is not None:
+                    new_line += f"{axis}{cc_pos[axis]:.3f} "
+            new_line += " "
+
+            if 'F' in line:
+                parts = line.split('F')
+                # remove feed from line
+
+                feed_part = parts[1]
+                feed_str = ''
+                for c in feed_part:
+                    if c in ' XYZIJKFMGR':
+                        break
+                    feed_str += c
+                new_line += f' F{feed_str}'
+
+            return new_line
+
+        def linear_move(line: str):
+            for axis in ['X', 'Y', 'Z']:
+                if axis in line:
+                    parts = line.split(axis)
+                    coord_part = parts[1]
+                    coord_str = ''
+                    for c in coord_part:
+                        if c in ' XYZIJKFMGR':
+                            break
+                        coord_str += c
+                    if coord_str != '':
+                        current_pos[axis] = float(coord_str)
+            return line
+
         retour = []
         for i in range(len(lines)):
-            if lines[i].startswith('(') and lines[i].endswith(')'):
-                lines[i] = lines[i][1:-1]  # Remove parentheses
+            if lines[i].startswith(';'):
+                lines[i] = lines[i][1:]  # Remove the semicolon
                 lines[i] = self.writeComment(lines[i])
+            if lines[i].startswith(('G2', 'G02')):
+                lines[i] = circular_move(lines[i], clockwise=True)
+            elif lines[i].startswith(('G3', 'G03')):
+                lines[i] = circular_move(lines[i], clockwise=False)
             retour.append(lines[i])
         return '\n'.join(retour)
 
     def writeComment(self, comment) -> str:
-        return f"; {comment}"
+        return f"({comment})"
 
     def blockForm(self, stock) -> str:
         bb = stock.Shape.BoundBox
-
-        return f"WORKPIECE(,\"\",,\"BOX\",112,{format_float(bb.ZMax)},{format_float(bb.ZMin)},-80,{format_float(bb.XMin)},{format_float(bb.YMin)},{format_float(bb.XMax)},{format_float(bb.YMax)})"
+        return self.writeComment(f"xmin: {format_float(bb.XMin)}, ymin: {format_float(bb.YMin)}, zmin: {format_float(bb.ZMin)}, xmax: {format_float(bb.XMax)}, ymax: {format_float(bb.YMax)}, zmax: {format_float(bb.ZMax)}")
 
     def toolChange(self, tool, cam_project) -> str:
-        tool_id: Any | None = getattr(tool, 'Name', None)
+        tool_id: Any | None = getattr(tool, 'Id', None)
         spindle = getattr(tool, 'Speed', None).getValueAs("mm/min")  # FIXME Speed
-        return f"\nT={tool_id} D1\nM6\nS{spindle} M3\n"
+        tool_name = getattr(tool, 'Label', None)
+        tool_diameter = getattr(tool, 'Radius', None).getValueAs("mm") * 2
+        comment = f'Changement d outil: {tool_name if tool_name else ""}, Diamètre: {format_float(tool_diameter)} mm'
+        return f"\nT{tool_id} D1\nM6\nS{spindle} M3\n{self.writeComment(comment)}\n"
 
     def G81(self, obj) -> str:
 

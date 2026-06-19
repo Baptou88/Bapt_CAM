@@ -12,7 +12,7 @@ from BaptCamProject import CamProject
 from BaptPreferences import BaptPreferences
 from Gui.CamProjectTaskPanel import PostProcessorTaskPanel
 from BasePostPro import BasePostPro
-from Op import AdaptativeOp, BaseOp, DrillOp, OpContournage, OpSurfacage, PocketOp
+from Op import AdaptativeOp, BaseOp, DrillOp, OpContournage, OpSurfacage, PocketOp, SpiraleOp
 from Op.PathOp import pathOp
 import BaptUtilities as BaptUtils
 
@@ -76,7 +76,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             linked_obj = obj.LinkedObject
             if linked_obj and isOp(linked_obj):
                 obj = linked_obj
-        if not (hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type')):
+        if not hasattr(obj, 'Proxy'):
             continue
         tool = getattr(obj, 'Tool', None)
         if tool is None:
@@ -173,6 +173,10 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
 
         elif isinstance(obj.Proxy, PocketOp.PocketOperation):
             gcode_lines.append(Postpro.writeComment(f"Pocket operation: {obj.Label}"))
+            gcode_lines.append(Postpro.transformGCode(obj.Gcode))
+
+        elif isinstance(obj.Proxy, SpiraleOp.SpiraleOp):
+            gcode_lines.append(Postpro.writeComment(f"Spirale operation: {obj.Label}"))
             gcode_lines.append(Postpro.transformGCode(obj.Gcode))
 
         else:
@@ -432,7 +436,9 @@ class PostProcessDialog(QtGui.QDialog):
             return
         gcode = generate_gcode_for_ops(ops, self.cam_project, pp)
         prefs = BaptPreferences()
-        filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Enregistrer le G-code", f"{prefs.getGCodeFolderPath()}/bapt.mpf", "Fichiers G-code (*.nc *.gcode *.tap);;Tous les fichiers (*)")
+
+        ext = getattr(module, 'Ext', "nc,gcode")
+        filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Enregistrer le G-code", prefs.getGCodeFolderPath(), f"Fichiers G-code (*.{ext});;Tous les fichiers (*)")
         if not filename:
             return
         try:

@@ -9,7 +9,6 @@ from Op.PocketNode import noeud
 import Part
 from PySide import QtGui, QtCore
 import sys
-import traceback
 import BaptUtilities
 from Tool.ToolsGUI import ToolTaskPanel
 from utils import BQuantitySpinBox, GcodeWriter
@@ -244,10 +243,14 @@ class PocketOperation(BaseOp.baseOp):
                 algo = PocketOffsetAlgorithm(tool_diam, first_offset_dist, step_over, obj.maxGeneration, want_ccw, obj.useMiddleofFirstEdge)
 
                 try:
-                    source_wire = Part.Wire(edges)
+
+                    source_wire = Part.Wire(Part.sortEdges(edges)[0])
                     path = algo.run(source_wire)
                 except Exception as e:
                     App.Console.PrintError(f"Erreur PocketOffsetAlgorithm: {e}\n")
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
+                    Log.baptDebug(f"message {str(e)}")
                     path = []
 
                 if obj.debugMode:
@@ -1029,32 +1032,41 @@ class PocketOffsetAlgorithm:
         return True
 
     def run(self, shape):
+        try:
 
-        self.visited = set()
-        self.path = []
-        nodes = self._build_tree(shape)
-        if not nodes:
-            return []
+            self.visited = set()
+            self.path = []
+            nodes = self._build_tree(shape)
+            if not nodes:
+                return []
 
-        for root in nodes:
-            self._ensure_direction(root, self.want_ccw)
+            for root in nodes:
+                self._ensure_direction(root, self.want_ccw)
 
-        for root in nodes:
-            deepest = self._find_deepest_leaf(root)
-            chain = self._get_chain_to_root(deepest)
+            for root in nodes:
+                deepest = self._find_deepest_leaf(root)
+                chain = self._get_chain_to_root(deepest)
 
-            self._link_chain(chain)
+                self._link_chain(chain)
 
-            for i, node in enumerate(chain):
-                self._process_node(node)
-                if i < len(chain) - 1:
-                    parent = chain[i + 1]
-                    try:
-                        pt_child_end = node.wires.Edges[-1].Vertexes[-1].Point
-                    except:
-                        pt_child_end = node.entry_point
-                    self.path.append(Part.makeLine(pt_child_end, parent.entry_point))
-
+                for i, node in enumerate(chain):
+                    self._process_node(node)
+                    if i < len(chain) - 1:
+                        parent = chain[i + 1]
+                        try:
+                            pt_child_end = node.wires.Edges[-1].Vertexes[-1].Point
+                        except Exception as e:
+                            pt_child_end = node.entry_point
+                            App.Console.PrintError(f"message {str(e)}\n")
+                            exc_type, exc_obj, exc_tb = sys.exc_info()
+                            App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
+                            Log.baptDebug(f"message {str(e)}")
+                        self.path.append(Part.makeLine(pt_child_end, parent.entry_point))
+        except Exception as e:
+            App.Console.PrintError(f"message {str(e)}\n")
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
+            Log.baptDebug(f"message {str(e)}")
         return self.path
 
     def _build_tree(self, wire):

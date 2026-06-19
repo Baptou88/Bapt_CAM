@@ -75,6 +75,7 @@ class ContourBaseGeom:
 
             if not edges:
                 # App.Console.PrintError("Aucune arête valide trouvée.\n")
+                obj.Shape = Part.Shape()
                 return
 
             # App.Console.PrintMessage(f"Nombre d'arêtes collectées: {len(edges)}\n")

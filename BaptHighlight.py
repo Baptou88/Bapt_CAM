@@ -84,6 +84,12 @@ class BaptHighlight:
             if len(object_list) >= 2:
                 App.Console.PrintWarning('No collision found between selected objects\n')
 
+    def dumps(self):
+        return None
+
+    def loads(self, state):
+        return None
+
 
 class ViewProviderBaptHighlight:
     def __init__(self, obj):
@@ -110,6 +116,12 @@ class ViewProviderBaptHighlight:
     def getIcon(self):
         """Retourne l'icône"""
         return BaptUtilities.getIconPath("HighlightCommon.svg")
+
+    def dumps(self):
+        return None
+
+    def loads(self, state):
+        return None
 
 
 class CreateHighlightCommand:

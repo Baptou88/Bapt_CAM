@@ -48,7 +48,7 @@ class PostPro(BasePostPro.BasePostPro):
     def toolChange(self, tool, cam_project):
         tool_name = getattr(tool, 'Label', None)
         spindle = getattr(tool, 'Speed', None).getValueAs("mm/min")  # FIXME Speed
-        return f"\nT=\"{tool_name}\" D1\nM6\nS{format_float(spindle, 0)} M3\n"
+        return f"\nSUPA Z-1\nT=\"{tool_name}\" D1\nM6\nS{format_float(spindle, 0)} M3\n"
 
     def G81(self, obj):
         geom = obj.DrillGeometry
@@ -98,7 +98,7 @@ class PostPro(BasePostPro.BasePostPro):
         for pt in points:
             if z0 is None or z0 != pt.z:
                 z0 = pt.z
-                gcode_lines += (f"MCALL CYCLE83({z0 + planDeRetrait},{z0},{DistSecurite},{final_z},,,{peckDepth},{peckDepth},0,0,100,1,0,0,,,{dwell},0,0,1,11111112)\n")
+                gcode_lines += (f"MCALL CYCLE83({z0 + planDeRetrait},{z0},{DistSecurite},{final_z},,,{peckDepth},{peckDepth},0,0,100,1,0,0,,,{dwell},0,1,11111112)\n")
             gcode_lines += (f"G0 X{pt.x:.3f} Y{pt.y:.3f} \n")
         gcode_lines += "MCALL\n"
         return gcode_lines

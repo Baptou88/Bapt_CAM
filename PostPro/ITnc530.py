@@ -1,10 +1,13 @@
 import math
 from BasePostPro import BasePostPro
 
+from utils.formatFloat import format_float
+
+Ext = "h"
+Name = "ITnc530"
+
 
 class PostPro(BasePostPro):
-    Name = "ITnc530"
-    Ext = "h"
 
     def __init__(self):
         super().__init__()
@@ -12,11 +15,12 @@ class PostPro(BasePostPro):
     def writeHeader(self):
         header = ""
         header += "BEGIN PGM ITNC530 MM\n"
+        header += "CYCLE DEF 7\n"
 
         return header
 
     def writeFooter(self):
-        footer = ""
+        footer = "M30"
         footer += "END PGM ITNC530 MM\n"
 
         return footer
@@ -78,8 +82,65 @@ class PostPro(BasePostPro):
                 new_line += f' F{feed}'
 
             if current_move == 'G0':
-                new_line += ' FMAX'
+                # place Fmax before ';'
+                if ';' in new_line:
+                    semicolon_index = new_line.index(';')
+                    new_line = new_line[:semicolon_index] + ' FMAX ' + new_line[semicolon_index:]
+
             return 'L ' + new_line
+
+        def circular_move(line: str, clockwise: bool = True):
+            current_move = 'R-' if clockwise else 'R+'
+            cc_pos = {'X': None, 'Y': None, 'Z': None}
+
+            for axis in ['I', 'J', 'K']:
+                if axis in line:
+                    parts = line.split(axis)
+                    coord_part = parts[1]
+                    coord_str = ''
+                    for c in coord_part:
+                        if c in ' XYZIJKFMGR':
+                            break
+                        coord_str += c
+                    if coord_str != '':
+
+                        if axis == 'I':
+                            cc_pos[axis] = current_pos['X'] + float(coord_str)
+                        elif axis == 'J':
+                            cc_pos[axis] = current_pos['Y'] + float(coord_str)
+                        elif axis == 'K':
+                            cc_pos[axis] = current_pos['Z'] + float(coord_str)
+            new_line = "CC "
+            for axis in cc_pos:
+                if cc_pos[axis] is not None:
+                    new_line += f"{axis}{cc_pos[axis]:.3f} "
+            new_line += "\nC "
+            for axis in ['X', 'Y', 'Z']:
+                if axis in line:
+                    parts = line.split(axis)
+                    coord_part = parts[1]
+                    coord_str = ''
+                    for c in coord_part:
+                        if c in ' XYZIJKFMGR':
+                            break
+                        coord_str += c
+                    if coord_str != '':
+                        current_pos[axis] = float(coord_str)
+                        new_line += f"{axis}{current_pos[axis]:.3f} "
+            new_line += f"{current_move} "
+            if 'F' in line:
+                parts = line.split('F')
+                # remove feed from line
+
+                feed_part = parts[1]
+                feed_str = ''
+                for c in feed_part:
+                    if c in ' XYZIJKFMGR':
+                        break
+                    feed_str += c
+                new_line += f' F{feed_str}'
+
+            return new_line
 
         for i in range(len(lines)):
             if lines[i].startswith('(') and lines[i].endswith(')'):
@@ -89,27 +150,10 @@ class PostPro(BasePostPro):
                 lines[i] = linear_move(lines[i], rapid=True)
             elif lines[i].startswith(('G1', 'G01')):
                 lines[i] = linear_move(lines[i], rapid=False)
-                # current_move = 'G1'
-                # lines[i] = lines[i].replace('G1', 'L ')
-                # feed = None
-                # if 'F' in lines[i]:
-                #     parts = lines[i].split('F')
-                #     # remove feed from line
-                #     lines[i] = parts[0]
-                #     feed = parts[1]
-                # if 'G40' in lines[i]:
-                #     lines[i] = lines[i].replace('G40', '')
-                #     lines[i] += ' R0'
-                # if 'G41' in lines[i]:
-                #     # parts = lines[i].split('F')
-                #     # lines[i] = parts[0] + ' F' + parts[1]
-                #     lines[i] = lines[i].replace('G41', '')
-                #     lines[i] += ' RL'
-                # if 'G42' in lines[i]:
-                #     lines[i] = lines[i].replace('G42', '')
-                #     lines[i] += ' RR'
-                # if feed is not None:
-                #    lines[i] += f' F{feed}'
+            elif lines[i].startswith(('G2', 'G02')):
+                lines[i] = circular_move(lines[i], clockwise=True)
+            elif lines[i].startswith(('G3', 'G03')):
+                lines[i] = circular_move(lines[i], clockwise=False)
             elif lines[i].startswith(('X', 'Y', 'Z')):
                 lines[i] = linear_move(lines[i], rapid=None)
 
@@ -120,7 +164,7 @@ class PostPro(BasePostPro):
         tool_id = getattr(tool, 'Id', None)
         spindle = getattr(tool, 'Speed', None).Value
         Feed = getattr(tool, 'Feed', None).Value
-        return f"TOOL CALL {tool_id} Z S{spindle} DL+0 DR+0\nL R0 F{Feed} M3\n"
+        return f"TOOL CALL {tool_id} Z S{spindle} DL+0 DR+0\nL R0 F{format_float(Feed)} M3\n"
 
     def G81(self, obj):
         geom = obj.DrillGeometry

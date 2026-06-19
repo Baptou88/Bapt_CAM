@@ -1,7 +1,7 @@
 import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
-from Op import DrillOp
+from Op import DrillOp, SpiraleOp
 from PySide import QtCore, QtGui
 
 
@@ -141,7 +141,7 @@ class DrillGeometryTaskPanel:
         if not ops and not hasattr(ops, "Group"):
             return
         for op in ops.Group:
-            if hasattr(op, "Proxy") and isinstance(op.Proxy, DrillOp.DrillOperation):
+            if hasattr(op, "Proxy") and isinstance(op.Proxy, (DrillOp.DrillOperation, SpiraleOp.SpiraleOp)):
                 row = self.optable.rowCount()
                 self.optable.insertRow(row)
                 self.optable.setItem(row, 0, QtGui.QTableWidgetItem(op.Label))
@@ -372,7 +372,7 @@ class DrillGeometryTaskPanel:
                 item_z = self.drillTable.item(row, 2)
 
                 if not item_x or not item_y or not item_z:
-                    App.Console.PrintError(f"Élément manquant à la ligne {row+1}\n")
+                    App.Console.PrintError(f"Élément manquant à la ligne {row + 1}\n")
                     return False
 
                 x = float(item_x.text())
@@ -380,7 +380,7 @@ class DrillGeometryTaskPanel:
                 z = float(item_z.text())
                 positions.append(App.Vector(x, y, z))
             except (ValueError, AttributeError) as e:
-                App.Console.PrintError(f"Position invalide à la ligne {row+1}: {str(e)}\n")
+                App.Console.PrintError(f"Position invalide à la ligne {row + 1}: {str(e)}\n")
                 return False
 
         # Mettre à jour les positions dans l'objet

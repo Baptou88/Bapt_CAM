@@ -592,7 +592,7 @@ class ContournageCycle(baseOp):
             return wire
         return shape
 
-    def calculatePasse(self, obj):
+    def calculatePasse(self, obj, passeEquilibre=True):
         geom = self.getContourGeometry(obj)
         if not geom:
             return []
@@ -614,8 +614,6 @@ class ContournageCycle(baseOp):
         if Zref < Zfinal:  # TODO
             App.Console.PrintError(f"La hauteur de référence ({Zref}) est inférieure à la profondeur de coupe ({Zfinal}).\n")
             return []
-
-        passeEquilibre = True
 
         if passeEquilibre:
             nbPasses = math.ceil(math.fabs(dz) / prise)
