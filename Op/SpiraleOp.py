@@ -10,13 +10,24 @@ import PySide.QtGui as QtGui
 import PySide.QtCore as QtCore
 
 
+class toolNotSetException(Exception):
+    def __init__(self, message):
+        super().__init__(self, message)
+        self.message = message
+
+    def __str__(self):
+        return self.message
+
+    pass
+
+
 class SpiraleOp(baseOp):
     """
     Classe représentant l'opération d'usinage de trous en spirale.
     """
 
-    def __init__(self, obj):
-        super().__init__(obj)
+    def __init__(self, obj, cam_proj=None):
+        super().__init__(obj, cam_proj)
 
         if not hasattr(obj, "DrillGeometry"):
             obj.addProperty("App::PropertyLink", "DrillGeometry", "Base", "Drill geometry for the spirale")
@@ -37,11 +48,25 @@ class SpiraleOp(baseOp):
             obj.addProperty("App::PropertyDistance", "SurepAxiale", "Base", "Axial overcut")
             obj.SurepAxiale = 0.0
 
+        if not hasattr(obj, "SurepRadiale"):
+            obj.addProperty("App::PropertyDistance", "SurepRadiale", "Base", "Radial overcut")
+            obj.SurepRadiale = 0.0
+
+        if not hasattr(obj, "aeMax"):
+            obj.addProperty("App::PropertyDistance", "aeMax", "Base", "Maximum radial depth of cut")
+            obj.aeMax = 6.0
+
+        if not hasattr(obj, "PlungeType"):
+            obj.addProperty("App::PropertyEnumeration", "PlungeType", "Base", "Plunge type")
+            obj.PlungeType = ["Direct", "Helical"]
+            obj.PlungeType = "Direct"
+
         super().installToolProp(obj)
+        super().installSecurePlane(obj)
         obj.Proxy = self
 
     def onChanged(self, obj, prop):
-        if prop in ["DrillGeometry", "Diameter", "FinalDepth", "Ap", "SurepAxiale"]:
+        if prop in ["DrillGeometry", "Diameter", "FinalDepth", "Ap", "SurepAxiale", "SurepRadiale", "aeMax", "PlungeType", "Tool", "SecurePlane"]:
             self.execute(obj)
         pass
 
@@ -93,7 +118,7 @@ class SpiraleOp(baseOp):
             return
 
         if not hasattr(obj, "Tool") or obj.Tool is None:
-            raise ValueError("Tool is not set.")
+            raise toolNotSetException("Tool is not set.")
             return
 
         # Récupération des paramètres
@@ -101,17 +126,15 @@ class SpiraleOp(baseOp):
         diameter = obj.Diameter.Value
         final_depth = obj.FinalDepth.Value  # Valeur absolue de la profondeur finale
 
-        aeMax = 0.5 * tool.Radius.Value * 2  # prise de passe latérale maximale (en mm)
         # Calcul de la spirale sur plan XY
-        App.Console.PrintMessage(f'aeMax {aeMax}\n')
+
         # Calcul du Nombre de Tours
-        final_diameter = diameter - (2 * tool.Radius.Value)
+        final_diameter = diameter - obj.SurepRadiale.Value - (2 * tool.Radius.Value)
+        App.Console.PrintMessage(f'final_diameter {final_diameter}\n')
         if final_diameter <= 0:
             raise ValueError("Final diameter must be greater than zero.")
 
-        delta_diameter = final_diameter - (2 * tool.Radius.Value)
-        App.Console.PrintMessage(f'delta_diam {delta_diameter}\n')
-        num_turns = math.ceil(final_diameter / (aeMax / 2))  # Nombre de tours complets pour atteindre le diamètre final
+        num_turns = math.ceil((final_diameter / 2) / obj.aeMax.Value)  # Nombre de tours complets pour atteindre le diamètre final
         App.Console.PrintMessage(f'num_turns: {num_turns}\n')
         prise_de_passe = final_diameter / num_turns  # Prise de passe latérale par tour
         App.Console.PrintMessage(f'prise passe {prise_de_passe}\n')
@@ -133,7 +156,7 @@ class SpiraleOp(baseOp):
             shapes.append(cylinder)
 
         p0 = positions[0]
-        safe_height = p0.z + 2.0  # Hauteur de sécurité pour le déplacement rapide
+        safe_height = p0.z + obj.SecurePlane.Value  # Hauteur de sécurité pour le déplacement rapide
         gcodeWriter.linearMove({'X': p0.x, 'Y': p0.y}, rapid=True)  #
         gcodeWriter.linearMove({'Z': safe_height}, rapid=True)  # Déplacement rapide à la hauteur de sécurité
         gcodeWriter.addLabel(obj.Label)
@@ -142,23 +165,33 @@ class SpiraleOp(baseOp):
         passes = self.calculatePasse(obj, p0.z, final_depth, passeEquilibre=True)
         current_z = safe_height
         for _, z in enumerate(passes):
-            gcodeWriter.linearMove({'Z': z - current_z}, feed=1000, force=True)
+            if obj.PlungeType == "Direct":
+                gcodeWriter.linearMove({'Z': z - current_z}, feed=1000, force=True)
+            elif obj.PlungeType == "Helical":
+                dz = z - current_z
+                plunge_max = 1.0  # Profondeur maximale par tour pour le plongeon hélicoïdal
+                num_plunge_turns = math.ceil(abs(dz) / plunge_max)
+                gcodeWriter.linearMove({'X': obj.aeMax.Value})
+                for _ in range(num_plunge_turns):
+                    gcodeWriter.arcMove({'X': -obj.aeMax.Value * 2, 'Y': 0, 'I': -obj.aeMax.Value, 'J': 0, 'Z': dz / (2 * num_plunge_turns), 'F': 500, 'CCW': True})
+                    gcodeWriter.arcMove({'X': obj.aeMax.Value * 2, 'Y': 0, 'I': obj.aeMax.Value, 'J': 0, 'Z': dz / (2 * num_plunge_turns), 'F': 500, 'CCW': True})
+                gcodeWriter.linearMove({'X': -obj.aeMax.Value})
+
             current_z = z
 
             a = 0
-            b = 0
-            for i in range(int(num_turns / 2)):
-                a = math.fabs(a) + prise_de_passe
-                gcodeWriter.arcMove({'X': -a, 'Y': 0, 'I': -a / 2, 'J': 0, 'F': 500, 'CCW': True})  # Mouvement circulaire en spirale
-                b = a
-                a = math.fabs(a) + prise_de_passe
-                gcodeWriter.arcMove({'X': a, 'Y': 0, 'I': a / 2, 'J': 0, 'F': 500, 'CCW': True})  # Mouvement circulaire en spirale
-                b = a
 
-            gcodeWriter.arcMove({'X': -a, 'Y': 0, 'I': -a / 2, 'J': 0, 'F': 500, 'CCW': True})  # Mouvement circulaire en spirale
-            # gcodeWriter.arcMove({'X': a, 'Y': 0, 'I': a / 2, 'J': 0, 'F': 500, 'CCW': True})  # Mouvement circulaire en spirale
+            for i in range(int(num_turns)):
+                a = math.fabs(a) + prise_de_passe
+                gcodeWriter.arcMove({'X': -a / 2, 'Y': 0, 'I': -a / 4, 'J': 0, 'F': 500, 'CCW': True})  # Mouvement circulaire en spirale
 
-            App.Console.PrintMessage(f"SpiraleOp: num_turns={num_turns}, prise_de_passe={prise_de_passe}, final_diameter={final_diameter}, delta_diameter={delta_diameter}\n")
+                a = math.fabs(a) + prise_de_passe
+                gcodeWriter.arcMove({'X': a / 2, 'Y': 0, 'I': a / 4, 'J': 0, 'F': 500, 'CCW': True})  # Mouvement circulaire en spirale
+
+            gcodeWriter.arcMove({'X': -a / 2, 'Y': 0, 'I': -a / 4, 'J': 0, 'F': 500, 'CCW': True})  # Mouvement circulaire en spirale
+            # gcodeWriter.arcMove({'X': a/2, 'Y': 0, 'I': a / 4, 'J': 0, 'F': 500, 'CCW': True})  # Mouvement circulaire en spirale
+
+            App.Console.PrintMessage(f"SpiraleOp: num_turns={num_turns}, prise_de_passe={prise_de_passe}, final_diameter={final_diameter}\n")
             gcodeWriter.linearMove({'X': final_diameter / 2}, feed=1000)
         gcodeWriter.raw("G90")
         gcodeWriter.linearMove({'Z': safe_height}, rapid=True)  # Remonter à la hauteur de sécurité
@@ -166,7 +199,7 @@ class SpiraleOp(baseOp):
 
         for i in range(1, len(positions)):
             pt = positions[i]
-            gcodeWriter.linearMove({'X': pt.x, 'Y': pt.y, 'Z': safe_height}, rapid=True)
+            gcodeWriter.linearMove({'X': pt.x, 'Y': pt.y, 'Z': safe_height}, rapid=True, force=True)
             # if obj.CycleType == "Contournage":
             gcodeWriter.raw(f"REPEAT {obj.Label} {obj.Label}_FIN P=1")
 

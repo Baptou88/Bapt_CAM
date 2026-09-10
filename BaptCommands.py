@@ -406,9 +406,6 @@ class CreateCamProjectCommand:
         if obj.ViewObject and App.GuiUp:
             obj.ViewObject.Proxy.setEdit(obj.ViewObject)
 
-        # Message de confirmation
-        App.Console.PrintMessage("Projet CAM créé avec succès!\n")
-
 
 class CreateContourGeometryCommand:
     """Commande pour créer une géométrie de contour"""
@@ -605,6 +602,10 @@ class CreateHotReloadCommand:
             import Op.OpContournageTest as OpContournageTest
             reload(OpContournageTest)
 
+            import Op.SpiraleOp as SpiraleOp
+            reload(SpiraleOp)
+            import Op
+            reload(Op)
             # dossier = BaptUtilities.get_module_path()
 
             # modules = [
@@ -750,8 +751,10 @@ class CreateSpiraleOpCommand:
         # Créer l'objet avec le bon type pour avoir une Shape
         obj = doc.addObject("Part::FeaturePython", "SpiraleOperation")
 
+        camProject = BaptUtilities.find_cam_project(drill_geometry)
+
         # Ajouter la fonctionnalité
-        SpiraleOp.SpiraleOp(obj)
+        SpiraleOp.SpiraleOp(obj, camProject)
 
         # Définir le nom de la géométrie de perçage associée (au lieu d'un lien direct)
         obj.DrillGeometry = drill_geometry
@@ -770,7 +773,7 @@ class CreateSpiraleOpCommand:
             drill_geometry.Group.append(obj)
 
         if modeAjout == 2 or modeAjout == 0:
-            camProject = BaptUtilities.find_cam_project(drill_geometry)
+
             if camProject:
                 operations_group = camProject.Proxy.getOperationsGroup(camProject)
                 if modeAjout == 2:

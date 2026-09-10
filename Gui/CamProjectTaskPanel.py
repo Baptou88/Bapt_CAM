@@ -174,7 +174,6 @@ class BoundBoxSphereManager:
         for sphere in self.spheres:
             sphere.remove()
         self.spheres = []
-        App.Console.PrintMessage("Toutes les sphères ont été supprimées\n")
 
 
 class BBoxSelectionObserver:
@@ -466,8 +465,6 @@ class CamProjectTaskPanel:
 
     def updateVisual(self):
         """Met à jour la représentation visuelle"""
-        App.Console.PrintMessage('updateVisual\n')
-        # Mettre à jour les propriétés du projet
 
         self.obj.WorkPlane = self.ui1.workPlane.currentText()
         model = self.ui1.model.currentText()
