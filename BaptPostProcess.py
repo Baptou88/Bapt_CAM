@@ -138,6 +138,11 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
                 gcode_lines.append(commentaire)
                 gcode_lines.append(Postpro.G83(obj))
 
+            elif cycle == "DeepHole":
+                commentaire = Postpro.writeComment("Cycle: DeepHole - perçage profond")
+                gcode_lines.append(commentaire)
+                gcode_lines.append(obj.Gcode)
+
             elif cycle == "Tapping":
                 commentaire = Postpro.writeComment("Cycle: G84 - Taraudage")
                 gcode_lines.append(commentaire)

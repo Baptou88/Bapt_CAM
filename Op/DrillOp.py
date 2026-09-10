@@ -11,9 +11,10 @@ import PySide.QtCore as QtCore  # type: ignore
 import BaptUtilities
 from Op.BaseOp import baseOp, baseOpViewProviderProxy
 from utils.GcodeWriter import GcodeWriter
+from utils.deep_drill_cycle import generate_deep_hole_cycle
 
 
-cycleType = ["Simple", "Peck", "Tapping", "Boring", "Reaming", "Contournage"]
+cycleType = ["Simple", "Peck", "DeepHole", "Tapping", "Boring", "Reaming", "Contournage"]
 
 
 class DrillOperation(baseOp):
@@ -128,7 +129,7 @@ class DrillOperation(baseOp):
         # Afficher les propriétés spécifiques au cycle sélectionné
         if obj.CycleType == "Simple":
             obj.setEditorMode("DwellTime", 0)  # visible
-        if obj.CycleType == "Peck":
+        if obj.CycleType in ["Peck", "DeepHole"]:
             obj.setEditorMode("PeckDepth", 0)  # visible
             obj.setEditorMode("Retract", 0)  # visible
             obj.setEditorMode("DwellTime", 0)  # visible
@@ -206,13 +207,34 @@ class DrillOperation(baseOp):
             safe_z_0 = p0.z + obj.SafeHeight.Value
 
             gcodeWriter.linearMove({'X': p0.x, 'Y': p0.y}, rapid=True)
-            gcodeWriter.linearMove({'Z': p0.z}, rapid=True)
+            gcodeWriter.linearMove({'Z': safe_z_0}, rapid=True)
 
             if obj.CycleType == "Simple":
                 gcodeWriter.raw(f"G81 Z{obj.FinalDepth.Value} R{safe_z_0} F{feed}")  # FIXME
 
             elif obj.CycleType == "Peck":
                 gcodeWriter.raw(f"G83 Z{obj.FinalDepth.Value} R{safe_z_0} Q{obj.PeckDepth.Value} F{feed}")  # FIXME
+
+            elif obj.CycleType == "DeepHole":
+                tool_diameter = float(obj.Tool.Radius.Value * 2)
+                approach_z = float(p0.z + 2.0)
+                final_depth = float(final_z)
+                gcodeWriter.addLabel(obj.Label)
+                cycle_lines = generate_deep_hole_cycle(
+                    start_z=float(p0.z),
+                    final_depth=final_depth,
+                    tool_diameter=tool_diameter,
+                    max_peck=float(obj.PeckDepth.Value),
+                    retract=float(obj.Retract.Value),
+                    safe_height=approach_z,
+                    spindle_rpm=int(float(obj.SpindleSpeed.getValueAs("mm/min"))),  # FIXME Spindle
+                    feed=float(feed),
+                    dwell_time=float(obj.DwellTime),
+                    coolant_code="M28" if getattr(obj, "CoolantMode", "Off") != "Off" else "M9",  # FIXME Hardcoded value for coolant code
+                )
+                gcodeWriter.lines.extend(cycle_lines)
+                gcodeWriter.current_position = {'X': p0.x, 'Y': p0.y, 'Z': approach_z}
+                gcodeWriter.endLabel()
 
             elif obj.CycleType == "Tapping":
                 # FIXME verifier la presence d'un outil de taraudage et son pas
@@ -246,10 +268,10 @@ class DrillOperation(baseOp):
             for i in range(1, len(positions)):
                 pt = positions[i]
                 gcodeWriter.linearMove({'X': pt.x, 'Y': pt.y, 'Z': pt.z + obj.SafeHeight.Value}, rapid=True)
-                if obj.CycleType == "Contournage":
+                if obj.CycleType == "Contournage" or obj.CycleType == "DeepHole":
                     gcodeWriter.raw(f"REPEAT {obj.Label} {obj.Label}_FIN P=1")
 
-            if obj.CycleType != "Contournage":
+            if obj.CycleType not in ["Contournage", "DeepHole"]:
                 gcodeWriter.raw("G80")
 
         obj.Gcode = "\n".join(gcodeWriter.lines)

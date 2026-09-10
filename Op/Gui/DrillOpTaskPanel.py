@@ -480,6 +480,9 @@ class DrillOperationTaskPanel:
     def cycleTypeChanged(self, index):
         """Appelé quand le type de cycle change"""
         # Mettre à jour l'affichage des paramètres spécifiques
+        if index == 2:  # Deep Peck
+            self.specificLayout.setCurrentIndex(1)
+            return
         self.specificLayout.setCurrentIndex(index)
 
     def depthModeChanged(self, checked):
