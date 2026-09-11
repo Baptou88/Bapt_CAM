@@ -7,6 +7,7 @@ class BasePostPro:
         self.line = 10
         self.lineIncrement = 10
         self.useLineNumbers = False
+        self.useLabel = True
 
     def writeComment(self, comment: str) -> str:
         return f"({comment})"

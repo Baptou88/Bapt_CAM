@@ -141,7 +141,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             elif cycle == "DeepHole":
                 commentaire = Postpro.writeComment("Cycle: DeepHole - perçage profond")
                 gcode_lines.append(commentaire)
-                gcode_lines.append(obj.Gcode)
+                gcode_lines.append(Postpro.transformGCode(obj.Gcode))
 
             elif cycle == "Tapping":
                 commentaire = Postpro.writeComment("Cycle: G84 - Taraudage")
@@ -163,10 +163,11 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
                     gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
                     gcode_lines.append(f"G85 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
                     gcode_lines.append("G80")
+
             elif cycle == "Contournage":
                 commentaire = Postpro.writeComment("Cycle: Contournage personnalisé")
                 gcode_lines.append(commentaire)
-                gcode_lines.append(obj.Gcode)
+                gcode_lines.append(Postpro.transformGCode(obj.Gcode))
 
         elif isinstance(obj.Proxy, pathOp):
             gcode_lines.append(Postpro.writeComment(f"Path operation: {obj.Label}"))

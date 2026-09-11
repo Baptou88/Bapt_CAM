@@ -11,6 +11,8 @@ class PostPro(BasePostPro):
 
     def __init__(self):
         super().__init__()
+        self.labels: dict[str, [int, int]] = {}  # Dictionary to store label name, positions, and index
+        self.lastLabelInt = 10
 
     def writeHeader(self):
         header = ""
@@ -20,7 +22,7 @@ class PostPro(BasePostPro):
         return header
 
     def writeFooter(self):
-        footer = "M30"
+        footer = "M30\n"
         footer += "END PGM ITNC530 MM\n"
 
         return footer
@@ -157,6 +159,44 @@ class PostPro(BasePostPro):
             elif lines[i].startswith(('X', 'Y', 'Z')):
                 lines[i] = linear_move(lines[i], rapid=None)
 
+            elif lines[i].endswith(':'):
+                label_name = lines[i][:-1].strip()
+                if label_name.endswith("_FIN"):
+                    lines[i] = "LBL 0"
+                    continue
+                if label_name in self.labels:
+                    raise ValueError(f"Duplicate label found: {label_name} ")
+                self.lastLabelInt += 1
+                self.labels[label_name] = (i, self.lastLabelInt)
+                if not self.useLabel:
+                    lines[i] = ''  # Remove the label line if not using labels
+                else:
+                    lines[i] = f"LBL {self.lastLabelInt}"
+            elif lines[i].startswith('REPEAT'):
+                # example: REPEAT LabelStart LabelEnd P=1
+                a = lines[i].split()
+                if len(a) >= 4 and a[0] == 'REPEAT':
+                    label_start = a[1]
+                    label_end = a[2]
+                    p_value = 1
+                    for part in a[3:]:
+                        if part.startswith('P='):
+                            try:
+                                p_value = int(part.split('=')[1])
+                            except ValueError:
+                                p_value = 1
+                    if not self.useLabel and label_start in self.labels and label_end in self.labels:
+                        start_index = self.labels[label_start]
+                        end_index = self.labels[label_end]
+                        # remove the REPEAT line and insert the repeated lines
+                        if start_index < end_index:
+                            repeat_lines = lines[start_index + 1:end_index]
+                            for _ in range(p_value):
+                                # retour.extend(repeat_lines) #maybe reuse transformGCode on repeat_lines to handle nested repeats
+                                retour.extend(self.transformGCode('\n'.join(repeat_lines)).split('\n'))
+                            continue  # Skip appending the original REPEAT line
+                    else:
+                        lines[i] = f"CALL {self.labels[label_start][1]}" + (f" REP {p_value}" if p_value > 1 else "")
             retour.append(lines[i])
         return '\n'.join(retour)
 

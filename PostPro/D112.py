@@ -1,6 +1,5 @@
 from typing import Any
 
-
 import BasePostPro
 from utils.formatFloat import format_float
 
@@ -13,6 +12,8 @@ class PostPro(BasePostPro.BasePostPro):
     def __init__(self) -> None:
         super().__init__()
         self.useLineNumbers = True
+        self.useLabel = False
+        self.labels: dict[str, int] = {}  # Dictionary to store label positions
 
     def writeHeader(self) -> str:
         return "O0001\nG21 (mm)\nG90 (absolute programming)\nG40 (cutter radius compensation off)\nG80 (cancel canned cycle)\nG17 (XY plane selection)\nG54 (work coordinate system)\n"
@@ -110,6 +111,40 @@ class PostPro(BasePostPro.BasePostPro):
                 lines[i] = circular_move(lines[i], clockwise=True)
             elif lines[i].startswith(('G3', 'G03')):
                 lines[i] = circular_move(lines[i], clockwise=False)
+            elif lines[i].endswith(':'):
+                # this is a label, memorize the name and the current position
+                label_name = lines[i][:-1]
+                self.labels[label_name] = i
+                if not self.useLabel:
+                    lines[i] = ''  # Remove the label line if not using labels
+                else:
+                    pass  # Keep the label line if using labels
+            elif lines[i].startswith('REPEAT'):
+                # example: REPEAT LabelStart LabelEnd P=1
+                a = lines[i].split()
+                if len(a) >= 4 and a[0] == 'REPEAT':
+                    label_start = a[1]
+                    label_end = a[2]
+                    p_value = 1
+                    for part in a[3:]:
+                        if part.startswith('P='):
+                            try:
+                                p_value = int(part.split('=')[1])
+                            except ValueError:
+                                p_value = 1
+                    if not self.useLabel and label_start in self.labels and label_end in self.labels:
+                        start_index = self.labels[label_start]
+                        end_index = self.labels[label_end]
+                        # remove the REPEAT line and insert the repeated lines
+                        if start_index < end_index:
+                            repeat_lines = lines[start_index + 1:end_index]
+                            for _ in range(p_value):
+                                # retour.extend(repeat_lines) #maybe reuse transformGCode on repeat_lines to handle nested repeats
+                                retour.extend(self.transformGCode('\n'.join(repeat_lines)).split('\n'))
+                            continue  # Skip appending the original REPEAT line
+                    else:
+                        pass
+                # this is a repeat command,
             retour.append(lines[i])
         return '\n'.join(retour)
 
