@@ -22,6 +22,7 @@
         "editor.wordBasedSuggestions": "off",
         "editor.defaultFormatter": "ms-python.autopep8",
         "editor.formatOnSave": true
-    }
+    },
+    "python-envs.defaultEnvManager": "ms-python.python:venv"
     // "python.languageServer": "Pylance"
 }

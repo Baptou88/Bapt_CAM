@@ -71,7 +71,8 @@ class ContourTaskPanel:
 
         # Côté matière
         self.coteMatiere = QtGui.QComboBox()
-        self.coteMatiere.addItems(["Gauche", "Droite"])
+        # if self.obj.IsClosed:
+        self.coteMatiere.addItems(["Gauche", "Droite", "Inside", "Outside"])
         self.coteMatiere.setCurrentText(getattr(obj, "CoteMatiere", "Droite"))
         contourLayout.addRow("Côté matière:", self.coteMatiere)
 
@@ -157,9 +158,6 @@ class ContourTaskPanel:
         contourGroup.setLayout(contourLayout)
         layout.addWidget(contourGroup)
 
-        # Mettre à jour l'affichage des arêtes sélectionnées
-        self.updateEdgesLabel()
-
         # Connecter les signaux pour l'actualisation en temps réel
         self.confirmSelectionButton.clicked.connect(self.confirmSelection)
 
@@ -172,6 +170,9 @@ class ContourTaskPanel:
             self.absoluteDepthRadio.clicked.connect(self.depthModeChanged)
         else:
             self.relativeDepthRadio.clicked.connect(self.depthModeChanged)
+
+        # Mettre à jour l'affichage des arêtes sélectionnées
+        self.updateEdgesLabel()
 
         # Variable pour suivre l'état de sélection
         self.selectionMode = False
@@ -210,6 +211,18 @@ class ContourTaskPanel:
 
         self.edgesLabel.setText(f"{count} arête(s) sélectionnée(s)")
         self.isClosedLabel.setText(f"Contour fermé: {self.obj.IsClosed}")
+
+        # Retirer Inside et Outside si le contour n'est pas fermé
+        self.coteMatiere.currentTextChanged.disconnect(self.updateContour)
+        for i in range(self.coteMatiere.count() - 1, -1, -1):
+            self.coteMatiere.removeItem(i)
+        if self.obj.IsClosed:
+            self.coteMatiere.addItems(["Inside", "Outside"])
+            self.coteMatiere.setCurrentText(getattr(self.obj, "CoteMatiere", "Inside"))
+        else:
+            self.coteMatiere.addItems(["Droite", "Gauche"])
+            self.coteMatiere.setCurrentText(getattr(self.obj, "CoteMatiere", "Droite"))
+        self.coteMatiere.currentTextChanged.connect(self.updateContour)
 
         # Mettre à jour le tableau
         self.edgesTable.setRowCount(0)  # Vider le tableau
@@ -352,10 +365,113 @@ class ContourTaskPanel:
 
         self.detectDepth()
 
+        # Debug utile: lister les arêtes directement connectées à la sélection.
+        self.printDirectlyConnectedEdges()
+
         # Mettre à jour la forme
         self.obj.Document.recompute()
 
         App.Console.PrintMessage("Sélection confirmée.\n")
+
+    @staticmethod
+    def _points_close(p1, p2, tol=1e-6):
+        return (p1 - p2).Length <= tol
+
+    def getDirectlyConnectedEdges(self, tol=1e-6, include_selected=False):
+        """
+        Retourne les arêtes directement connectées à self.obj.Edges
+        (partage d'au moins un sommet), sous forme [(obj_ref, "EdgeX")].
+        """
+        if not hasattr(self.obj, "Edges") or not self.obj.Edges:
+            return []
+
+        selected_edges = []
+        selected_by_object = {}
+        selected_signatures = set()
+
+        def edge_signature(edge):
+            p1 = edge.Vertexes[0].Point
+            p2 = edge.Vertexes[-1].Point
+            a = (
+                round(p1.x, 6),
+                round(p1.y, 6),
+                round(p1.z, 6),
+            )
+            b = (
+                round(p2.x, 6),
+                round(p2.y, 6),
+                round(p2.z, 6),
+            )
+            return tuple(sorted((a, b)))
+
+        for sub in self.obj.Edges:
+            obj_ref = sub[0]
+            for sub_name in sub[1]:
+                if str(sub_name).startswith("Face"):
+                    face = obj_ref.Shape.getElement(sub_name)
+                    for e in face.Edges:
+                        selected_edges.append((obj_ref, sub_name, e))
+                        selected_by_object.setdefault(obj_ref, set()).add(sub_name)
+                        selected_signatures.add(edge_signature(e))
+                    continue
+                if not str(sub_name).startswith("Edge"):
+                    continue
+                try:
+                    edge = obj_ref.Shape.getElement(sub_name)
+                except Exception:
+                    continue
+                if getattr(edge, "ShapeType", "") != "Edge":
+                    continue
+                selected_edges.append((obj_ref, sub_name, edge))
+                selected_by_object.setdefault(obj_ref, set()).add(sub_name)
+                selected_signatures.add(edge_signature(edge))
+
+        connected = []
+        seen = set()
+
+        for obj_ref, _, src_edge in selected_edges:
+            shape = getattr(obj_ref, "Shape", None)
+            if not shape or not hasattr(shape, "Edges"):
+                continue
+
+            for idx, candidate_edge in enumerate(shape.Edges, start=1):
+                candidate_name = f"Edge{idx}"
+
+                if (not include_selected) and candidate_name in selected_by_object.get(obj_ref, set()):
+                    continue
+                if (not include_selected) and edge_signature(candidate_edge) in selected_signatures:
+                    continue
+
+                is_connected = False
+                try:
+                    for sv in src_edge.Vertexes:
+                        for cv in candidate_edge.Vertexes:
+                            if self._points_close(sv.Point, cv.Point, tol=tol):
+                                is_connected = True
+                                break
+                        if is_connected:
+                            break
+                except Exception:
+                    continue
+
+                if is_connected:
+                    key = (obj_ref.Name, candidate_name)
+                    if key not in seen:
+                        seen.add(key)
+                        connected.append((obj_ref, candidate_name))
+
+        return connected
+
+    def printDirectlyConnectedEdges(self, tol=1e-6):
+        """Affiche en console FreeCAD les arêtes directement connectées à self.obj.Edges."""
+        connected = self.getDirectlyConnectedEdges(tol=tol, include_selected=False)
+        if not connected:
+            App.Console.PrintMessage("Arêtes connectées: aucune trouvée.\n")
+            return
+
+        App.Console.PrintMessage(f"Arêtes connectées trouvées: {len(connected)}\n")
+        for obj_ref, edge_name in connected:
+            App.Console.PrintMessage(f" - {obj_ref.Label}.{edge_name}\n")
 
     def detectDepth(self):
         """Détecte automatiquement la profondeur en fonction des arêtes sélectionnées"""

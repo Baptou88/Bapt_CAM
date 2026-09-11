@@ -66,6 +66,20 @@ class baseOp:
                 if hasattr(obj, "ToolDiameter"):
                     obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
 
+    def installSecurePlane(self, obj):
+        if not hasattr(obj, "RetractPlane"):
+            obj.addProperty("App::PropertyDistance", "RetractPlane", "Base", "Retract plane")
+            obj.RetractPlane = 50.0
+
+        if not hasattr(obj, "SecurePlane"):
+            obj.addProperty("App::PropertyDistance", "SecurePlane", "Base", "Secure plane")
+            obj.SecurePlane = 2.0
+
+        expr = self.cam_proj.Proxy.getExprSet()
+        if expr:
+            obj.setExpression('RetractPlane', f"<<{expr.Label}>>.clearanceZ")
+            obj.setExpression('SecurePlane', f"<<{expr.Label}>>.safeZ")
+
     def onChanged(self, fp, prop):
         if App.ActiveDocument and App.ActiveDocument.Restoring:
             return

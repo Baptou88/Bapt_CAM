@@ -398,11 +398,11 @@ class CamProject:
                             "Project", "Origine de la pièce")
             obj.toolChangePos = App.Vector(0, 0, 250)
 
-        # Créer le groupe Operations
-        self.getOperationsGroup(obj)
-
         # Créer le groupe Geometry
         self.getGeometryGroup(obj)
+
+        # Créer le groupe Operations
+        self.getOperationsGroup(obj)
 
         self.getModel(obj)
 
@@ -430,9 +430,6 @@ class CamProject:
         """Obtenir ou créer l'objet Model pour le projet"""
         if hasattr(obj, "Model") and obj.Model:
             return obj.Model
-
-        App.Console.PrintMessage(
-            "Model not found in project. Creating new model.\n")
 
         dlg = ObjSelector()
         if dlg.exec_():
@@ -508,7 +505,6 @@ class CamProject:
         origin.Label = "WCS_G54"
         self.Object.addObject(origin)
         # obj.Origin = origin
-        App.Console.PrintMessage("Origin created: " + origin.Name + "\n")
         return origin
 
     def getStock(self, obj):
@@ -752,8 +748,7 @@ class ViewProviderCamProject:
 
 class operationGroupViewProviderProxy():
     def __init__(self, vobj):
-        App.Console.PrintMessage(
-            "Initializing operation group view provider proxy for: {}\n".format(__class__.__name__))
+
         vobj.Proxy = self
         self.Object = vobj.Object
 

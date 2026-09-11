@@ -1,5 +1,4 @@
 import FreeCAD as App
-import FreeCADGui as Gui
 import Part
 
 from Op import offset
@@ -41,7 +40,7 @@ class opContournageTest:
         e = geom.Proxy.getEdges(geom)
         w = Part.Wire(e)
         machiningSide = geom.Proxy.getToolSide(geom)
-        is_forward = not offset.reverse_toolpath_for_mode(obj.Direction)
+        is_forward = not offset.is_conventionnal(obj.Direction)
 
         offset_wire = offset.offsetWire(w, 5.0, forward=is_forward, side=machiningSide)
         edge = offset_wire.Edges[0]

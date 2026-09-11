@@ -33,8 +33,13 @@ def material_side_to_tool_side(material_side: str) -> Side:
     """
     if material_side == "Droite":
         return Side.LEFT
-    if material_side == "Gauche":
+    elif material_side == "Gauche":
         return Side.RIGHT
+    elif material_side == "Inside":
+        return Side.OUTSIDE
+    elif material_side == "Outside":
+        return Side.INSIDE
+
     return Side.NONE
 
 

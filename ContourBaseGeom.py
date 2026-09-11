@@ -19,7 +19,7 @@ class ContourBaseGeom:
         if not hasattr(obj, "CoteMatiere"):
             obj.addProperty("App::PropertyEnumeration", "CoteMatiere", "Contour",
                             "Côté matière par rapport au sens de parcours du contour")
-            obj.CoteMatiere = ["Gauche", "Droite"]
+            obj.CoteMatiere = ["Gauche", "Droite", "Inside", "Outside"]
             obj.CoteMatiere = "Droite"
 
             # proprité read only pour savoir si un contour est fermé

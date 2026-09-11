@@ -272,7 +272,7 @@ class ContournageCycle(baseOp):
                         offset_value,
                         forward=True,
                         # side=Side.LEFT if machining_side == Side.RIGHT else Side.RIGHT,
-                        side=Side.LEFT if side_for_offset == Side.RIGHT else Side.RIGHT,
+                        side=material_side_to_tool_side(cote_matiere),
                     )
                     offset_wire = _to_wire(comp_result)
                     if offset_wire is None:
