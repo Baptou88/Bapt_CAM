@@ -10,7 +10,8 @@ from Tool.TlsToolRepository import TlsToolRepository  # type: ignore
 
 
 def create_tool_obj(Tid=0, name="New Tool", diameter=10.0, speed=1000.0, feed=500.0,
-                    tool_type="Fraise", torus_radius=0.0, length=50.0, point_angle=118.0):
+                    tool_type="Fraise", torus_radius=0.0, length=50.0, point_angle=118.0,
+                    cone_angle=90.0, tip_diameter=0.0):
     """Create a tool document object with the correct 3D shape.
 
     Parameters
@@ -21,6 +22,10 @@ def create_tool_obj(Tid=0, name="New Tool", diameter=10.0, speed=1000.0, feed=50
         Corner radius for bull-nose / torus end mills (mm).
     point_angle : float
         Drill point angle in degrees (default 118).
+    cone_angle : float
+        Conical cutter included angle in degrees (default 90).
+    tip_diameter : float
+        Conical cutter tip diameter in mm (default 0).
     """
     new_tool = App.ActiveDocument.addObject("Part::FeaturePython", f"{name}")
     new_tool.addProperty("App::PropertyInteger", "Id", "Tool", "Tool ID").Id = Tid
@@ -31,6 +36,8 @@ def create_tool_obj(Tid=0, name="New Tool", diameter=10.0, speed=1000.0, feed=50
     new_tool.addProperty("App::PropertyString", "ToolType", "Tool", "Tool Type").ToolType = tool_type
     new_tool.addProperty("App::PropertyFloat", "TorusRadius", "Tool", "Torus corner radius").TorusRadius = torus_radius
     new_tool.addProperty("App::PropertyFloat", "PointAngle", "Tool", "Drill point angle (degrees)").PointAngle = point_angle
+    new_tool.addProperty("App::PropertyFloat", "ConeAngle", "Tool", "Conical cutter angle (degrees)").ConeAngle = cone_angle
+    new_tool.addProperty("App::PropertyFloat", "TipDiameter", "Tool", "Conical cutter tip diameter").TipDiameter = tip_diameter
 
     new_tool.Proxy = ToolShapeProxy(new_tool)
     if App.GuiUp:
@@ -53,12 +60,16 @@ class ToolShapeProxy:
         tool_type = obj.ToolType if hasattr(obj, "ToolType") else "Fraise"
         torus_r = obj.TorusRadius if hasattr(obj, "TorusRadius") else 0.0
         point_angle = obj.PointAngle if hasattr(obj, "PointAngle") else 118.0
+        cone_angle = obj.ConeAngle if hasattr(obj, "ConeAngle") else 90.0
+        tip_diameter = obj.TipDiameter if hasattr(obj, "TipDiameter") else 0.0
 
         try:
             if tool_type == "Foret":
                 shape = _make_drill_bit(radius, height, point_angle)
             elif tool_type == "Fraise torique" and torus_r > 0 and torus_r < radius:
                 shape = _make_torus_endmill(radius, height, torus_r)
+            elif tool_type == "Fraise conique":
+                shape = _make_conical_endmill(radius, height, cone_angle, tip_diameter)
             else:
                 shape = Part.makeCylinder(radius, height)
 
@@ -72,7 +83,7 @@ class ToolShapeProxy:
 
     def onChanged(self, obj, prop):
         """Called when a property changes. We need to recompute the shape if any of the parameters change."""
-        if prop in ["Radius", "Height", "ToolType", "TorusRadius", "PointAngle"]:
+        if prop in ["Radius", "Height", "ToolType", "TorusRadius", "PointAngle", "ConeAngle", "TipDiameter"]:
             self.execute(obj)
 
     def __getstate__(self):
@@ -172,6 +183,40 @@ def _make_drill_bit(radius, height, point_angle):
         shape = face.revolve(App.Vector(0, 0, 0), App.Vector(0, 0, 1), 360)
 
     return shape
+
+
+def _make_conical_endmill(radius, height, cone_angle, tip_diameter):
+    """Build a conical cutter with optional tip diameter.
+
+    radius is the max radius at the top (Z=height).
+    """
+    max_radius = max(radius, 0.1)
+    tip_radius = max(0.0, min(tip_diameter / 2.0, max_radius))
+    angle = max(1.0, min(float(cone_angle), 179.0))
+    half_angle = math.radians(angle / 2.0)
+
+    if tip_radius >= max_radius - 1e-6:
+        return Part.makeCylinder(max_radius, height)
+
+    flank_height = (max_radius - tip_radius) / math.tan(half_angle)
+    flank_height = min(flank_height, max(height, 0.1))
+    z_transition = flank_height
+
+    p1 = App.Vector(tip_radius, 0, 0)
+    p2 = App.Vector(max_radius, 0, z_transition)
+    p3 = App.Vector(max_radius, 0, height)
+    p4 = App.Vector(0, 0, height)
+    p5 = App.Vector(0, 0, 0)
+
+    e1 = Part.makeLine(p1, p2)
+    e2 = Part.makeLine(p2, p3)
+    e3 = Part.makeLine(p3, p4)
+    e4 = Part.makeLine(p4, p5)
+    e5 = Part.makeLine(p5, p1)
+
+    wire = Part.Wire([e1, e2, e3, e4, e5])
+    face = Part.Face(wire)
+    return face.revolve(App.Vector(0, 0, 0), App.Vector(0, 0, 1), 360)
 
 
 class ToolShapeViewProvider:

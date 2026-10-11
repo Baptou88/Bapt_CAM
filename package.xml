@@ -29,6 +29,11 @@
       <subdirectory>./</subdirectory>
       <file>macros/HighlightCollisions.FCMacro</file>
     </macro>
+    <macro>
+      <name>HorizontalConnectedEdges</name>
+      <subdirectory>./</subdirectory>
+      <file>macros/HorizontalConnectedEdges.FCMacro</file>
+    </macro>
     <workbench>
       <classname>BaptWorkbench</classname>
       <subdirectory>./</subdirectory>

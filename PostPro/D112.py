@@ -1,3 +1,4 @@
+import FreeCAD as App
 from typing import Any
 
 import BasePostPro
@@ -16,7 +17,8 @@ class PostPro(BasePostPro.BasePostPro):
         self.labels: dict[str, int] = {}  # Dictionary to store label positions
 
     def writeHeader(self) -> str:
-        return "O0001\nG21 (mm)\nG90 (absolute programming)\nG40 (cutter radius compensation off)\nG80 (cancel canned cycle)\nG17 (XY plane selection)\nG54 (work coordinate system)\n"
+        filename = App.activeDocument().Label
+        return f"O0001 ({filename})\nG21 (mm)\nG90 (absolute programming)\nG40 (cutter radius compensation off)\nG80 (cancel canned cycle)\nG17 (XY plane selection)\nG54 (work coordinate system)\n"
 
     def coolantModeToCode(self, mode) -> str:
         if mode == "Off":
@@ -31,6 +33,7 @@ class PostPro(BasePostPro.BasePostPro):
     def transformGCode(self, gcode) -> str:
         lines: list[str] = gcode.split('\n')
         current_pos = {'X': 0.0, 'Y': 0.0, 'Z': 0.0}
+        coordonnee_abs = True  # Assuming absolute coordinates by default
 
         def circular_move(line: str, clockwise: bool = True):
 
@@ -46,13 +49,15 @@ class PostPro(BasePostPro.BasePostPro):
                             break
                         coord_str += c
                     if coord_str != '':
-
-                        if axis == 'I':
-                            cc_pos[axis] = current_pos['X'] + float(coord_str)
-                        elif axis == 'J':
-                            cc_pos[axis] = current_pos['Y'] + float(coord_str)
-                        elif axis == 'K':
-                            cc_pos[axis] = current_pos['Z'] + float(coord_str)
+                        if coordonnee_abs:
+                            if axis == 'I':
+                                cc_pos[axis] = current_pos['X'] + float(coord_str)
+                            elif axis == 'J':
+                                cc_pos[axis] = current_pos['Y'] + float(coord_str)
+                            elif axis == 'K':
+                                cc_pos[axis] = current_pos['Z'] + float(coord_str)
+                        else:
+                            cc_pos[axis] = float(coord_str)
 
             new_line = "G2 " if clockwise else "G3 "
 
@@ -99,7 +104,10 @@ class PostPro(BasePostPro.BasePostPro):
                             break
                         coord_str += c
                     if coord_str != '':
-                        current_pos[axis] = float(coord_str)
+                        if coordonnee_abs:
+                            current_pos[axis] = float(coord_str)
+                        else:
+                            current_pos[axis] += float(coord_str)
             return line
 
         retour = []
@@ -107,10 +115,16 @@ class PostPro(BasePostPro.BasePostPro):
             if lines[i].startswith(';'):
                 lines[i] = lines[i][1:]  # Remove the semicolon
                 lines[i] = self.writeComment(lines[i])
-            if lines[i].startswith(('G2', 'G02')):
+            elif lines[i].startswith(('G0', 'G00', 'G1', 'G01', 'X', 'Y', 'Z')):
+                lines[i] = linear_move(lines[i])
+            elif lines[i].startswith(('G2', 'G02')):
                 lines[i] = circular_move(lines[i], clockwise=True)
             elif lines[i].startswith(('G3', 'G03')):
                 lines[i] = circular_move(lines[i], clockwise=False)
+            elif lines[i].startswith('G90'):
+                coordonnee_abs = True
+            elif lines[i].startswith('G91'):
+                coordonnee_abs = False
             elif lines[i].endswith(':'):
                 # this is a label, memorize the name and the current position
                 label_name = lines[i][:-1]
@@ -149,26 +163,34 @@ class PostPro(BasePostPro.BasePostPro):
         return '\n'.join(retour)
 
     def writeComment(self, comment) -> str:
-        return f"({comment})"
+        return ''.join(f"( {line} )\n" for line in comment.split('\n') if line.strip() != '')
 
     def blockForm(self, stock) -> str:
         bb = stock.Shape.BoundBox
+        return self.writeComment(f"STOCK MIN X{format_float(bb.XMin)} Y{format_float(bb.YMin)} Z{format_float(bb.ZMin)}\nSTOCK MAX X{format_float(bb.XMax)} Y{format_float(bb.YMax)} Z{format_float(bb.ZMax)}")
         return self.writeComment(f"xmin: {format_float(bb.XMin)}, ymin: {format_float(bb.YMin)}, zmin: {format_float(bb.ZMin)}, xmax: {format_float(bb.XMax)}, ymax: {format_float(bb.YMax)}, zmax: {format_float(bb.ZMax)}")
 
     def toolChange(self, tool, cam_project) -> str:
         tool_id: Any | None = getattr(tool, 'Id', None)
+        tool_type: Any | None = getattr(tool, 'ToolType', None)
         spindle = getattr(tool, 'Speed', None).getValueAs("mm/min")  # FIXME Speed
         tool_name = getattr(tool, 'Label', None)
         tool_diameter = getattr(tool, 'Radius', None).getValueAs("mm") * 2
         comment = f'Changement d outil: {tool_name if tool_name else ""}, Diamètre: {format_float(tool_diameter)} mm'
-        return f"\nT{tool_id} D1\nM6\nS{spindle} M3\n{self.writeComment(comment)}\n"
+        # parametre AD doit etre le diametre de la fraise arrondi au nombre pair supereur: example 11.98 -> 12, 12.01 -> 14
+        AD = int(tool_diameter) + (int(tool_diameter) % 2)
+        if tool_type == "Fraise":
+            comment += '\n' + f'TOOL {tool_id} \"REAMER\" BL={getattr(tool, "Height", 100)} CD=0.2 D={format_float(tool_diameter)} FL=20 US=UM AD={AD} )'
+        elif tool_type == "Foret":
+            comment += '\n' + f'TOOL {tool_id} \"CENTER DRILL\" BD=12 BA=60 BL={getattr(tool, "Height", 100)} D={format_float(tool_diameter)} FL=20 US=UM AD={AD} A=60 AT={getattr(tool, "Point Angle", 118)} TIPL=10'
+        return f"\n{self.writeComment(comment)}\nT{tool_id} D1\nM6\nS{spindle} M3\n"
 
     def G81(self, obj) -> str:
 
-        return obj.GCode
+        return obj.Gcode
 
     def G83(self, obj) -> str:
-        return obj.GCode
+        return obj.Gcode
 
     def G84(self, obj) -> str:
-        return obj.GCode
+        return obj.Gcode

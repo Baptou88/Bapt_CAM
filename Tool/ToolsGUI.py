@@ -130,21 +130,29 @@ class ToolsTableModel(QtCore.QAbstractTableModel):
 
         # Définir la clé de tri en fonction de la colonne
         if column == 0:  # ID
-            def key(tool): return tool.id if tool.id is not None else 0
+            def key(tool):
+                return tool.id if tool.id is not None else 0
         elif column == 1:  # Nom
-            def key(tool): return tool.name.lower()
+            def key(tool):
+                return tool.name.lower()
         elif column == 2:  # Type
-            def key(tool): return tool.type.lower()
+            def key(tool):
+                return tool.type.lower()
         elif column == 3:  # Diamètre
-            def key(tool): return float(tool.diameter)
+            def key(tool):
+                return float(tool.diameter)
         elif column == 4:  # Longueur
-            def key(tool): return float(tool.length)
+            def key(tool):
+                return float(tool.length)
         elif column == 5:  # Nb dents
-            def key(tool): return int(tool.flutes)
+            def key(tool):
+                return int(tool.flutes)
         elif column == 6:  # Matériau
-            def key(tool): return tool.material.lower()
+            def key(tool):
+                return tool.material.lower()
         elif column == 7:  # Commentaire
-            def key(tool): return tool.comment.lower()
+            def key(tool):
+                return tool.comment.lower()
         else:
             return
 
@@ -182,7 +190,7 @@ class ToolDialog(QtGui.QDialog):
 
         # Type (combobox)
         self.type_combo = QtGui.QComboBox()
-        self.type_combo.addItems(["Fraise", "Fraise torique", "Foret", "Taraud", "Autre"])
+        self.type_combo.addItems(["Fraise", "Fraise torique", "Fraise conique", "Foret", "Taraud", "Autre"])
         if self.tool.type:
             index = self.type_combo.findText(self.tool.type)
             if index >= 0:
@@ -289,6 +297,26 @@ class ToolDialog(QtGui.QDialog):
         self.tap_widget.setLayout(self.tap_layout)
         self.specific_layout.addWidget(self.tap_widget)
 
+        # Layout pour les fraises coniques
+        self.conical_layout = QtGui.QFormLayout()
+        self.cone_angle_spin = QtGui.QDoubleSpinBox()
+        self.cone_angle_spin.setRange(1.0, 179.0)
+        self.cone_angle_spin.setSingleStep(0.5)
+        self.cone_angle_spin.setSuffix(" °")
+        self.cone_angle_spin.setValue(getattr(self.tool, "cone_angle", 90.0))
+        self.conical_layout.addRow("Angle du cône:", self.cone_angle_spin)
+
+        self.tip_diameter_spin = QtGui.QDoubleSpinBox()
+        self.tip_diameter_spin.setRange(0.0, 100.0)
+        self.tip_diameter_spin.setSingleStep(0.1)
+        self.tip_diameter_spin.setSuffix(" mm")
+        self.tip_diameter_spin.setValue(getattr(self.tool, "tip_diameter", 0.0))
+        self.conical_layout.addRow("Diamètre de pointe:", self.tip_diameter_spin)
+
+        self.conical_widget = QtGui.QWidget()
+        self.conical_widget.setLayout(self.conical_layout)
+        self.specific_layout.addWidget(self.conical_widget)
+
         layout.addWidget(self.specific_group)
 
         # Boutons
@@ -311,6 +339,7 @@ class ToolDialog(QtGui.QDialog):
         self.drill_widget.setVisible(False)
         self.torus_widget.setVisible(False)
         self.tap_widget.setVisible(False)
+        self.conical_widget.setVisible(False)
 
         # Afficher uniquement le widget pertinent pour le type d'outil sélectionné
         if tool_type == "Foret":
@@ -324,6 +353,10 @@ class ToolDialog(QtGui.QDialog):
         elif tool_type == "Taraud":
             App.Console.PrintMessage("Affichage des paramètres pour Taraud\n")
             self.tap_widget.setVisible(True)
+            self.specific_group.setVisible(True)
+        elif tool_type == "Fraise conique":
+            App.Console.PrintMessage("Affichage des paramètres pour Fraise conique\n")
+            self.conical_widget.setVisible(True)
             self.specific_group.setVisible(True)
         else:
             # Masquer le groupe entier si aucun paramètre spécifique n'est applicable
@@ -345,6 +378,8 @@ class ToolDialog(QtGui.QDialog):
         self.tool.point_angle = self.point_angle_spin.value()
         self.tool.torus_radius = self.torus_radius_spin.value()
         self.tool.thread_pitch = self.thread_pitch_spin.value()
+        self.tool.cone_angle = self.cone_angle_spin.value()
+        self.tool.tip_diameter = self.tip_diameter_spin.value()
 
         # Vitesse et avance
         self.tool.speed = self.speed_spin.value()
@@ -354,7 +389,12 @@ class ToolDialog(QtGui.QDialog):
         tb = get_tool_repository()
         tool = tb.update_tool(self.tool) if self.tool.id else tb.add_tool(self.tool)
         status = (tool is not None)
-        App.Console.PrintMessage(f"Outil enregistré {status} avec les paramètres spécifiques: Angle={self.tool.point_angle}, Rayon={self.tool.torus_radius}, Pas={self.tool.thread_pitch}\n")
+        App.Console.PrintMessage(
+            f"Outil enregistré {status} avec les paramètres spécifiques: "
+            f"Angle={self.tool.point_angle}, Rayon={self.tool.torus_radius}, "
+            f"Pas={self.tool.thread_pitch}, AngleCône={self.tool.cone_angle}, "
+            f"ØPointe={self.tool.tip_diameter}\n"
+        )
 
         # super(ToolDialog, self).accept()
         Gui.Control.closeDialog()
@@ -609,6 +649,27 @@ class ToolTaskPanel:
         self.pointAngleLabel.setVisible(False)
         self.pointAngleSpin.setVisible(False)
 
+        # Paramètres coniques (visible seulement pour fraise conique)
+        self.coneAngleSpin = QtGui.QDoubleSpinBox()
+        self.coneAngleSpin.setRange(1.0, 179.0)
+        self.coneAngleSpin.setSingleStep(0.5)
+        self.coneAngleSpin.setSuffix(" °")
+        self.coneAngleSpin.setValue(90.0)
+        self.coneAngleLabel = QtGui.QLabel("Angle du cône:")
+        self.toolLayout.addRow(self.coneAngleLabel, self.coneAngleSpin)
+        self.coneAngleLabel.setVisible(False)
+        self.coneAngleSpin.setVisible(False)
+
+        self.tipDiameterSpin = QtGui.QDoubleSpinBox()
+        self.tipDiameterSpin.setRange(0.0, 100.0)
+        self.tipDiameterSpin.setSingleStep(0.1)
+        self.tipDiameterSpin.setSuffix(" mm")
+        self.tipDiameterSpin.setValue(0.0)
+        self.tipDiameterLabel = QtGui.QLabel("Diamètre de pointe:")
+        self.toolLayout.addRow(self.tipDiameterLabel, self.tipDiameterSpin)
+        self.tipDiameterLabel.setVisible(False)
+        self.tipDiameterSpin.setVisible(False)
+
         # champ d'edition Speed
         self.speed = QtGui.QDoubleSpinBox()
         self.speed = BQantitySpinBox.BQuantitySpinBox(self.obj, "Tool.Speed")
@@ -635,6 +696,11 @@ class ToolTaskPanel:
         is_drill = (tool_type == "Foret")
         self.pointAngleLabel.setVisible(is_drill)
         self.pointAngleSpin.setVisible(is_drill)
+        is_conical = (tool_type == "Fraise conique")
+        self.coneAngleLabel.setVisible(is_conical)
+        self.coneAngleSpin.setVisible(is_conical)
+        self.tipDiameterLabel.setVisible(is_conical)
+        self.tipDiameterSpin.setVisible(is_conical)
 
     def onToolComboBoxChanged(self):
 
@@ -658,6 +724,10 @@ class ToolTaskPanel:
             self.torusRadiusSpin.setValue(toolObj.TorusRadius)
         if hasattr(toolObj, "PointAngle"):
             self.pointAngleSpin.setValue(toolObj.PointAngle)
+        if hasattr(toolObj, "ConeAngle"):
+            self.coneAngleSpin.setValue(toolObj.ConeAngle)
+        if hasattr(toolObj, "TipDiameter"):
+            self.tipDiameterSpin.setValue(toolObj.TipDiameter)
 
     def selectTool(self):
         """Ouvre le dialogue de sélection d'outil"""
@@ -680,7 +750,8 @@ class ToolTaskPanel:
             new_tool = tool_utils.create_tool_obj(
                 sel.id, sel.name, sel.diameter, sel.speed, sel.feed,
                 tool_type=sel.type, torus_radius=sel.torus_radius,
-                length=sel.length, point_angle=sel.point_angle
+                length=sel.length, point_angle=sel.point_angle,
+                cone_angle=sel.cone_angle, tip_diameter=sel.tip_diameter
             )
             groupTools.addObject(new_tool)
             self.obj.Tool = new_tool
@@ -703,6 +774,10 @@ class ToolTaskPanel:
                 current_tool.TorusRadius = sel.torus_radius
             if hasattr(current_tool, "PointAngle"):
                 current_tool.PointAngle = sel.point_angle
+            if hasattr(current_tool, "ConeAngle"):
+                current_tool.ConeAngle = sel.cone_angle
+            if hasattr(current_tool, "TipDiameter"):
+                current_tool.TipDiameter = sel.tip_diameter
 
         # Mettre à jour l'UI avec les données sélectionnées
         self._updateToolUI(sel)
@@ -721,6 +796,8 @@ class ToolTaskPanel:
         self._updateSpecificFieldsVisibility(sel.type)
         self.torusRadiusSpin.setValue(sel.torus_radius)
         self.pointAngleSpin.setValue(sel.point_angle)
+        self.coneAngleSpin.setValue(sel.cone_angle)
+        self.tipDiameterSpin.setValue(sel.tip_diameter)
 
     def initValues(self):
 
@@ -739,6 +816,10 @@ class ToolTaskPanel:
                 self.torusRadiusSpin.setValue(tool.TorusRadius)
             if hasattr(tool, "PointAngle"):
                 self.pointAngleSpin.setValue(tool.PointAngle)
+            if hasattr(tool, "ConeAngle"):
+                self.coneAngleSpin.setValue(tool.ConeAngle)
+            if hasattr(tool, "TipDiameter"):
+                self.tipDiameterSpin.setValue(tool.TipDiameter)
 
     def initToolComboBox(self):
         '''populate tool combo box'''
@@ -769,6 +850,8 @@ class ToolTaskPanel:
         self.diameter.valueChanged.connect(lambda: self.updateToolDiameter())
         self.torusRadiusSpin.valueChanged.connect(lambda: self.updateTorusRadius())
         self.pointAngleSpin.valueChanged.connect(lambda: self.updatePointAngle())
+        self.coneAngleSpin.valueChanged.connect(lambda: self.updateConeAngle())
+        self.tipDiameterSpin.valueChanged.connect(lambda: self.updateTipDiameter())
         self.toolComboBox.currentTextChanged.connect(lambda: self.onToolComboBoxChanged())
 
     def updateToolDiameter(self):
@@ -797,6 +880,16 @@ class ToolTaskPanel:
         if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
             if hasattr(self.obj.Tool, "PointAngle"):
                 self.obj.Tool.PointAngle = self.pointAngleSpin.value()
+
+    def updateConeAngle(self):
+        if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
+            if hasattr(self.obj.Tool, "ConeAngle"):
+                self.obj.Tool.ConeAngle = self.coneAngleSpin.value()
+
+    def updateTipDiameter(self):
+        if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
+            if hasattr(self.obj.Tool, "TipDiameter"):
+                self.obj.Tool.TipDiameter = self.tipDiameterSpin.value()
 
     def getForm(self):
         return self.form

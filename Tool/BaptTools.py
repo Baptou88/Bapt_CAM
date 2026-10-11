@@ -9,7 +9,8 @@ class Tool:
     COOLANT_MIST = 2
 
     def __init__(self, id=None, name="", type="", diameter=0.0, length=0.0, flutes=0, material="", comment="",
-                 point_angle=118.0, torus_radius=0.0, thread_pitch=0.0, speed=0.0, feed=0.0, coolant=0):
+                 point_angle=118.0, torus_radius=0.0, thread_pitch=0.0, cone_angle=90.0,
+                 tip_diameter=0.0, speed=0.0, feed=0.0, coolant=0):
         self.id = id
         self.name = name
         self.type = type
@@ -23,6 +24,8 @@ class Tool:
         self.point_angle = point_angle  # Angle de pointe pour les forets (en degrés)
         self.torus_radius = torus_radius  # Rayon du tore pour les fraises toriques (en mm)
         self.thread_pitch = thread_pitch  # Pas pour les tarauds (en mm)
+        self.cone_angle = cone_angle  # Angle total pour les fraises coniques (en degrés)
+        self.tip_diameter = tip_diameter  # Diamètre de pointe des fraises coniques (en mm)
 
         self.speed = speed  # Vitesse de coupe (en rpm)
         self.feed = feed    # Avance (en mm/min)
@@ -42,6 +45,8 @@ class Tool:
             'point_angle': self.point_angle,
             'torus_radius': self.torus_radius,
             'thread_pitch': self.thread_pitch,
+            'cone_angle': self.cone_angle,
+            'tip_diameter': self.tip_diameter,
             'speed': self.speed,
             'feed': self.feed,
             'coolant': self.coolant
@@ -62,6 +67,8 @@ class Tool:
             point_angle=data.get('point_angle', 118.0),
             torus_radius=data.get('torus_radius', 0.0),
             thread_pitch=data.get('thread_pitch', 0.0),
+            cone_angle=data.get('cone_angle', 90.0),
+            tip_diameter=data.get('tip_diameter', 0.0),
             speed=data.get('speed', 0.0),
             feed=data.get('feed', 0.0),
             coolant=data.get('coolant', 0)

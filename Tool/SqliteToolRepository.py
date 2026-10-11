@@ -42,6 +42,8 @@ class SqliteToolRepository(ToolRepository):
                 point_angle REAL DEFAULT 118.0,
                 torus_radius REAL DEFAULT 0.0,
                 thread_pitch REAL DEFAULT 0.0,
+                cone_angle REAL DEFAULT 90.0,
+                tip_diameter REAL DEFAULT 0.0,
                 speed REAL DEFAULT 0.0,
                 feed REAL DEFAULT 0.0,
                 coolant INTEGER DEFAULT 0
@@ -63,6 +65,16 @@ class SqliteToolRepository(ToolRepository):
                 cursor.execute("SELECT thread_pitch FROM tools LIMIT 1")
             except sqlite3.OperationalError:
                 cursor.execute("ALTER TABLE tools ADD COLUMN thread_pitch REAL DEFAULT 0.0")
+
+            try:
+                cursor.execute("SELECT cone_angle FROM tools LIMIT 1")
+            except sqlite3.OperationalError:
+                cursor.execute("ALTER TABLE tools ADD COLUMN cone_angle REAL DEFAULT 90.0")
+
+            try:
+                cursor.execute("SELECT tip_diameter FROM tools LIMIT 1")
+            except sqlite3.OperationalError:
+                cursor.execute("ALTER TABLE tools ADD COLUMN tip_diameter REAL DEFAULT 0.0")
 
             try:
                 cursor.execute("SELECT speed FROM tools LIMIT 1")
@@ -87,7 +99,7 @@ class SqliteToolRepository(ToolRepository):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch, speed, feed, coolant FROM tools")
+        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch, cone_angle, tip_diameter, speed, feed, coolant FROM tools")
         rows = cursor.fetchall()
 
         tools = []
@@ -104,9 +116,11 @@ class SqliteToolRepository(ToolRepository):
                 point_angle=row[8],
                 torus_radius=row[9],
                 thread_pitch=row[10],
-                speed=row[11],
-                feed=row[12],
-                coolant=row[13] or 0
+                cone_angle=row[11],
+                tip_diameter=row[12],
+                speed=row[13],
+                feed=row[14],
+                coolant=row[15] or 0
             )
             tools.append(tool)
 
@@ -118,7 +132,7 @@ class SqliteToolRepository(ToolRepository):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch, speed, feed, coolant FROM tools WHERE id=?", (tool_id,))
+        cursor.execute("SELECT id, name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch, cone_angle, tip_diameter, speed, feed, coolant FROM tools WHERE id=?", (tool_id,))
         row = cursor.fetchone()
 
         if row:
@@ -134,9 +148,11 @@ class SqliteToolRepository(ToolRepository):
                 point_angle=row[8],
                 torus_radius=row[9],
                 thread_pitch=row[10],
-                speed=row[11],
-                feed=row[12],
-                coolant=row[13] or 0
+                cone_angle=row[11],
+                tip_diameter=row[12],
+                speed=row[13],
+                feed=row[14],
+                coolant=row[15] or 0
             )
             conn.close()
             return tool
@@ -150,10 +166,11 @@ class SqliteToolRepository(ToolRepository):
         cursor = conn.cursor()
 
         cursor.execute('''
-        INSERT INTO tools (name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch, speed, feed, coolant)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tools (name, type, diameter, length, flutes, material, comment, point_angle, torus_radius, thread_pitch, cone_angle, tip_diameter, speed, feed, coolant)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (tool.name, tool.type, tool.diameter, tool.length, tool.flutes, tool.material, tool.comment,
-              tool.point_angle, tool.torus_radius, tool.thread_pitch, tool.speed, tool.feed, tool.coolant))
+              tool.point_angle, tool.torus_radius, tool.thread_pitch, tool.cone_angle, tool.tip_diameter,
+              tool.speed, tool.feed, tool.coolant))
 
         # Récupérer l'ID généré
         tool.id = cursor.lastrowid
@@ -169,10 +186,11 @@ class SqliteToolRepository(ToolRepository):
 
         cursor.execute('''
         UPDATE tools
-        SET name=?, type=?, diameter=?, length=?, flutes=?, material=?, comment=?, point_angle=?, torus_radius=?, thread_pitch=?, speed=?, feed=?, coolant=?
+          SET name=?, type=?, diameter=?, length=?, flutes=?, material=?, comment=?, point_angle=?, torus_radius=?, thread_pitch=?, cone_angle=?, tip_diameter=?, speed=?, feed=?, coolant=?
         WHERE id=?
         ''', (tool.name, tool.type, tool.diameter, tool.length, tool.flutes, tool.material, tool.comment,
-              tool.point_angle, tool.torus_radius, tool.thread_pitch, tool.speed, tool.feed, tool.coolant, tool.id))
+              tool.point_angle, tool.torus_radius, tool.thread_pitch, tool.cone_angle, tool.tip_diameter,
+              tool.speed, tool.feed, tool.coolant, tool.id))
 
         conn.commit()
         conn.close()

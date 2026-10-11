@@ -6,6 +6,7 @@ import MatGui
 import Materials
 
 import BaptUtilities
+
 from utils.PointSelectionObserver import PointSelectionObserver
 from utils.BQuantitySpinBox import BQuantitySpinBox
 

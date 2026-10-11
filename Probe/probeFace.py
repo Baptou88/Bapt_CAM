@@ -4,7 +4,6 @@ from Op.BaseOp import baseOp, baseOpViewProviderProxy
 from PySide import QtCore, QtGui
 import BaptUtilities
 import Part
-from Tool import ToolSelectorDialog
 from Tool.ToolsGUI import ToolTaskPanel
 from utils import GcodeWriter
 from utils.BQuantitySpinBox import BQuantitySpinBox
@@ -28,7 +27,6 @@ class ProbeFace(baseOp):
         if App.ActiveDocument.Restoring:
             return
 
-        shape = Part.Shape()
         gcodeWriter = GcodeWriter.GcodeWriter()
 
         if not obj.Face or not obj.Origin or not obj.Direction:
