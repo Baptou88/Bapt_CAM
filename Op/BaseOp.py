@@ -9,6 +9,7 @@ from Op.utils import CoolantMode
 from PySide import QtCore, QtGui
 from pivy import coin  # type: ignore
 import math
+import re
 
 from utils import Log
 
@@ -17,6 +18,10 @@ if DEBUG:
     Log.setLevel(Log.Level.DEBUG, Log.thisModule())
 else:
     Log.setLevel(Log.Level.INFO, Log.thisModule())
+
+
+
+REGEX_VAR = rf"{BaptPreferences().regex_var}"
 
 
 class baseOp:
@@ -399,6 +404,12 @@ class baseOpViewProviderProxy:
 
     def updateData(self, fp, prop):
         if prop == "Gcode":
+            self.updatePathGeometry(fp)
+            return
+        
+        li = re.findall(REGEX_VAR, fp.Gcode)
+        App.Console.PrintMessage(f"Found variables in Gcode: {li}\n")
+        if prop in li:
             self.updatePathGeometry(fp)
             return
 
@@ -976,7 +987,25 @@ class baseOpViewProviderProxy:
                 ln = self.lines[self.line]
                 # App.Console.PrintMessage("Processing line {}: {}\n".format(self.line, ln))
                 self.line += 1
+
+                def replace_var(match):
+                    var_name = match.group(1)
+                    App.Console.PrintMessage(f"Looking for variable {var_name} in {self.Object}\n")
+                    if hasattr(self.Object, var_name):
+                        return str(getattr(self.Object, var_name))
+                    # App.Console.PrintMessage(f"Looking for variable {var_name} in {self.Object.Proxy}\n")
+                    # if hasattr(self.Object.Proxy, var_name):
+                    #     return str(getattr(self.Object.Proxy, var_name))
+                    App.Console.PrintMessage(f"Variable {var_name} not found\n")
+                    return "<undefined>"
+
+                ln = re.sub(REGEX_VAR, replace_var, ln)
                 up = ln.upper()
+
+                # parse the line
+                # ex: 'G54 G0 X10 Y20 Z-5 F100' -> ['G54', 'G0', ['X',10, 'Y',20, 'Z-5', 'F100']
+                # tokens = ln.split()
+
                 # consider only movement commands G0/G00 and G1/G01
                 if up.startswith(("G0", "G00")):
                     new = parse_xyz(ln, self.cur, self.absinc_mode)
@@ -1023,6 +1052,14 @@ class baseOpViewProviderProxy:
                     # probe cycle - treat as linear move to target (ignoring success/fail)
                     new = parse_xyz(ln, self.cur, self.absinc_mode)
                     append_segment(feed_coords, feed_idx, self.cur, new)
+                    self.cur = new
+                elif up.startswith("G155"):
+                    # probe cycle - treat as linear move to target (ignoring success/fail)
+                    current_pos = self.cur
+                    new = parse_xyz(ln, self.cur, self.absinc_mode)
+                    append_segment(feed_coords, feed_idx, self.cur, new)
+                    append_segment(feed_coords, feed_idx, new, current_pos)
+
                     self.cur = new
 
                 elif up.startswith(("G2", "G02", "G3", "G03")):

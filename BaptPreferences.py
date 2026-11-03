@@ -24,6 +24,7 @@ class BaptPreferences:
         self.DefaultRapidColor = (1.0, 0.0, 0.0)
         self.DefaultFeedColor = (0.0, 1.0, 0.0)
         self.debugGcode: bool = False
+        self.regex_var = r"%([^%]+)%"
 
         # Load settings
         self.preferences = App.ParamGet("User parameter:BaseApp/Preferences/Mod/Bapt")
@@ -58,6 +59,7 @@ class BaptPreferences:
 
         self.preferences.SetBool("DebugGcode", self.debugGcode)
 
+        self.preferences.SetString("RegexVar", rf"{self.regex_var}")
         self.Dirty = False
 
         return True
@@ -90,6 +92,8 @@ class BaptPreferences:
         g = (DefaultFeedColor >> 8) & 0xFF
         b = DefaultFeedColor & 0xFF
         self.DefaultFeedColor = (r / 255.0, g / 255.0, b / 255.0)
+
+        self.regex_var = rf"{self.preferences.GetString("RegexVar", r"%([^%]+)%")}"
         return True
 
     def getToolsDbPaths(self) -> list:
@@ -244,6 +248,14 @@ class BaptPreferencesPage(QtGui.QWidget):
         color_group.setLayout(color_layout)
         layout.addWidget(color_group)
 
+        self.regexVar = QtGui.QLineEdit()
+
+        regex_var_layout = QtGui.QHBoxLayout()
+        regex_var_label = QtGui.QLabel("Regex des variables:")
+        regex_var_layout.addWidget(regex_var_label)
+        regex_var_layout.addWidget(self.regexVar)
+        layout.addLayout(regex_var_layout)
+
         # Ajouter un espace extensible en bas
         layout.addStretch()
 
@@ -283,6 +295,7 @@ class BaptPreferencesPage(QtGui.QWidget):
         self.prefs.DefaultRapidColor = self.rapidColor
         self.prefs.DefaultFeedColor = self.feedColor
         self.prefs.debugGcode = self.debug_gcode_checkbox.isChecked()
+        self.prefs.regex_var = self.regexVar.text()
 
         self.prefs.saveSettings()
 
@@ -300,6 +313,8 @@ class BaptPreferencesPage(QtGui.QWidget):
 
         self.rapidColorButton.setStyleSheet(f"background-color: rgb({int(self.rapidColor[0] * 255)}, {int(self.rapidColor[1] * 255)}, {int(self.rapidColor[2] * 255)})")
         self.feedColorButton.setStyleSheet(f"background-color: rgb({int(self.feedColor[0] * 255)}, {int(self.feedColor[1] * 255)}, {int(self.feedColor[2] * 255)})")
+
+        self.regexVar.setText(self.prefs.regex_var)
 
     def _refreshDbTable(self):
         """Rafraîchit le tableau des bases de données depuis les préférences"""

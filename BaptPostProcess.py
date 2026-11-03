@@ -5,6 +5,7 @@ Génère un programme G-code à partir des opérations du projet CAM
 """
 import importlib
 import os
+import re
 import FreeCAD as App  # type: ignore
 from PySide import QtGui, QtCore  # type: ignore
 
@@ -15,6 +16,8 @@ from BasePostPro import BasePostPro
 from Op import AdaptativeOp, BaseOp, DrillOp, OpContournage, OpSurfacage, PocketOp, SpiraleOp
 from Op.PathOp import pathOp
 import BaptUtilities as BaptUtils
+
+REGEX_VAR = rf"{BaptPreferences().regex_var}"
 
 
 def isOp(obj) -> bool:
@@ -100,16 +103,31 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             gcode_lines.append(coolant_change_code)
             current_Coolant = coolantMode
 
+        Gcode = getattr(obj, 'Gcode', '')
+
+        def replace_var(match):
+            var_name = match.group(1)
+            App.Console.PrintMessage(f"Looking for variable {var_name} in {obj}\n")
+            if hasattr(obj, var_name):
+                return str(getattr(obj, var_name))
+            # App.Console.PrintMessage(f"Looking for variable {var_name} in {self.Object.Proxy}\n")
+            # if hasattr(self.Object.Proxy, var_name):
+            #     return str(getattr(self.Object.Proxy, var_name))
+            App.Console.PrintMessage(f"Variable {var_name} not found\n")
+            return "<undefined>"
+
+        Gcode = re.sub(REGEX_VAR, replace_var, Gcode)
+
         # --- Surfacage ---
         if isinstance(obj.Proxy, OpSurfacage.Surfacage) and hasattr(obj, 'Shape'):
 
             gcode_lines.append(Postpro.writeComment(f"Surfacage: {obj.Label}"))
 
-            gcode_lines.append(obj.Gcode)
+            gcode_lines.append(Gcode)
 
         # --- Contournage ---
         elif isinstance(obj.Proxy, OpContournage.ContournageCycle) and hasattr(obj, 'Shape'):
-            transformed = Postpro.transformGCode(obj.Gcode)
+            transformed = Postpro.transformGCode(Gcode)
             gcode_lines.append(Postpro.writeComment(f"Contournage operation: {obj.Label}"))
 
             gcode_lines.append(transformed)
@@ -141,7 +159,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             elif cycle == "DeepHole":
                 commentaire = Postpro.writeComment("Cycle: DeepHole - perçage profond")
                 gcode_lines.append(commentaire)
-                gcode_lines.append(Postpro.transformGCode(obj.Gcode))
+                gcode_lines.append(Postpro.transformGCode(Gcode))
 
             elif cycle == "Tapping":
                 commentaire = Postpro.writeComment("Cycle: G84 - Taraudage")
@@ -167,23 +185,23 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             elif cycle == "Contournage":
                 commentaire = Postpro.writeComment("Cycle: Contournage personnalisé")
                 gcode_lines.append(commentaire)
-                gcode_lines.append(Postpro.transformGCode(obj.Gcode))
+                gcode_lines.append(Postpro.transformGCode(Gcode))
 
         elif isinstance(obj.Proxy, pathOp):
             gcode_lines.append(Postpro.writeComment(f"Path operation: {obj.Label}"))
-            gcode_lines.append(Postpro.transformGCode(obj.Gcode))
+            gcode_lines.append(Postpro.transformGCode(Gcode))
 
         elif isinstance(obj.Proxy, AdaptativeOp.AdaptativeOp):
             gcode_lines.append(Postpro.writeComment(f"Adaptative operation: {obj.Label}"))
-            gcode_lines.append(Postpro.transformGCode(obj.Gcode))
+            gcode_lines.append(Postpro.transformGCode(Gcode))
 
         elif isinstance(obj.Proxy, PocketOp.PocketOperation):
             gcode_lines.append(Postpro.writeComment(f"Pocket operation: {obj.Label}"))
-            gcode_lines.append(Postpro.transformGCode(obj.Gcode))
+            gcode_lines.append(Postpro.transformGCode(Gcode))
 
         elif isinstance(obj.Proxy, SpiraleOp.SpiraleOp):
             gcode_lines.append(Postpro.writeComment(f"Spirale operation: {obj.Label}"))
-            gcode_lines.append(Postpro.transformGCode(obj.Gcode))
+            gcode_lines.append(Postpro.transformGCode(Gcode))
 
         else:
             gcode_lines.append('M30')  # code de fin de programme

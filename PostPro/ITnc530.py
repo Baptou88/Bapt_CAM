@@ -17,7 +17,7 @@ class PostPro(BasePostPro):
     def writeHeader(self):
         header = ""
         header += "BEGIN PGM ITNC530 MM\n"
-        header += "CYCLE DEF 7\n"
+        # header += "CYCLE DEF 7\n"
 
         return header
 
@@ -32,8 +32,8 @@ class PostPro(BasePostPro):
 
     def blockForm(self, stock):
         bb = stock.Shape.BoundBox
-        blk = f"BLK FORM 01 X{bb.XMin:.3f} Y{bb.YMin:.3f} Z{bb.ZMin:.3f}\n"
-        blk += f"BLK FORM 02 X{bb.XMax:.3f} Y{bb.YMax:.3f} Z{bb.ZMax:.3f}\n"
+        blk = f"BLK FORM 01 X{bb.XMin:+.3f} Y{bb.YMin:+.3f} Z{bb.ZMin:+.3f}\n"
+        blk += f"BLK FORM 02 X{bb.XMax:+.3f} Y{bb.YMax:+.3f} Z{bb.ZMax:+.3f}\n"
         return blk
 
     def transformGCode(self, gcode):
@@ -107,15 +107,15 @@ class PostPro(BasePostPro):
                     if coord_str != '':
 
                         if axis == 'I':
-                            cc_pos[axis] = current_pos['X'] + float(coord_str)
+                            cc_pos['X'] = current_pos['X'] + float(coord_str)
                         elif axis == 'J':
-                            cc_pos[axis] = current_pos['Y'] + float(coord_str)
+                            cc_pos['Y'] = current_pos['Y'] + float(coord_str)
                         elif axis == 'K':
-                            cc_pos[axis] = current_pos['Z'] + float(coord_str)
+                            cc_pos['Z'] = current_pos['Z'] + float(coord_str)
             new_line = "CC "
             for axis in cc_pos:
                 if cc_pos[axis] is not None:
-                    new_line += f"{axis}{cc_pos[axis]:.3f} "
+                    new_line += f"{axis}{cc_pos[axis]:+.3f} "
             new_line += "\nC "
             for axis in ['X', 'Y', 'Z']:
                 if axis in line:
@@ -128,7 +128,7 @@ class PostPro(BasePostPro):
                         coord_str += c
                     if coord_str != '':
                         current_pos[axis] = float(coord_str)
-                        new_line += f"{axis}{current_pos[axis]:.3f} "
+                        new_line += f"{axis}{current_pos[axis]:+.3f} "
             new_line += f"{current_move} "
             if 'F' in line:
                 parts = line.split('F')
@@ -204,7 +204,7 @@ class PostPro(BasePostPro):
         tool_id = getattr(tool, 'Id', None)
         spindle = getattr(tool, 'Speed', None).Value
         Feed = getattr(tool, 'Feed', None).Value
-        return f"TOOL CALL {tool_id} Z S{spindle} DL+0 DR+0\nL R0 F{format_float(Feed)} M3\n"
+        return f"TOOL CALL {tool_id} Z S{spindle:.1f} DL+0 DR+0\nL R0 F{format_float(Feed)} M3\n"
 
     def G81(self, obj):
         geom = obj.DrillGeometry
@@ -213,18 +213,48 @@ class PostPro(BasePostPro):
             points = geom.DrillPositions
         safe_z = getattr(obj, 'SafeHeight', 5.0).Value
         final_z = getattr(obj, 'FinalDepth', -5.0).Value
+        Feed = getattr(obj.tool, 'Feed', None).Value
 
         gcode_lines = ""
         gcode_lines += (f"CYCL DEF 200 PERCAGE \n\
-            Q200={safe_z};DISTANCE D'APPROCHE\n\
-            Q201={final_z};PROFONDEUR\n\
-            Q206=250;AVANCE PLONGÉE PROF.\n\
-            Q202={math.fabs(final_z)};PROFONDEUR DE PASSE\n\
-            Q210=0;TEMPO. EN HAUT\n\
-            Q203=+0;COORD. SURFACE PIÈCE\n\
-            Q204=100;SAUT DE BRID\n\
-            Q211=0.1;TEMPO. AU FOND\n")
+            Q200={safe_z};DISTANCE D'APPROCHE ~\n\
+            Q201={final_z};PROFONDEUR ~\n\
+            Q206={Feed};AVANCE PLONGÉE PROF. ~\n\
+            Q202={math.fabs(final_z)};PROFONDEUR DE PASSE ~\n\
+            Q210=0;TEMPO. EN HAUT ~\n\
+            Q203=+0;COORD. SURFACE PIÈCE ~\n\
+            Q204=100;SAUT DE BRID ~\n\
+            Q211={getattr(obj, 'DwellTime', 0.1).Value};TEMPO. AU FOND ~\n")
         for pt in points:
-            gcode_lines += (f"L X{pt.x:.3f} Y{pt.y:.3f} FMAX M99\n")
+            gcode_lines += (f"L X{pt.x:+.3f} Y{pt.y:+.3f} FMAX M99\n")
+
+        return gcode_lines
+
+    def G83(self, obj):
+        geom = obj.DrillGeometry
+        points = []
+        if geom and hasattr(geom, 'DrillPositions'):
+            points = geom.DrillPositions
+        safe_z = getattr(obj, 'SafeHeight', 5.0).Value
+        final_z = getattr(obj, 'FinalDepth', -5.0).Value
+        Feed = getattr(obj.tool, 'Feed', None).Value
+
+        gcode_lines = ""
+        gcode_lines += (f"CYCL DEF 203 PERCAGE \n\
+            Q200={safe_z};DISTANCE D'APPROCHE ~\n\
+            Q201={final_z};PROFONDEUR ~\n\
+            Q206={Feed};AVANCE PLONGÉE PROF. ~\n\
+            Q202={math.fabs(final_z)};PROFONDEUR DE PASSE ~\n\
+            Q210=0;TEMPO. EN HAUT ~\n\
+            Q203=+0;COORD. SURFACE PIÈCE ~\n\
+            Q204=100;SAUT DE BRID ~\n\
+            Q212=0.2;VALEUR REDUCTION ~\n\
+            Q213=3;BRISE COPEAUX ~\n\
+            Q205=3;PROF. PASSE MIN. ~\n\
+            Q211={getattr(obj, 'DwellTime', 0.1).Value};TEMPO. AU FOND ~\n\
+            Q208=500;AVANCE RETRAIT ~\n\
+            Q256=0.2;RETR. BRISE-COPAUX ~\n")
+        for pt in points:
+            gcode_lines += (f"L X{pt.x:+.3f} Y{pt.y:+.3f} FMAX M99\n")
 
         return gcode_lines
