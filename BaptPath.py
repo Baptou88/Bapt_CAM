@@ -2,6 +2,7 @@
 from collections import deque
 import math
 import sys
+from BaptPreferences import BaptPreferences
 from BaptUtilities import find_cam_project, getIconPath
 import FreeCAD as App
 import FreeCADGui
@@ -15,6 +16,7 @@ import Mesh
 import MeshPart
 from utils import Log
 
+REGEX_VAR = rf"{BaptPreferences().regex_var}"
 
 """
 Gcode  | Heidenhain | Description
@@ -85,6 +87,11 @@ class GCodeHighlighter(QtGui.QSyntaxHighlighter):
         self.fmt_comment.setForeground(QtGui.QColor("gray"))
         self.rule_comment = QtCore.QRegularExpression(r";.*|(\(.*\))")
 
+        # Format expressions (orange)
+        self.fmt_expr = QtGui.QTextCharFormat()
+        self.fmt_expr.setForeground(QtGui.QColor("orange"))
+        self.rule_expr = QtCore.QRegularExpression(rf"{REGEX_VAR}")
+
     def _apply_rule(self, text, regex, fmt):
         it = regex.globalMatch(text)
         while it.hasNext():
@@ -100,6 +107,8 @@ class GCodeHighlighter(QtGui.QSyntaxHighlighter):
         self._apply_rule(text, self.rule_g1, self.fmt_g1)
         # Commentaires
         self._apply_rule(text, self.rule_comment, self.fmt_comment)
+        # Expressions (variables)
+        self._apply_rule(text, self.rule_expr, self.fmt_expr)
 
 
 class GcodeEditorTaskPanel:

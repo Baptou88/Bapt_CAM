@@ -107,14 +107,10 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
 
         def replace_var(match):
             var_name = match.group(1)
-            App.Console.PrintMessage(f"Looking for variable {var_name} in {obj}\n")
-            if hasattr(obj, var_name):
-                return str(getattr(obj, var_name))
-            # App.Console.PrintMessage(f"Looking for variable {var_name} in {self.Object.Proxy}\n")
-            # if hasattr(self.Object.Proxy, var_name):
-            #     return str(getattr(self.Object.Proxy, var_name))
-            App.Console.PrintMessage(f"Variable {var_name} not found\n")
-            return "<undefined>"
+            attr = property.getProperty(obj, var_name)
+            if attr is not None:
+                return str(attr)
+            return var_name
 
         Gcode = re.sub(REGEX_VAR, replace_var, Gcode)
 

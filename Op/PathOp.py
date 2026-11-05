@@ -8,18 +8,18 @@ from Op.BaseOp import baseOp, baseOpViewProviderProxy
 
 class pathOp(baseOp):
     def __init__(self, obj):
-        App.Console.PrintMessage("Initializing path object proxy for: {}\n".format(__class__.__name__))
         super().__init__(obj)
         self.Type = "Path"
 
         self.installToolProp(obj)
-
+        self.installAttachment(obj)
         obj.Proxy = self
 
     def installAttachment(self, obj):
-        obj.addProperty("App::PropertyPlacement", "Placement", "Base", "Description for tooltip")
+        if not hasattr(obj, "Placement"):
+            obj.addProperty("App::PropertyPlacement", "Placement", "Base", "Description for tooltip")
         # obj.addExtension('App::GeoFeatureGroupExtensionPython')
-        obj.addExtension('Part::AttachExtensionPython')
+        # obj.addExtension('Part::AttachExtensionPython')
 
     def execute(self, obj):
         if App.ActiveDocument.Restoring:
@@ -80,7 +80,7 @@ def create():
     doc = App.ActiveDocument
     if doc is None:
         doc = App.newDocument()
-    obj = doc.addObject("App::FeaturePython", "Test")
+    obj = doc.addObject("App::FeaturePython", "Path")
 
     baseOp(obj)
     # obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\nREPEAT LABEL1 P=2\n"

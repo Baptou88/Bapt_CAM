@@ -312,7 +312,9 @@ class SurfacageTaskPanel:
 
     def setDepth(self):
         self.depthBtn.setEnabled(False)
-        self.observer = PointSelectionObserver.PointSelectionObserver(self.pointSelected)
+        self.observer = PointSelectionObserver.PointSelectionObserver(
+            callback=lambda point, document, obj, element: self.pointSelected(point)
+        )
         self.observer.enable()
         # sel = Gui.Selection.getSelection()
         # if not sel:
@@ -325,8 +327,9 @@ class SurfacageTaskPanel:
         self.updateVisual()
 
     def updateVisual(self):
-        self.obj.Depth = self.depthEdit.value()
-        self.obj.Recouvrement = self.recouvrement.value()
+        pass
+        # self.obj.Depth = self.depthEdit.value()
+        # self.obj.Recouvrement = self.recouvrement.value()
 
     def accept(self):
         self.obj.ViewObject.Proxy.unsetEdit(self.obj.ViewObject)

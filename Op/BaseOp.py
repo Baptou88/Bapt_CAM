@@ -11,14 +11,13 @@ from pivy import coin  # type: ignore
 import math
 import re
 
-from utils import Log
+from utils import Log, property
 
 DEBUG = True
 if DEBUG:
     Log.setLevel(Log.Level.DEBUG, Log.thisModule())
 else:
     Log.setLevel(Log.Level.INFO, Log.thisModule())
-
 
 
 REGEX_VAR = rf"{BaptPreferences().regex_var}"
@@ -406,10 +405,8 @@ class baseOpViewProviderProxy:
         if prop == "Gcode":
             self.updatePathGeometry(fp)
             return
-        
         li = re.findall(REGEX_VAR, fp.Gcode)
-        App.Console.PrintMessage(f"Found variables in Gcode: {li}\n")
-        if prop in li:
+        if prop in [v.split('.')[0] for v in li]:
             self.updatePathGeometry(fp)
             return
 
@@ -990,7 +987,12 @@ class baseOpViewProviderProxy:
 
                 def replace_var(match):
                     var_name = match.group(1)
-                    App.Console.PrintMessage(f"Looking for variable {var_name} in {self.Object}\n")
+                    o = self.Object
+                    attr = property.getProperty(o, var_name)
+                    if attr is None:
+                        App.Console.PrintMessage(f"Variable {var_name} not found in object hierarchy\n")
+                        return "<undefined>"
+                    return str(attr)
                     if hasattr(self.Object, var_name):
                         return str(getattr(self.Object, var_name))
                     # App.Console.PrintMessage(f"Looking for variable {var_name} in {self.Object.Proxy}\n")
