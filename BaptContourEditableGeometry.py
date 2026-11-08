@@ -1,29 +1,23 @@
-import sys
+
+import BaptUtilities
+from ContourBaseGeom import ContourBaseGeom
 import FreeCAD as App
 import FreeCADGui as Gui
-import Part
 
 
-class ContourEditableGeometry:
+class ContourEditableGeometry(ContourBaseGeom):
     """Contour éditable via Sketcher"""
 
     def __init__(self, obj):
+        super().__init__(obj)
         self.Type = "ContourEditableGeometry"
-        obj.addProperty("App::PropertyLink", "Sketch", "Base", "Sketch associé à la géométrie")
+        self.Object = obj
+        if not hasattr(obj, "Sketch"):
+            obj.addProperty("App::PropertyLink", "Sketch", "Base", "Sketch associé à la géométrie")
 
         if not hasattr(obj, "depth"):
             obj.addProperty("App::PropertyFloat", "depth", "Contour", "Hauteur finale")
             obj.depth = 0.0
-
-        if not hasattr(obj, "Direction"):
-            obj.addProperty("App::PropertyEnumeration", "Direction", "Contour", "Direction d'usinage")
-            obj.Direction = ["Horaire", "Anti-horaire"]
-            obj.Direction = "Horaire"
-
-        if not hasattr(obj, "DepthMode"):
-            obj.addProperty("App::PropertyEnumeration", "DepthMode", "Contour", "Mode de profondeur (Absolu ou Relatif)")
-            obj.DepthMode = ["Absolu", "Relatif"]
-            obj.DepthMode = "Absolu"
 
         self.createSketch(obj)
         obj.Proxy = self
@@ -38,42 +32,39 @@ class ContourEditableGeometry:
 
                 obj.addObject(sketch)
 
+    def getEdges(self, obj):
+        """Retourne les edges du sketch"""
+        if obj.Sketch and obj.Sketch.Shape and len(obj.Sketch.Shape.Edges) > 0:
+            return obj.Sketch.Shape.Edges
+        return []
+
+    def getDepths(self):
+        """Retourne la profondeur de ref et finale en fonction du mode"""
+        if not self.Object.Sketch:
+            return 0.0, 0.0
+        Zref = self.Object.Sketch.Placement.Base.z
+        if self.Object.DepthMode == "Relatif":
+            return Zref, Zref - self.Object.depth
+        else:  # Absolu
+            return Zref, self.Object.depth
+
     def execute(self, obj):
-        """Met à jour la forme à partir du Sketch"""
-        if not obj.Sketch and len(obj.Sketch.Shape.Edges) <= 0:
+        """Met à jour la forme à partir du Sketch via ContourBaseGeom"""
+        if not obj.Sketch or not obj.Sketch.Shape or not obj.Sketch.Shape.Edges:
+            import Part
             obj.Shape = Part.Shape()
             return
-        try:
-            shape = obj.Sketch.Shape
+        super().execute(obj)
 
-            adjusted_edges_depth = []
-
-            for i, edge in enumerate(shape.Edges):
-                if obj.DepthMode == "Relatif":
-                    z_offset = obj.depth
-                    translation = App.Vector(0, 0, z_offset)
-                else:  # Absolu
-                    z_value = obj.depth
-                    translation = App.Vector(0, 0, z_value - edge.Vertexes[0].Z)
-
-                moved_edge = edge.translate(translation)
-                adjusted_edges_depth.append(moved_edge)
-
-            wire_z_final = Part.Wire(adjusted_edges_depth)
-            # shape = Part.Shape([wire_z_final])
-            shapes = [shape, wire_z_final]
-            coumpound = Part.Compound(shapes)
-            obj.Shape = coumpound
-        except Exception as e:
-            App.Console.PrintError(f"Erreur lors de la récupération du shape du sketch : {e}\n")
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
-            obj.Shape = Part.Shape()
+    def onDocumentRestored(self, obj):
+        """Restaure les liens après le chargement du document"""
+        self.Object = obj
+        self.__init__(obj)
 
     def onChanged(self, obj, prop):
         """Synchronise la forme si le Sketch change"""
-        return
-        if prop in ["Sketch", "depth", "Direction", "DepthMode"]:
+
+        if prop in ["Sketch", "depth", "Direction", "DepthMode", "CoteMatiere"]:
             self.execute(obj)
 
     def __getstate__(self):
@@ -91,9 +82,11 @@ class ViewProviderContourEditableGeometry:
         self.Object = vobj.Object
 
     def getIcon(self):
+        return BaptUtilities.getIconPath("ContourEditable.svg")
         return ":/icons/Sketcher_NewSketch.svg"
 
     def attach(self, vobj):
+        vobj.LineColor = (1.0, 0.0, 0.5)
         self.Object = vobj.Object
 
     def doubleClicked(self, vobj):
@@ -124,3 +117,23 @@ class ViewProviderContourEditableGeometry:
         if hasattr(self.Object, "Sketch") and self.Object.Sketch:
             App.ActiveDocument.removeObject(self.Object.Sketch.Name)
         return True
+
+
+def createContourEditableGeometry(cam_project):
+    """Crée une nouvelle géométrie de contour dans le projet CAM"""
+    doc = App.ActiveDocument
+
+    # Créer l'objet avec le bon type pour avoir une Shape
+    obj = doc.addObject("Part::FeaturePython", "ContourEditableGeometry")
+    obj.addExtension("App::GroupExtensionPython")
+    ContourEditableGeometry(obj)
+
+    # Ajouter le ViewProvider
+    if App.GuiUp and obj.ViewObject:
+        obj.ViewObject.addExtension("Gui::ViewProviderGroupExtensionPython")
+        ViewProviderContourEditableGeometry(obj.ViewObject)
+
+    # Placer l'objet dans le même groupe que les autres géométries du projet
+    cam_project.Proxy.getGeometryGroup(cam_project).addObject(obj)
+
+    return obj

@@ -1,4 +1,5 @@
-from BaptPath import GcodeAnimationControl, GcodeAnimator, absinc, comp, memory
+
+from BaptPath import GcodeAnimationControl, GcodeEditorTaskPanel, absinc, comp, memory
 from BaptPreferences import BaptPreferences
 import BaptUtilities
 import FreeCAD as App
@@ -8,8 +9,9 @@ from Op.utils import CoolantMode
 from PySide import QtCore, QtGui
 from pivy import coin  # type: ignore
 import math
+import re
 
-from utils import Log
+from utils import Log, property
 
 DEBUG = True
 if DEBUG:
@@ -18,10 +20,15 @@ else:
     Log.setLevel(Log.Level.INFO, Log.thisModule())
 
 
+REGEX_VAR = rf"{BaptPreferences().regex_var}"
+
+
 class baseOp:
 
-    def __init__(self, obj):
+    def __init__(self, obj, cam_proj=None):
         # App.Console.PrintMessage("Initializing baseOp object proxy for: {}\n".format(__class__.__name__))
+        self.cam_proj = cam_proj
+
         if not hasattr(obj, "Gcode"):
             obj.addProperty("App::PropertyString", "Gcode", "Gcode", "Gcode").Gcode = ""
             # obj.Gcode ="G0 X0 Y-20 Z50\nG0 Z2\nG1 Z0 F500\nG1 Y-10\nG3 X-10 Y0 I-10 J0\nG1 X-48\nG2 X-50 Y2 I0 J2\nG1 Y20\nG91\nG1 X5\nG0 Z50\n"
@@ -42,6 +49,14 @@ class baseOp:
             obj.CoolantMode = CoolantMode
             obj.CoolantMode = "Flood"  # Valeur par défaut
 
+        if not hasattr(obj, "TimeEstimate"):
+            obj.addProperty("App::PropertyTime", "TimeEstimate", "Gcode", "Estimated machining time")
+            obj.TimeEstimate = 0.0
+
+        if not hasattr(obj, "LastCoordinate"):
+            obj.addProperty("App::PropertyVector", "LastCoordinate", "Gcode", "Last coordinate")
+            obj.LastCoordinate = App.Vector(0, 0, 0)
+
         # set property "Gcode" hidden
         obj.setEditorMode("Gcode", 2)
 
@@ -51,23 +66,80 @@ class baseOp:
         if not hasattr(obj, "Tool"):
             obj.addProperty("App::PropertyLink", "Tool", "Op", "Tool")
 
-        if int(App.Version()[0]) >= 1 and int(App.Version()[1]) >= 1:
-            obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
+            if int(App.Version()[0]) >= 1 and int(App.Version()[1]) >= 1:
+                if hasattr(obj, "ToolDiameter"):
+                    obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
+
+    def installSecurePlane(self, obj):
+        if not hasattr(obj, "RetractPlane"):
+            obj.addProperty("App::PropertyDistance", "RetractPlane", "Base", "Retract plane")
+            obj.RetractPlane = 50.0
+
+        if not hasattr(obj, "SecurePlane"):
+            obj.addProperty("App::PropertyDistance", "SecurePlane", "Base", "Secure plane")
+            obj.SecurePlane = 2.0
+
+        expr = self.cam_proj.Proxy.getExprSet()
+        if expr:
+            obj.setExpression('RetractPlane', f"<<{expr.Label}>>.clearanceZ")
+            obj.setExpression('SecurePlane', f"<<{expr.Label}>>.safeZ")
 
     def onChanged(self, fp, prop):
+        if App.ActiveDocument and App.ActiveDocument.Restoring:
+            return
         self.execute(fp)
 
     def execute(self, obj):
-        self.cam_proj = BaptUtilities.find_cam_project(obj)
+        # self.cam_proj = BaptUtilities.find_cam_project(obj)
         pass
 
-    def __getstate__(self):
+    def onDocumentRestored(self, obj):
+        self.cam_proj = BaptUtilities.find_cam_project(obj)
+        # Log.baptDebug(f"Document restored, found cam project: {self.cam_proj}")
+
+    def dumps(self):
         """Sérialisation"""
         return None
 
-    def __setstate__(self, state):
+    def loads(self, state):
         """Désérialisation"""
         return None
+
+    def findPrevOp(self, obj):
+        """Trouver l'opération précédente dans cam_proj"""
+        if self.cam_proj is None:
+            self.cam_proj = BaptUtilities.find_cam_project(obj)
+        if self.cam_proj is None:
+            Log.baptDebug("No cam_proj available in findPrevOp")
+            return None
+        ops = self.cam_proj.Proxy.getOperationsGroup(self.cam_proj).Group
+        try:
+            index = ops.index(obj)
+        except ValueError:
+            Log.baptDebug(f"Object {obj.Name} not found in operations group")
+            return None
+        return ops[index - 1] if index > 0 else None
+
+    def getStartPosition(self, obj):
+        """Obtenir la position de départ pour cette opération.
+
+        Retourne un tuple (position: App.Vector, same_tool: bool).
+        - Si l'op précédente a le même outil → (LastCoordinate, True)
+        - Si l'op précédente a un outil différent ou n'existe pas → (toolChangePos, False)
+        """
+        prevOp = self.findPrevOp(obj)
+        toolChangePos = self.cam_proj.toolChangePos if self.cam_proj else App.Vector(0, 0, 0)
+
+        if prevOp is not None and hasattr(prevOp, "Tool") and hasattr(prevOp, "LastCoordinate"):
+            if prevOp.Tool == obj.Tool:
+                Log.baptDebug(f"Previous op '{prevOp.Label}' has same tool, using its LastCoordinate")
+                return prevOp.LastCoordinate, True
+            else:
+                Log.baptDebug(f"Previous op '{prevOp.Label}' has different tool → toolChangePos")
+                return toolChangePos, False
+
+        Log.baptDebug("No previous operation found → toolChangePos")
+        return toolChangePos, False
 
 
 class repeatGcodeException(Exception):
@@ -88,7 +160,7 @@ class baseOpViewProviderProxy:
         self.deleteOnReject = True
         self.pick_radius = 5  # pixels
         self.icon = "BaptWorkbench.svg"
-
+        self.cam_proj = None
         BaptPref = BaptPreferences()
 
         if not hasattr(obj, "Rapid"):
@@ -98,6 +170,10 @@ class baseOpViewProviderProxy:
         if not hasattr(obj, "Feed"):
             obj.addProperty("App::PropertyColor", "Feed", "Gcode", "Color for feed moves")
             obj.Feed = BaptPref.DefaultFeedColor
+
+        if not hasattr(obj, "Cursor"):
+            obj.addProperty("App::PropertyInteger", "Cursor", "Gcode", "Current line index for cursor")
+            obj.Cursor = -1  # -1 means no line highlighted
 
         # self.Object = obj.Object
         # obj.Proxy = self
@@ -109,13 +185,17 @@ class baseOpViewProviderProxy:
     def onChanged(self, vp, prop):
         ''' Print the name of the property that has changed '''
         # Log.baptDebug("Change property: " + str(prop))
-        if prop in "Rapid":
+        if prop == "Rapid":
             r = vp.Rapid
             self.rapid_color.rgb.setValues(0, 1, [(r[0], r[1], r[2])])
             return
         if prop == "Feed":
             f = vp.Feed
             self.feed_color.rgb.setValues(0, 1, [(f[0], f[1], f[2])])
+            return
+        if prop == "Cursor":
+            cursor_val = vp.Cursor
+            self._updateCursorHighlight(cursor_val)
             return
 
     def __getstate__(self):
@@ -133,6 +213,10 @@ class baseOpViewProviderProxy:
 
     def attach(self, obj):
         # App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
+
+        self.cam_proj = BaptUtilities.find_cam_project(obj.Object)
+        Log.baptDebug(f"Found cam project: {self.cam_proj}")
+
         self.pick_radius = 5
         self.Path = coin.SoGroup()
 
@@ -182,6 +266,22 @@ class baseOpViewProviderProxy:
         self.direction_switch.addChild(self.direction_group)
         self.direction_switch.whichChild = coin.SO_SWITCH_NONE  # Cacher par défaut
 
+        # Groupe de surbrillance pour le curseur Gcode
+        self.highlight_group = coin.SoSeparator()
+        highlight_pick = coin.SoPickStyle()
+        highlight_pick.style = coin.SoPickStyle.UNPICKABLE
+        self.highlight_color = coin.SoBaseColor()
+        self.highlight_color.rgb.setValue(1.0, 1.0, 0.0)  # Jaune
+        self.highlight_style = coin.SoDrawStyle()
+        self.highlight_style.lineWidth = 4.0
+        self.highlight_points = coin.SoCoordinate3()
+        self.highlight_lines = coin.SoIndexedLineSet()
+        self.highlight_group.addChild(highlight_pick)
+        self.highlight_group.addChild(self.highlight_color)
+        self.highlight_group.addChild(self.highlight_style)
+        self.highlight_group.addChild(self.highlight_points)
+        self.highlight_group.addChild(self.highlight_lines)
+
         # Ajouter les événements de souris
         self.mouse_cb = coin.SoEventCallback()
         # self.mouse_cb.setCallback(self.mouse_event_cb)
@@ -191,6 +291,7 @@ class baseOpViewProviderProxy:
         self.Path.addChild(self.rapid_group)
         self.Path.addChild(self.feed_group)
 
+        self.Path.addChild(self.highlight_group)
         self.Path.addChild(self.direction_switch)
         self.Path.addChild(self.mouse_cb)
 
@@ -221,20 +322,20 @@ class baseOpViewProviderProxy:
         picking.setPoint(pos)
         picking.setRadius(self.pick_radius)
         picking.apply(self.Path)
-        App.Console.PrintMessage(f'mouse event cb 0\n')
+        App.Console.PrintMessage('mouse event cb 0\n')
 
         picked = picking.getPickedPoint()
         if picked is None:
             self.direction_switch.whichChild = coin.SO_SWITCH_NONE
             return
 
-        App.Console.PrintMessage(f'mouse event cb 01\n')
+        App.Console.PrintMessage('mouse event cb 01\n')
         detail = picked.getDetail()
         if not isinstance(detail, coin.SoLineDetail):
             self.direction_switch.whichChild = coin.SO_SWITCH_NONE
             return
 
-        App.Console.PrintMessage(f'mouse event cb 1\n')
+        App.Console.PrintMessage('mouse event cb 1\n')
 
         path = picked.getPath()
         kind = None
@@ -249,7 +350,7 @@ class baseOpViewProviderProxy:
         if kind is None or kind not in self.segment_metadata:
             self.direction_switch.whichChild = coin.SO_SWITCH_NONE
             return
-        App.Console.PrintMessage(f'mouse event cb 2\n')
+        App.Console.PrintMessage('mouse event cb 2\n')
 
         line_index = detail.getLineIndex()
         segments = self.segment_metadata.get(kind, [])
@@ -258,7 +359,7 @@ class baseOpViewProviderProxy:
             return
 
         pt1, pt2 = segments[line_index]
-        App.Console.PrintMessage(f'mouse event cb 3\n')
+        App.Console.PrintMessage('mouse event cb 3\n')
 
         default_color = (1.0, 0.0, 0.0) if kind == "rapid" else (0.0, 1.0, 0.0)
         view_obj = getattr(self.Object, "ViewObject", None)
@@ -304,6 +405,52 @@ class baseOpViewProviderProxy:
         if prop == "Gcode":
             self.updatePathGeometry(fp)
             return
+        li = re.findall(REGEX_VAR, fp.Gcode)
+        if prop in [v.split('.')[0] for v in li]:
+            self.updatePathGeometry(fp)
+            return
+
+    def _updateCursorHighlight(self, cursor_line):
+        """Met à jour la surbrillance pour la ligne Gcode indiquée par cursor_line.
+
+        cursor_line: index 0-based dans self.lines (lignes non-vides du Gcode).
+        Si < 0 ou aucun segment ne correspond, efface la surbrillance.
+        """
+        if not hasattr(self, "highlight_points"):
+            App.Console.PrintWarning("[Cursor] highlight_points n'existe pas encore (attach non appelé?)\n")
+            return
+
+        # Si le mapping n'existe pas, tenter de le reconstruire
+        gcode_map = getattr(self, "_gcode_line_segments", None)
+        if gcode_map is None:
+            App.Console.PrintMessage("[Cursor] _gcode_line_segments absent, reconstruction...\n")
+            # Forcer un re-traitement du Gcode si l'objet existe
+            data_obj = getattr(self, "Object", None)
+            if data_obj is not None and hasattr(data_obj, "Gcode"):
+                self.updatePathGeometry(data_obj)
+                gcode_map = getattr(self, "_gcode_line_segments", {})
+            else:
+                gcode_map = {}
+
+        segments = gcode_map.get(cursor_line, []) if cursor_line >= 0 else []
+
+        if not segments:
+            # Effacer la surbrillance
+            self.highlight_lines.coordIndex.setValue(0)
+            self.highlight_points.point.setValues(0, 0, [])
+            return
+
+        coords = []
+        idx = []
+        for (a, b) in segments:
+            i = len(coords)
+            coords.append(a)
+            coords.append(b)
+            idx.extend([i, i + 1, -1])
+
+        self.highlight_lines.coordIndex.setValue(0)
+        self.highlight_points.point.setValues(0, len(coords), coords)
+        self.highlight_lines.coordIndex.setValues(0, len(idx), idx)
 
     def updatePathGeometry(self, fp):
         # if no Gcode property, nothing to do
@@ -341,19 +488,36 @@ class baseOpViewProviderProxy:
         feed_coords = []
         feed_idx = []
 
-        toolChangePos = App.Vector(0, 0, 0)
-        if hasattr(fp, "Proxy") and hasattr(fp.Proxy, "cam_proj"):
-            cam_project = fp.Proxy.cam_proj
-            if cam_project is not None and hasattr(cam_project, "toolChangePos"):
-                toolChangePos = cam_project.toolChangePos
-            else:
-                Log.baptDebug("No CamProject found for Op object {}".format(self.Object.Name))
+        toolChangePos = self.cam_proj.toolChangePos
+        # if hasattr(fp, "Proxy") and hasattr(fp.Proxy, "cam_proj"):
+        #     cam_project = fp.Proxy.cam_proj
+        #     if cam_project is not None and hasattr(cam_project, "toolChangePos"):
+        #         toolChangePos = cam_project.toolChangePos
+        #     else:
+        #         Log.baptDebug("No CamProject found for Op object {}".format(self.Object.Name))
 
-        # current position (start at tool change position)
-        self.cur = (toolChangePos.x, toolChangePos.y, toolChangePos.z)
+        # Position de départ : fin de l'op précédente (même outil) ou toolChangePos.
+        # Utilise directement self.cam_proj du view provider (déjà initialisé).
+        self._same_tool_transition = False
+        try:
+            ops = self.cam_proj.Proxy.getOperationsGroup(self.cam_proj).Group
+            index = ops.index(fp)
+            if index > 0:
+                prev_op = ops[index - 1]
+                if hasattr(prev_op, "Tool") and prev_op.Tool == fp.Tool and hasattr(prev_op, "LastCoordinate"):
+                    lc = prev_op.LastCoordinate
+                    self.cur = (lc.x, lc.y, lc.z)
+                    self._same_tool_transition = True
+                else:
+                    self.cur = (toolChangePos.x, toolChangePos.y, toolChangePos.z)
+            else:
+                self.cur = (toolChangePos.x, toolChangePos.y, toolChangePos.z)
+        except Exception:
+            self.cur = (toolChangePos.x, toolChangePos.y, toolChangePos.z)
 
         self.ordered_segments = []
         self.segment_metadata = {"rapid": [], "feed": []}
+        self._gcode_line_segments = {}  # gcode_line_index → [(pt1, pt2), ...]
 
         self.comp_mode = comp.G40  # default cutter compensation off
         self.absinc_mode = absinc.G90  # default absolute mode
@@ -373,7 +537,7 @@ class baseOpViewProviderProxy:
                 try:
                     idx = up.index("CHF")
                     # Extraire la valeur après CHF
-                    rest = up[idx+3:].strip()
+                    rest = up[idx + 3:].strip()
                     if rest and (rest[0].isdigit() or rest[0] == '.'):
                         # Extraire le nombre
                         num_str = ""
@@ -392,7 +556,7 @@ class baseOpViewProviderProxy:
                 try:
                     idx = up.index("RND")
                     # Extraire la valeur après RND
-                    rest = up[idx+3:].strip()
+                    rest = up[idx + 3:].strip()
                     if rest and (rest[0].isdigit() or rest[0] == '.'):
                         # Extraire le nombre
                         num_str = ""
@@ -447,7 +611,7 @@ class baseOpViewProviderProxy:
             (x2, y2) = (p1[0], p1[1])
             dx = x2 - x1
             dy = y2 - y1
-            d2 = dx*dx + dy*dy
+            d2 = dx * dx + dy * dy
             if d2 == 0.0:
                 return None  # identical points
             d = math.sqrt(d2)
@@ -457,7 +621,7 @@ class baseOpViewProviderProxy:
             mx = (x1 + x2) / 2.0
             my = (y1 + y2) / 2.0
             # distance from midpoint to center
-            h = math.sqrt(max(R*R - (d/2.0)*(d/2.0), 0.0))
+            h = math.sqrt(max(R * R - (d / 2.0) * (d / 2.0), 0.0))
             ux = -dy / d
             uy = dx / d
             c1 = (mx + ux * h, my + uy * h)
@@ -465,14 +629,17 @@ class baseOpViewProviderProxy:
             return c1, c2
 
         def append_segment(coords_list, idx_list, a, b):
-            """helper to append a segment to a group's arrays"""
+            """helper to append a segment to a group's arrays."""
             i = len(coords_list)
             coords_list.append(a)
             coords_list.append(b)
-            idx_list.extend([i, i+1, -1])
+            idx_list.extend([i, i + 1, -1])
             group = "rapid" if coords_list is rapid_coords else "feed"
             self.ordered_segments.append((group, a, b))
             self.segment_metadata[group].append((a, b))
+            # Associer ce segment à la ligne Gcode courante (1-based)
+            gcode_line = self.line
+            self._gcode_line_segments.setdefault(gcode_line, []).append((a, b))
 
         def _create_chamfer(coords_list, idx_list, p0, p1, chf_dist):
             """
@@ -495,7 +662,7 @@ class baseOpViewProviderProxy:
             dx_next = p1[0] - p0[0]
             dy_next = p1[1] - p0[1]
             dz_next = p1[2] - p0[2]
-            length_next = math.sqrt(dx_next*dx_next + dy_next*dy_next + dz_next*dz_next)
+            length_next = math.sqrt(dx_next * dx_next + dy_next * dy_next + dz_next * dz_next)
 
             if length_next < chf_dist:
                 Log.baptWarning(f"Chamfer distance {chf_dist} is larger than next segment length {length_next}. Using normal segment.")
@@ -509,7 +676,7 @@ class baseOpViewProviderProxy:
             dx_prev = p0[0] - p_prev[0]
             dy_prev = p0[1] - p_prev[1]
             dz_prev = p0[2] - p_prev[2]
-            length_prev = math.sqrt(dx_prev*dx_prev + dy_prev*dy_prev + dz_prev*dz_prev)
+            length_prev = math.sqrt(dx_prev * dx_prev + dy_prev * dy_prev + dz_prev * dz_prev)
 
             if length_prev < chf_dist:
                 Log.baptWarning(f"Chamfer distance {chf_dist} is larger than previous segment length {length_prev}. Using normal segment.")
@@ -561,7 +728,7 @@ class baseOpViewProviderProxy:
             dx_next = p1[0] - p0[0]
             dy_next = p1[1] - p0[1]
             dz_next = p1[2] - p0[2]
-            length_next = math.sqrt(dx_next*dx_next + dy_next*dy_next + dz_next*dz_next)
+            length_next = math.sqrt(dx_next * dx_next + dy_next * dy_next + dz_next * dz_next)
 
             # Récupérer le point précédent
             p_prev = coords_list[-2]
@@ -570,7 +737,7 @@ class baseOpViewProviderProxy:
             dx_prev = p0[0] - p_prev[0]
             dy_prev = p0[1] - p_prev[1]
             dz_prev = p0[2] - p_prev[2]
-            length_prev = math.sqrt(dx_prev*dx_prev + dy_prev*dy_prev + dz_prev*dz_prev)
+            length_prev = math.sqrt(dx_prev * dx_prev + dy_prev * dy_prev + dz_prev * dz_prev)
 
             # Distance de tangence (approximation simple : rayon = distance)
             tang_dist = rnd_radius
@@ -612,7 +779,7 @@ class baseOpViewProviderProxy:
             # Vecteur de arc_start vers arc_end
             chord_x = arc_end[0] - arc_start[0]
             chord_y = arc_end[1] - arc_start[1]
-            chord_len = math.sqrt(chord_x*chord_x + chord_y*chord_y)
+            chord_len = math.sqrt(chord_x * chord_x + chord_y * chord_y)
 
             if chord_len > 1e-6:
                 # Milieu de la corde
@@ -699,7 +866,7 @@ class baseOpViewProviderProxy:
                 done = start_z
                 prisePasse = self.mem.current_cycle["Q"]
                 while done > final_Z:
-                    done = done-prisePasse
+                    done = done - prisePasse
                     if done < final_Z:
                         prisePasse = final_Z
                     a = list(new[0:2])
@@ -817,7 +984,30 @@ class baseOpViewProviderProxy:
                 ln = self.lines[self.line]
                 # App.Console.PrintMessage("Processing line {}: {}\n".format(self.line, ln))
                 self.line += 1
+
+                def replace_var(match):
+                    var_name = match.group(1)
+                    o = self.Object
+                    attr = property.getProperty(o, var_name)
+                    if attr is None:
+                        App.Console.PrintMessage(f"Variable {var_name} not found in object hierarchy\n")
+                        return "<undefined>"
+                    return str(attr)
+                    if hasattr(self.Object, var_name):
+                        return str(getattr(self.Object, var_name))
+                    # App.Console.PrintMessage(f"Looking for variable {var_name} in {self.Object.Proxy}\n")
+                    # if hasattr(self.Object.Proxy, var_name):
+                    #     return str(getattr(self.Object.Proxy, var_name))
+                    App.Console.PrintMessage(f"Variable {var_name} not found\n")
+                    return "<undefined>"
+
+                ln = re.sub(REGEX_VAR, replace_var, ln)
                 up = ln.upper()
+
+                # parse the line
+                # ex: 'G54 G0 X10 Y20 Z-5 F100' -> ['G54', 'G0', ['X',10, 'Y',20, 'Z-5', 'F100']
+                # tokens = ln.split()
+
                 # consider only movement commands G0/G00 and G1/G01
                 if up.startswith(("G0", "G00")):
                     new = parse_xyz(ln, self.cur, self.absinc_mode)
@@ -826,6 +1016,10 @@ class baseOpViewProviderProxy:
                     self.mem.moveMode = "rapid"
                     if self.mem.current_cycle is not None:
                         executeCycle()
+
+                elif up.startswith("G10"):
+                    # Handle G10 command
+                    pass
 
                 elif up.startswith(("G1", "G01")):
                     new = parse_xyz(ln, self.cur, self.absinc_mode)
@@ -855,6 +1049,20 @@ class baseOpViewProviderProxy:
                     self.mem.moveMode = "feed"
                     if self.mem.current_cycle is not None:
                         executeCycle()
+
+                elif up.startswith("G38"):
+                    # probe cycle - treat as linear move to target (ignoring success/fail)
+                    new = parse_xyz(ln, self.cur, self.absinc_mode)
+                    append_segment(feed_coords, feed_idx, self.cur, new)
+                    self.cur = new
+                elif up.startswith("G155"):
+                    # probe cycle - treat as linear move to target (ignoring success/fail)
+                    current_pos = self.cur
+                    new = parse_xyz(ln, self.cur, self.absinc_mode)
+                    append_segment(feed_coords, feed_idx, self.cur, new)
+                    append_segment(feed_coords, feed_idx, new, current_pos)
+
+                    self.cur = new
 
                 elif up.startswith(("G2", "G02", "G3", "G03")):
                     # Circular interpolation. Prefer I/J (center offsets). If only R given, compute center(s).
@@ -891,8 +1099,8 @@ class baseOpViewProviderProxy:
                         # compute sweeps for both centers
 
                         def compute_sweep(c):
-                            sx = math.atan2(self.cur[1]-c[1], self.cur[0]-c[0])
-                            ex = math.atan2(end[1]-c[1], end[0]-c[0])
+                            sx = math.atan2(self.cur[1] - c[1], self.cur[0] - c[0])
+                            ex = math.atan2(end[1] - c[1], end[0] - c[0])
                             sweep = ex - sx
                             return sweep, sx, ex
                         s1, s1s, s1e = compute_sweep(c1)
@@ -902,10 +1110,10 @@ class baseOpViewProviderProxy:
                         def norm_sweep(s):
                             if is_ccw:
                                 if s <= 0:
-                                    s += 2*math.pi
+                                    s += 2 * math.pi
                             else:
                                 if s >= 0:
-                                    s -= 2*math.pi
+                                    s -= 2 * math.pi
                             return s
                         ns1 = norm_sweep(s1)
                         ns2 = norm_sweep(s2)
@@ -960,7 +1168,7 @@ class baseOpViewProviderProxy:
                         self.cur = new_pt
 
                     # ensure final endpoint exact
-                    if (abs(self.cur[0]-end[0]) > 1e-9) or (abs(self.cur[1]-end[1]) > 1e-9) or (abs(self.cur[2]-end[2]) > 1e-9):
+                    if (abs(self.cur[0] - end[0]) > 1e-9) or (abs(self.cur[1] - end[1]) > 1e-9) or (abs(self.cur[2] - end[2]) > 1e-9):
                         append_segment(feed_coords, feed_idx, self.cur, end)
                         self.cur = end
 
@@ -1012,7 +1220,6 @@ class baseOpViewProviderProxy:
 
                 elif up.startswith("G84"):
                     # tapping cycle
-                    code = int(up[1:3])
                     up = up[3:]
 
                     tokens = up.split(" ")
@@ -1058,12 +1265,12 @@ class baseOpViewProviderProxy:
                     if len(parts) == 2:  # REPEAT Start
                         label_begin = parts[1] if len(parts) > 1 else None
                         n_times = 1
-                        if not label_begin in self.mem.labels:
+                        if label_begin not in self.mem.labels:
                             raise repeatGcodeException("Invalid REPEAT syntax, label for start not found")
                     elif len(parts) == 3:  # REPEAT Start P=
                         label_begin = parts[1] if len(parts) > 1 else None
 
-                        if not label_begin in self.mem.labels:
+                        if label_begin not in self.mem.labels:
                             raise repeatGcodeException("Invalid REPEAT syntax, label for start not found")
 
                         if not parts[2].startswith("P="):
@@ -1082,11 +1289,11 @@ class baseOpViewProviderProxy:
                     elif len(parts) == 4:  # REPEAT Start End P=
                         label_begin = parts[1]
 
-                        if not label_begin in self.mem.labels:
+                        if label_begin not in self.mem.labels:
                             raise repeatGcodeException("Invalid REPEAT syntax, label for start not found")
 
                         label_end = parts[2]
-                        if not label_end in self.mem.labels:
+                        if label_end not in self.mem.labels:
                             raise repeatGcodeException("Invalid REPEAT syntax, label for end not found")
                         if not parts[3].startswith("P="):
                             raise repeatGcodeException("Invalid REPEAT syntax, expected P= for number of times")
@@ -1117,7 +1324,7 @@ class baseOpViewProviderProxy:
                                 self.line = start_line
 
                             else:
-                                saved_line = self.line-1
+                                saved_line = self.line - 1
                                 self.line = start_line
                                 restore = saved_line
 
@@ -1135,7 +1342,7 @@ class baseOpViewProviderProxy:
                     # variable
                     # up.removeprefix("R")
                     number = int(up[1:up.index("=")])
-                    value = float(up[up.index("=")+1:])
+                    value = float(up[up.index("=") + 1:])
                     # if not hasattr(fp, "R{}".format(number)):
                     #     App.Console.PrintMessage("Adding property R{} to object\n".format(number))
                     try:
@@ -1162,6 +1369,14 @@ class baseOpViewProviderProxy:
                 else:
 
                     Log.baptDebug("Ignoring line: {}\n".format(ln))
+
+        # Si transition même outil, ajouter un retract visuel à Z100
+        # pour correspondre au G0 Z100 inséré par le post-processeur.
+        if self._same_tool_transition:
+            retract_z = 100
+            retract_pos = (self.cur[0], self.cur[1], retract_z)
+            append_segment(rapid_coords, rapid_idx, self.cur, retract_pos)
+            self.cur = retract_pos
 
         try:
             processGcode()
@@ -1211,6 +1426,11 @@ class baseOpViewProviderProxy:
         menu.addAction(action_Toggle)
         return True
 
+    def viewGcode(self, vobj):
+        """Afficher le G-code dans une boîte de dialogue"""
+        taskPanel = GcodeEditorTaskPanel(vobj.Object)
+        Gui.Control.showDialog(taskPanel)
+
     def ToggleOp(self, vobj):
         vobj.Object.Active = not vobj.Object.Active
 
@@ -1226,7 +1446,6 @@ class baseOpViewProviderProxy:
 
     def startSimulation(self, vobj):
         """Start the G-code simulation animation"""
-        vp = vobj.Proxy
         # vp.animator = GcodeAnimator(vp)
         # vp.animator.load_paths(include_rapid=True)
         # vp.animator.start(speed_mm_s=20.0)

@@ -1,30 +1,42 @@
-import os
 import FreeCAD as App
 import FreeCADGui as Gui
+from PySide import QtGui
+
+from BaptUtilities import find_cam_project
+import ContourBaseGeom
 from Op import OpContournage
-from PySide import QtCore, QtGui
-from Tool.ToolTaskPannel import ToolTaskPanel
+from Tool.ToolsGUI import ToolTaskPanel
 from Gui.cuttingConditionTaskPanel import cuttingConditionTaskPanel
-from utils import BQuantitySpinBox, Log
+from utils import BQuantitySpinBox
 
 
 class ContournageTaskPanel:
     """Panneau de tâche pour éditer les paramètres de contournage"""
 
-    def __init__(self, obj):
+    def __init__(self, obj, deleteOnReject):
         """Initialise le panneau avec l'objet de contournage"""
         self.obj = obj
-
+        self.deleteOnReject = deleteOnReject
         self.cuttingConditionPanel = cuttingConditionTaskPanel(obj)
-
+        App.activeDocument().openTransaction("Edit Contournage Parameters")
         # Créer l'interface utilisateur
         self.ui1 = QtGui.QWidget()
         self.ui1.setWindowTitle("Paramètres de contournage")
 
-        ui2 = ToolTaskPanel(obj)
-        self.form = [self.ui1, ui2.getForm(), self.cuttingConditionPanel.getForm()]
+        self.ui2 = ToolTaskPanel(obj)
+        self.form = [self.ui1, self.ui2.getForm(), self.cuttingConditionPanel.getForm()]
 
         layout = QtGui.QFormLayout(self.ui1)
+
+        # ComboBox pour sélectionner la géométrie du contour
+        self.geometryCombo = QtGui.QComboBox()
+        contourGeometryLayout = QtGui.QHBoxLayout()
+        contourGeometryGroup = QtGui.QGroupBox("Géométrie du contour")
+        contourGeometryGroup.setLayout(contourGeometryLayout)
+
+        contourGeometryLayout.addWidget(self.geometryCombo)
+        layout.addWidget(contourGeometryGroup)
+
         # Groupe Outil
         toolGroup = QtGui.QGroupBox("Paramètres d'outil")
         toolLayout = QtGui.QFormLayout()
@@ -68,7 +80,7 @@ class ContournageTaskPanel:
 
         # Compensation de l'outil
         self.compensationTool = QtGui.QComboBox()
-        self.compensationTool.addItems(list(comp.name for comp in OpContournage.compensation))
+        self.compensationTool.addItems(list(comp.name for comp in OpContournage.Compensation))
         if hasattr(obj, "Compensation"):
             idx = self.compensationTool.findText(obj.Compensation)
             if idx >= 0:
@@ -136,7 +148,7 @@ class ContournageTaskPanel:
         self.pathColor = QtGui.QPushButton()
         self.pathColor.setAutoFillBackground(True)
         color = obj.ViewObject.PathColor
-        self.pathColor.setStyleSheet(f"background-color: rgb({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)})")
+        self.pathColor.setStyleSheet(f"background-color: rgb({int(color[0] * 255)}, {int(color[1] * 255)}, {int(color[2] * 255)})")
         self.pathColor.clicked.connect(self.chooseColor)
         displayLayout.addRow("Couleur de la trajectoire:", self.pathColor)
 
@@ -155,12 +167,7 @@ class ContournageTaskPanel:
         infoLayout = QtGui.QFormLayout()
 
         # Récupérer la géométrie du contour
-        contour_name = obj.ContourGeometryName
-        contour = None
-        for o in App.ActiveDocument.Objects:
-            if o.Name == contour_name:
-                contour = o
-                break
+        contour = obj.ContourGeometry if hasattr(obj, "ContourGeometry") else None
 
         # Afficher si le contour est fermé
         is_closed_text = "Oui" if (contour and hasattr(contour, "IsClosed") and contour.IsClosed) else "Non"
@@ -175,8 +182,11 @@ class ContournageTaskPanel:
         infoGroup.setLayout(infoLayout)
         layout.addWidget(infoGroup)
 
+        self.updateGeometryList()
+
         # Connecter les signaux
         # self.toolDiameter.valueChanged.connect(self.updateContournage)
+        self.geometryCombo.currentTextChanged.connect(self.geometryChanged)
         self.cutDepth.valueChanged.connect(self.updateContournage)
         # self.stepDown.valueChanged.connect(self.updateContournage)
         self.direction.currentTextChanged.connect(self.updateContournage)
@@ -185,6 +195,37 @@ class ContournageTaskPanel:
 
         if self.obj.Tool:
             self.obj.Tool.Visibility = True
+
+    def updateGeometryList(self):
+        """Met à jour la liste des géométries de contournage disponibles"""
+        self.geometryCombo.clear()
+
+        project = find_cam_project(self.obj)
+        if project is not None:
+            objList = project.Proxy.getGeometryGroup(project).Group
+        else:
+            objList = App.ActiveDocument.Objects
+        # Parcourir tous les objets du document
+        for obj in objList:
+            if hasattr(obj, "Proxy") and isinstance(obj.Proxy, ContourBaseGeom.ContourBaseGeom):
+                self.geometryCombo.addItem(obj.Label, obj.Name)
+
+        # Sélectionner la géométrie actuelle si elle existe
+        contour_geom = getattr(self.obj, "ContourGeometry", None)
+        geom_name = getattr(contour_geom, "Name", None) if contour_geom is not None else None
+        if geom_name:
+            index = self.geometryCombo.findData(geom_name)
+            if index >= 0:
+                self.geometryCombo.setCurrentIndex(index)
+
+    def geometryChanged(self, index):
+        """Appelé quand la géométrie sélectionnée change"""
+        # Mettre à jour la géométrie
+        if self.geometryCombo.currentIndex() >= 0:
+            objName = self.geometryCombo.itemData(self.geometryCombo.currentIndex())
+            geom = App.ActiveDocument.getObject(objName)
+            if geom:
+                self.obj.ContourGeometry = geom
 
     def chooseColor(self):
         """Ouvre un sélecteur de couleur"""
@@ -202,10 +243,10 @@ class ContournageTaskPanel:
         if self.obj.Compensation == "Machine" or self.obj.Compensation == "Ordinateur + G41/G42":
             if self.obj.ApproachType != "Perpendiculaire":
                 self.approachType.setCurrentText("Perpendiculaire")
-                App.Console.PrintMessage(f'Approche Perpendiculaire exigée !\n')
+                App.Console.PrintMessage('Approche Perpendiculaire exigée !\n')
             if self.obj.RetractType != "Perpendiculaire":
                 self.retractType.setCurrentText("Perpendiculaire")
-                App.Console.PrintMessage(f'Sortie Perpendiculaire exigée !\n')
+                App.Console.PrintMessage('Sortie Perpendiculaire exigée !\n')
         self.updateContournage()
 
     def updateContournage(self):
@@ -235,22 +276,56 @@ class ContournageTaskPanel:
         # Mettre à jour la vue
         Gui.ActiveDocument.update()
 
+    def setFields(self, obj):
+        self.toolDiameter.updateWidget()
+        self.cuttingConditionPanel.setFields(obj)
+
+    def updateData(self, obj, prop):
+        """Forwards property changes from the object to the active TaskPanel."""
+        if prop in ["Tool"]:
+            self.setFields(obj)
+
+    def getStandardButtons(self):
+        """Définir les boutons standard"""
+        return (
+            QtGui.QDialogButtonBox.Ok |
+            QtGui.QDialogButtonBox.Apply |
+            QtGui.QDialogButtonBox.Cancel
+        )
+
+    def clicked(self, button):
+        """clicked(button) ... callback invoked when the user presses any of the task panel buttons."""
+        if button == QtGui.QDialogButtonBox.Apply:
+            # self.panelGetFields()
+            # self.setClean()
+            self.obj.recompute()
+            # App.ActiveDocument.recompute()
+
     def accept(self):
         """Appelé lorsque l'utilisateur clique sur OK"""
+        self.preCleanup()
+
         self.updateContournage()
         self.updateDisplay()
 
-        if self.obj.Tool:
-            self.obj.Tool.Visibility = False
-
         Gui.Control.closeDialog()
+        self.obj.recompute()
+        App.activeDocument().commitTransaction()
         return True
 
     def reject(self):
         """Appelé lorsque l'utilisateur clique sur Annuler"""
+        self.preCleanup()
+        App.activeDocument().abortTransaction()
 
-        if self.obj.Tool:
-            self.obj.Tool.Visibility = False
+        if self.deleteOnReject():
+            pass
+            # App.ActiveDocument.removeObject(self.obj.Name)
 
         Gui.Control.closeDialog()
         return True
+
+    def preCleanup(self):
+        if self.obj.Tool:
+            self.obj.Tool.Visibility = False
+        self.obj.ViewObject.Proxy.closeTaskPanel()

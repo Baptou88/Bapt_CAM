@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Cadre -->
+  <rect x="6" y="6" width="52" height="52" rx="6"
+        fill="#f8f8f8" stroke="#204a87" stroke-width="2"/>
+
+  <!-- Pièce / contour -->
+  <rect x="16" y="16" width="32" height="32" rx="2"
+        fill="none" stroke="#729fcf" stroke-width="2"/>
+
+  <!-- Trajet rapid (G0) -->
+  <polyline points="10,50 18,42 24,42"
+            fill="none" stroke="#cc3333" stroke-width="2"
+            stroke-linecap="round" stroke-dasharray="3,2"/>
+
+  <!-- Trajet usinage (G1) -->
+  <polyline points="24,42 24,24 40,24 40,40 24,40"
+            fill="none" stroke="#2e8b57" stroke-width="2.6"
+            stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Position outil -->
+  <circle cx="24" cy="42" r="3.2" fill="#204a87" stroke="#ffffff" stroke-width="1"/>
+  <circle cx="24" cy="42" r="1.2" fill="#ffffff"/>
+
+  <!-- Petit symbole axe -->
+  <line x1="50" y1="14" x2="56" y2="14" stroke="#555" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="50" y1="14" x2="50" y2="20" stroke="#555" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

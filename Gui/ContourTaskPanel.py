@@ -2,7 +2,7 @@ from BaptCamProject import CamProject
 from BaptUtilities import find_cam_project
 import FreeCAD as App
 import FreeCADGui as Gui
-from PySide import QtCore, QtGui
+from PySide import QtGui  # type: ignore
 import sys
 from utils import BQuantitySpinBox, Log
 from utils.PointSelectionObserver import PointSelectionObserver
@@ -14,7 +14,7 @@ class ContourTaskPanel:
         self.obj = obj
 
         self.deleteOnReject = deleteOnReject
-
+        App.activeDocument().openTransaction("Edit Contour Parameters")
         # Créer l'interface utilisateur
         self.form = QtGui.QWidget()
         self.form.setWindowTitle("Éditer le contour")
@@ -69,11 +69,12 @@ class ContourTaskPanel:
         # Connecter le signal de sélection du tableau
         self.edgesTable.itemSelectionChanged.connect(self.onTableSelectionChanged)
 
-        # Direction
-        self.direction = QtGui.QComboBox()
-        self.direction.addItems(["Horaire", "Anti-horaire"])
-        self.direction.setCurrentText(obj.Direction)
-        contourLayout.addRow("Direction:", self.direction)
+        # Côté matière
+        self.coteMatiere = QtGui.QComboBox()
+        # if self.obj.IsClosed:
+        self.coteMatiere.addItems(["Gauche", "Droite", "Inside", "Outside"])
+        self.coteMatiere.setCurrentText(getattr(obj, "CoteMatiere", "Droite"))
+        contourLayout.addRow("Côté matière:", self.coteMatiere)
 
         contourGroup.setLayout(contourLayout)
         layout.addWidget(contourGroup)
@@ -157,12 +158,10 @@ class ContourTaskPanel:
         contourGroup.setLayout(contourLayout)
         layout.addWidget(contourGroup)
 
-        # Mettre à jour l'affichage des arêtes sélectionnées
-        self.updateEdgesLabel()
-
         # Connecter les signaux pour l'actualisation en temps réel
         self.confirmSelectionButton.clicked.connect(self.confirmSelection)
-        self.direction.currentTextChanged.connect(self.updateContour)
+
+        self.coteMatiere.currentTextChanged.connect(self.updateContour)
         # self.Zref.valueChanged.connect(self.updateZref)
         self.depth.valueChanged.connect(self.updateDepth)
 
@@ -171,6 +170,9 @@ class ContourTaskPanel:
             self.absoluteDepthRadio.clicked.connect(self.depthModeChanged)
         else:
             self.relativeDepthRadio.clicked.connect(self.depthModeChanged)
+
+        # Mettre à jour l'affichage des arêtes sélectionnées
+        self.updateEdgesLabel()
 
         # Variable pour suivre l'état de sélection
         self.selectionMode = False
@@ -209,6 +211,18 @@ class ContourTaskPanel:
 
         self.edgesLabel.setText(f"{count} arête(s) sélectionnée(s)")
         self.isClosedLabel.setText(f"Contour fermé: {self.obj.IsClosed}")
+
+        # Retirer Inside et Outside si le contour n'est pas fermé
+        self.coteMatiere.currentTextChanged.disconnect(self.updateContour)
+        for i in range(self.coteMatiere.count() - 1, -1, -1):
+            self.coteMatiere.removeItem(i)
+        if self.obj.IsClosed:
+            self.coteMatiere.addItems(["Inside", "Outside"])
+            self.coteMatiere.setCurrentText(getattr(self.obj, "CoteMatiere", "Inside"))
+        else:
+            self.coteMatiere.addItems(["Droite", "Gauche"])
+            self.coteMatiere.setCurrentText(getattr(self.obj, "CoteMatiere", "Droite"))
+        self.coteMatiere.currentTextChanged.connect(self.updateContour)
 
         # Mettre à jour le tableau
         self.edgesTable.setRowCount(0)  # Vider le tableau
@@ -330,7 +344,7 @@ class ContourTaskPanel:
         for sel in selection:
 
             if sel.SubElementNames:
-                App.Console.PrintMessage(f"Objet: {sel.ObjectName}, Sous-éléments: {sel.SubElementNames}\n")
+                # App.Console.PrintMessage(f"Objet: {sel.ObjectName}, Sous-éléments: {sel.SubElementNames}\n")
                 edges.append((sel.Object, sel.SubElementNames))
 
         # Mettre à jour l'objet
@@ -351,19 +365,122 @@ class ContourTaskPanel:
 
         self.detectDepth()
 
+        # Debug utile: lister les arêtes directement connectées à la sélection.
+        self.printDirectlyConnectedEdges()
+
         # Mettre à jour la forme
         self.obj.Document.recompute()
 
         App.Console.PrintMessage("Sélection confirmée.\n")
 
+    @staticmethod
+    def _points_close(p1, p2, tol=1e-6):
+        return (p1 - p2).Length <= tol
+
+    def getDirectlyConnectedEdges(self, tol=1e-6, include_selected=False):
+        """
+        Retourne les arêtes directement connectées à self.obj.Edges
+        (partage d'au moins un sommet), sous forme [(obj_ref, "EdgeX")].
+        """
+        if not hasattr(self.obj, "Edges") or not self.obj.Edges:
+            return []
+
+        selected_edges = []
+        selected_by_object = {}
+        selected_signatures = set()
+
+        def edge_signature(edge):
+            p1 = edge.Vertexes[0].Point
+            p2 = edge.Vertexes[-1].Point
+            a = (
+                round(p1.x, 6),
+                round(p1.y, 6),
+                round(p1.z, 6),
+            )
+            b = (
+                round(p2.x, 6),
+                round(p2.y, 6),
+                round(p2.z, 6),
+            )
+            return tuple(sorted((a, b)))
+
+        for sub in self.obj.Edges:
+            obj_ref = sub[0]
+            for sub_name in sub[1]:
+                if str(sub_name).startswith("Face"):
+                    face = obj_ref.Shape.getElement(sub_name)
+                    for e in face.Edges:
+                        selected_edges.append((obj_ref, sub_name, e))
+                        selected_by_object.setdefault(obj_ref, set()).add(sub_name)
+                        selected_signatures.add(edge_signature(e))
+                    continue
+                if not str(sub_name).startswith("Edge"):
+                    continue
+                try:
+                    edge = obj_ref.Shape.getElement(sub_name)
+                except Exception:
+                    continue
+                if getattr(edge, "ShapeType", "") != "Edge":
+                    continue
+                selected_edges.append((obj_ref, sub_name, edge))
+                selected_by_object.setdefault(obj_ref, set()).add(sub_name)
+                selected_signatures.add(edge_signature(edge))
+
+        connected = []
+        seen = set()
+
+        for obj_ref, _, src_edge in selected_edges:
+            shape = getattr(obj_ref, "Shape", None)
+            if not shape or not hasattr(shape, "Edges"):
+                continue
+
+            for idx, candidate_edge in enumerate(shape.Edges, start=1):
+                candidate_name = f"Edge{idx}"
+
+                if (not include_selected) and candidate_name in selected_by_object.get(obj_ref, set()):
+                    continue
+                if (not include_selected) and edge_signature(candidate_edge) in selected_signatures:
+                    continue
+
+                is_connected = False
+                try:
+                    for sv in src_edge.Vertexes:
+                        for cv in candidate_edge.Vertexes:
+                            if self._points_close(sv.Point, cv.Point, tol=tol):
+                                is_connected = True
+                                break
+                        if is_connected:
+                            break
+                except Exception:
+                    continue
+
+                if is_connected:
+                    key = (obj_ref.Name, candidate_name)
+                    if key not in seen:
+                        seen.add(key)
+                        connected.append((obj_ref, candidate_name))
+
+        return connected
+
+    def printDirectlyConnectedEdges(self, tol=1e-6):
+        """Affiche en console FreeCAD les arêtes directement connectées à self.obj.Edges."""
+        connected = self.getDirectlyConnectedEdges(tol=tol, include_selected=False)
+        if not connected:
+            App.Console.PrintMessage("Arêtes connectées: aucune trouvée.\n")
+            return
+
+        App.Console.PrintMessage(f"Arêtes connectées trouvées: {len(connected)}\n")
+        for obj_ref, edge_name in connected:
+            App.Console.PrintMessage(f" - {obj_ref.Label}.{edge_name}\n")
+
     def detectDepth(self):
         """Détecte automatiquement la profondeur en fonction des arêtes sélectionnées"""
         if not hasattr(self.obj, "Edges") or not self.obj.Edges:
-            Log.baptDebug("Aucune arête sélectionnée, impossible de détecter la profondeur.\n")
+            Log.baptDebug("Aucune arête sélectionnée, impossible de détecter la profondeur.")
             return
 
         if self.obj.Zref != 0 and self.obj.depth != 0:
-            Log.baptDebug("Zref et depth ne sont pas à 0, détection automatique de la profondeur ignorée.\n")
+            Log.baptDebug("Zref et depth ne sont pas à 0, détection automatique de la profondeur ignorée.")
             return
 
         highest_z = float('-inf')
@@ -389,8 +506,8 @@ class ContourTaskPanel:
                         if vertex.Point.z < lowest_z:
                             lowest_z = vertex.Point.z
 
-        Log.baptDebug(f"Hauteur la plus haute du contour: {highest_z} mm\n")
-        Log.baptDebug(f"Hauteur la plus basse du contour: {lowest_z} mm\n")
+        Log.baptDebug(f"Hauteur la plus haute du contour: {highest_z} mm")
+        Log.baptDebug(f"Hauteur la plus basse du contour: {lowest_z} mm")
 
         # Mettre à jour Zref et depth
         self.obj.Zref = highest_z
@@ -401,8 +518,6 @@ class ContourTaskPanel:
 
     def depthModeChanged(self):
         """Gère le changement de mode de profondeur (absolu/relatif)"""
-
-        current_value = self.depth.value()
 
         if self.relativeDepthRadio.isChecked():
             #     App.Console.PrintMessage('passage en relatif\n')
@@ -432,8 +547,8 @@ class ContourTaskPanel:
 
     def updateContour(self):
         """Met à jour le contour en fonction des paramètres"""
-        # Mettre à jour la direction
-        self.obj.Direction = self.direction.currentText()
+
+        self.obj.CoteMatiere = self.coteMatiere.currentText()
 
         # Mettre à jour Zref
         # self.obj.Zref = self.Zref.value()
@@ -457,7 +572,7 @@ class ContourTaskPanel:
     def accept(self):
         """Appelé quand l'utilisateur clique sur OK"""
         # Mettre à jour toutes les propriétés
-        self.obj.Direction = self.direction.currentText()
+        self.obj.CoteMatiere = self.coteMatiere.currentText()
 
         # Désactiver le mode de sélection si actif
         if self.selectionMode:
@@ -472,24 +587,6 @@ class ContourTaskPanel:
                     for vertex in face.Vertexes:
                         if vertex.Point.z > highest_z:
                             highest_z = vertex.Point.z
-            # self.obj.Zref = highest_z
-        # else:
-        #     App.Console.PrintWarning("Aucune arête sélectionnée, Zref non mis à jour.\n")
-        # #debug
-        # App.Console.PrintMessage(f"Zref mis à jour: {self.obj.Zref}\n")
-
-        # # Mettre à jour les autres propriétés
-        # self.obj.Zref = self.Zref.value()
-
-        # # Mettre à jour depth en fonction du mode
-        # if self.relativeDepthRadio.isChecked():
-        #     # Mode relatif: depth = Zref + valeur relative (négative)
-        #     #self.obj.depth = self.Zref.value() + self.depth.value()
-        #     self.obj.DepthMode = "Relatif"
-        # else:
-        #     # Mode absolu: depth = valeur absolue
-        #     #self.obj.depth = self.depth.value()
-        #     self.obj.DepthMode = "Absolu"
 
         if hasattr(self, "_clickObserver") and self._clickObserver:
             self._clickObserver.disable()
@@ -501,15 +598,18 @@ class ContourTaskPanel:
 
         # Fermer la tâche
         Gui.Control.closeDialog()
+        App.activeDocument().commitTransaction()
         return True
 
     def reject(self):
         """Appelé quand l'utilisateur clique sur Cancel"""
+        App.activeDocument().abortTransaction()
         # Désactiver le mode de sélection si actif
         if self.selectionMode:
             Gui.Selection.removeSelectionGate()
         if self.deleteOnReject:
-            App.ActiveDocument.removeObject(self.obj.Name)
+            # App.activeDocument().removeObject(self.obj.Name)
+            pass
         if hasattr(self, "_clickObserver") and self._clickObserver:
             self._clickObserver.disable()
             self._clickObserver = None
@@ -520,11 +620,10 @@ class ContourTaskPanel:
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
-        # return int(QtGui.QDialogButtonBox.Ok |
-        #            QtGui.QDialogButtonBox.Apply|
-        #            QtGui.QDialogButtonBox.Cancel)
         return (
-            QtGui.QDialogButtonBox.Ok | QtGui.QDialogButtonBox.Apply | QtGui.QDialogButtonBox.Cancel
+            QtGui.QDialogButtonBox.Ok
+            | QtGui.QDialogButtonBox.Apply
+            | QtGui.QDialogButtonBox.Cancel
         )
 
     def clicked(self, button):
@@ -532,7 +631,8 @@ class ContourTaskPanel:
         if button == QtGui.QDialogButtonBox.Apply:
             # self.panelGetFields()
             # self.setClean()
-            App.ActiveDocument.recompute()
+            self.obj.recompute()
+            # App.ActiveDocument.recompute()
 
     def onTableSelectionChanged(self):
         """Gère la sélection d'une ligne dans le tableau"""
@@ -614,7 +714,7 @@ class ContourTaskPanel:
             return
         # guider l'utilisateur
 
-    def _on_point_picked(self, point):
+    def _on_point_picked(self, point, document=None, obj=None, element=None):
         """Callback appelé par l'observer quand un point est sélectionné"""
         if self._pickingTarget == "Zref":
             self.Zref.setValue(point.z)

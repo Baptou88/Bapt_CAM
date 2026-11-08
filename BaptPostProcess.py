@@ -5,22 +5,29 @@ Génère un programme G-code à partir des opérations du projet CAM
 """
 import importlib
 import os
-from BaptPreferences import BaptPreferences
-from CamProjectTaskPanel import PostProcessorTaskPanel
-from BasePostPro import BasePostPro
+import re
 import FreeCAD as App  # type: ignore
-from Op import AdaptativeOp
-from Op.PathOp import pathOp
 from PySide import QtGui, QtCore  # type: ignore
+
+from BaptCamProject import CamProject
+from BaptPreferences import BaptPreferences
+from Gui.CamProjectTaskPanel import PostProcessorTaskPanel
+from BasePostPro import BasePostPro
+from Op import AdaptativeOp, BaseOp, DrillOp, OpContournage, OpSurfacage, PocketOp, SpiraleOp
+from Op.PathOp import pathOp
 import BaptUtilities as BaptUtils
+
+REGEX_VAR = rf"{BaptPreferences().regex_var}"
 
 
 def isOp(obj) -> bool:
     """
     Retourne True si obj est une opération d'usinage (ContournageCycle, DrillOperation, etc.).
     """
-    if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type in [
-            'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path', 'PocketOperation', 'AdaptativeOperation']:
+    # if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type in [
+    #         'ContournageCycle', 'DrillOperation', 'Surfacage', 'Path', 'PocketOperation', 'AdaptativeOperation']:
+    #     return True
+    if hasattr(obj, 'Proxy') and isinstance(obj.Proxy, BaseOp.baseOp):
         return True
     return False
 
@@ -60,8 +67,8 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
     gcode_lines = [Postpro.writeHeader()]
 
     current_tool = None
-    current_spindle = None
-    current_feed = None
+    current_Coolant = None
+    last_op = None  # Dernière opération traitée (pour la transition)
 
     blockForm = Postpro.blockForm(cam_project.Proxy.getStock(cam_project))
     gcode_lines.append(blockForm)
@@ -72,7 +79,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             linked_obj = obj.LinkedObject
             if linked_obj and isOp(linked_obj):
                 obj = linked_obj
-        if not (hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type')):
+        if not hasattr(obj, 'Proxy'):
             continue
         tool = getattr(obj, 'Tool', None)
         if tool is None:
@@ -84,40 +91,56 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             gcode_lines.append(tool_change_code)
 
             current_tool = tool
+        elif last_op is not None:
+            # Même outil, transition entre opérations : dégagement Z puis rapide XY
+            retract_z = 100
+            gcode_lines.append(Postpro.writeComment(f"Transition vers {obj.Label}"))
+            gcode_lines.append(f"G0 Z{retract_z}")
+
+        coolantMode = getattr(obj, 'CoolantMode', 'Off')
+        if current_Coolant != coolantMode:
+            coolant_change_code = Postpro.coolantChange(coolantMode)
+            gcode_lines.append(coolant_change_code)
+            current_Coolant = coolantMode
+
+        Gcode = getattr(obj, 'Gcode', '')
+
+        def replace_var(match):
+            var_name = match.group(1)
+            attr = property.getProperty(obj, var_name)
+            if attr is not None:
+                return str(attr)
+            return var_name
+
+        Gcode = re.sub(REGEX_VAR, replace_var, Gcode)
 
         # --- Surfacage ---
-        if obj.Proxy.Type == 'Surfacage' and hasattr(obj, 'Shape'):
+        if isinstance(obj.Proxy, OpSurfacage.Surfacage) and hasattr(obj, 'Shape'):
 
             gcode_lines.append(Postpro.writeComment(f"Surfacage: {obj.Label}"))
 
-            gcode_lines.append(obj.Gcode)
+            gcode_lines.append(Gcode)
 
         # --- Contournage ---
-        if obj.Proxy.Type == 'ContournageCycle' and hasattr(obj, 'Shape'):
-            transformed = Postpro.transformGCode(obj.Gcode)
+        elif isinstance(obj.Proxy, OpContournage.ContournageCycle) and hasattr(obj, 'Shape'):
+            transformed = Postpro.transformGCode(Gcode)
             gcode_lines.append(Postpro.writeComment(f"Contournage operation: {obj.Label}"))
 
             gcode_lines.append(transformed)
             # gcode_lines.append(obj.Gcode)
 
         # --- Perçage ---
-        elif obj.Proxy.Type == 'DrillOperation':
-            tool_id = getattr(obj, 'ToolId', None)
-            tool_name = getattr(obj, 'ToolName', None)
-            spindle = getattr(obj, 'SpindleSpeed', None)
+        elif isinstance(obj.Proxy, DrillOp.DrillOperation):
+
             feed = getattr(obj, 'FeedRate', None).Value
             safe_z = getattr(obj, 'SafeHeight').Value
             final_z = getattr(obj, 'FinalDepth', -5.0).Value
             cycle = getattr(obj, 'CycleType', "Simple")
-            dwell = getattr(obj, 'DwellTime', 0.5)
-            peck = getattr(obj, 'PeckDepth', 2.0).Value
-            retract = getattr(obj, 'Retract', 1.0).Value
 
             gcode_lines.append(Postpro.writeComment(f"Perçage: {obj.Label}"))
             points = []
-            if hasattr(obj, 'DrillGeometryName'):
-                doc = App.ActiveDocument
-                geom = doc.getObject(obj.DrillGeometryName)
+            if hasattr(obj, 'DrillGeometry'):
+                geom = obj.DrillGeometry
                 if geom and hasattr(geom, 'DrillPositions'):
                     points = geom.DrillPositions
             if cycle == "Simple":
@@ -125,53 +148,67 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
                 gcode_lines.append(Postpro.G81(obj))
 
             elif cycle == "Peck":
-                commentaire = Postpro.writeComment(f"Cycle: G83 - Perçage par reprise")
+                commentaire = Postpro.writeComment("Cycle: G83 - Perçage par reprise")
                 gcode_lines.append(commentaire)
-                for pt in points:
-                    gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
-                    gcode_lines.append(f"G83 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} Q{peck:.3f} F{feed}")
-                    gcode_lines.append(f"G80")
+                gcode_lines.append(Postpro.G83(obj))
+
+            elif cycle == "DeepHole":
+                commentaire = Postpro.writeComment("Cycle: DeepHole - perçage profond")
+                gcode_lines.append(commentaire)
+                gcode_lines.append(Postpro.transformGCode(Gcode))
 
             elif cycle == "Tapping":
-                commentaire = Postpro.writeComment(f"Cycle: G84 - Taraudage")
+                commentaire = Postpro.writeComment("Cycle: G84 - Taraudage")
                 gcode_lines.append(commentaire)
                 gcode_lines.append(Postpro.G84(obj))
 
             elif cycle == "Boring":
-                commentaire = Postpro.writeComment(f"Cycle: G85 - Alésage")
+                commentaire = Postpro.writeComment("Cycle: G85 - Alésage")
                 gcode_lines.append(commentaire)
                 for pt in points:
                     gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
                     gcode_lines.append(f"G85 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
-                    gcode_lines.append(f"G80")
+                    gcode_lines.append("G80")
             elif cycle == "Reaming":
-                gcode_lines.append(f"(Cycle: G85 - Alésage/finition)")
-                commentaire = Postpro.writeComment(f"Cycle: Contournage personnalisé")
+                gcode_lines.append("(Cycle: G85 - Alésage/finition)")
+                commentaire = Postpro.writeComment("Cycle: Contournage personnalisé")
                 gcode_lines.append(commentaire)
                 for pt in points:
                     gcode_lines.append(f"G0 X{pt.x:.3f} Y{pt.y:.3f} Z{safe_z:.3f}")
                     gcode_lines.append(f"G85 X{pt.x:.3f} Y{pt.y:.3f} Z{final_z:.3f} R{safe_z:.3f} F{feed}")
-                    gcode_lines.append(f"G80")
+                    gcode_lines.append("G80")
+
             elif cycle == "Contournage":
-                commentaire = Postpro.writeComment(f"Cycle: Contournage personnalisé")
+                commentaire = Postpro.writeComment("Cycle: Contournage personnalisé")
                 gcode_lines.append(commentaire)
-                gcode_lines.append(obj.Gcode)
+                gcode_lines.append(Postpro.transformGCode(Gcode))
 
         elif isinstance(obj.Proxy, pathOp):
             gcode_lines.append(Postpro.writeComment(f"Path operation: {obj.Label}"))
-            gcode_lines.append(Postpro.transformGCode(obj.Gcode))
+            gcode_lines.append(Postpro.transformGCode(Gcode))
 
-        elif isinstance(obj.Proxy, AdaptativeOp):
+        elif isinstance(obj.Proxy, AdaptativeOp.AdaptativeOp):
             gcode_lines.append(Postpro.writeComment(f"Adaptative operation: {obj.Label}"))
-            gcode_lines.append(Postpro.transformGCode(obj.Gcode))
+            gcode_lines.append(Postpro.transformGCode(Gcode))
+
+        elif isinstance(obj.Proxy, PocketOp.PocketOperation):
+            gcode_lines.append(Postpro.writeComment(f"Pocket operation: {obj.Label}"))
+            gcode_lines.append(Postpro.transformGCode(Gcode))
+
+        elif isinstance(obj.Proxy, SpiraleOp.SpiraleOp):
+            gcode_lines.append(Postpro.writeComment(f"Spirale operation: {obj.Label}"))
+            gcode_lines.append(Postpro.transformGCode(Gcode))
 
         else:
             gcode_lines.append('M30')  # code de fin de programme
             gcode_lines.append(Postpro.writeComment(f"Opération non prise en charge: {obj.Label} (Class: {obj.Proxy.__class__.__name__})"))
 
+        last_op = obj
+
     gcode_lines.append(Postpro.writeFooter())
 
-    return '\n'.join(gcode_lines)
+    gcode = '\n'.join(gcode_lines)
+    return Postpro.addLineNumbers(gcode)
 
 
 def postprocess_gcode():
@@ -182,7 +219,7 @@ def postprocess_gcode():
     # Chercher le projet CAM principal
     cam_project = None
     for obj in doc.Objects:
-        if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and obj.Proxy.Type == 'CamProject':
+        if hasattr(obj, 'Proxy') and hasattr(obj.Proxy, 'Type') and isinstance(obj.Proxy, CamProject):
             cam_project = obj
             break
     if not cam_project:
@@ -229,9 +266,20 @@ class PostProcessDialog(QtGui.QDialog):
         leftPane = QtGui.QWidget()
         leftLayout = QtGui.QVBoxLayout(leftPane)
 
-        # Liste des opérations avec items checkables
+        # Liste des opérations avec items checkables + drag & drop
         self.listWidget = QtGui.QListWidget(self)
         self.listWidget.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
+        self.listWidget.setDragDropMode(QtGui.QAbstractItemView.InternalMove)
+        self.listWidget.setDefaultDropAction(QtCore.Qt.MoveAction)
+        self.listWidget.setDragEnabled(True)
+        self.listWidget.setAcceptDrops(True)
+        # Intercepter le drop pour mettre à jour l'ordre dans le projet
+        _orig_dropEvent = self.listWidget.dropEvent
+
+        def _on_drop(event):
+            _orig_dropEvent(event)
+            self.updateOrder()
+        self.listWidget.dropEvent = _on_drop
         leftLayout.addWidget(self.listWidget)
 
         # Boutons Up/Down sous la liste
@@ -282,9 +330,9 @@ class PostProcessDialog(QtGui.QDialog):
         for op in ops:
             displayText = f"{op.Label} {self._tool_label(op)}"
             item = QtGui.QListWidgetItem(displayText)
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsDragEnabled)
             item.setCheckState(QtCore.Qt.Checked if op.Active else QtCore.Qt.Unchecked)
-            item.setData(QtCore.Qt.UserRole, op)
+            item.setData(QtCore.Qt.UserRole, op.Name)  # stocke le Name (string) pour survivre au drag & drop
             self.listWidget.addItem(item)
             # set icon for the operation
             try:
@@ -350,29 +398,30 @@ class PostProcessDialog(QtGui.QDialog):
         groupeOps = self.cam_project.Proxy.getOperationsGroup(self.cam_project)
         for r in range(self.listWidget.count()):
             item = self.listWidget.item(r)
-            op = item.data(QtCore.Qt.UserRole)
-            if op in groupeOps.Group:
+            op = App.ActiveDocument.getObject(item.data(QtCore.Qt.UserRole))
+            if op and op in groupeOps.Group:
                 groupeOps.removeObject(op)
         for r in range(self.listWidget.count()):
             item = self.listWidget.item(r)
-            op = item.data(QtCore.Qt.UserRole)
-            groupeOps.addObject(op)
+            op = App.ActiveDocument.getObject(item.data(QtCore.Qt.UserRole))
+            if op:
+                groupeOps.addObject(op)
 
     def move_item_up(self):
         row = self.listWidget.currentRow()
         if row > 0:
             item = self.listWidget.takeItem(row)
-            self.listWidget.insertItem(row-1, item)
-            self.listWidget.setCurrentRow(row-1)
+            self.listWidget.insertItem(row - 1, item)
+            self.listWidget.setCurrentRow(row - 1)
 
             self.updateOrder()
 
     def move_item_down(self):
         row = self.listWidget.currentRow()
-        if row < self.listWidget.count()-1 and row >= 0:
+        if row < self.listWidget.count() - 1 and row >= 0:
             item = self.listWidget.takeItem(row)
-            self.listWidget.insertItem(row+1, item)
-            self.listWidget.setCurrentRow(row+1)
+            self.listWidget.insertItem(row + 1, item)
+            self.listWidget.setCurrentRow(row + 1)
 
             self.updateOrder()
 
@@ -381,7 +430,9 @@ class PostProcessDialog(QtGui.QDialog):
         for i in range(self.listWidget.count()):
             item = self.listWidget.item(i)
             if item.checkState() == QtCore.Qt.Checked:
-                ops.append(item.data(QtCore.Qt.UserRole))
+                op = App.ActiveDocument.getObject(item.data(QtCore.Qt.UserRole))
+                if op:
+                    ops.append(op)
         return ops
 
     def on_generate(self):
@@ -405,7 +456,9 @@ class PostProcessDialog(QtGui.QDialog):
             return
         gcode = generate_gcode_for_ops(ops, self.cam_project, pp)
         prefs = BaptPreferences()
-        filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Enregistrer le G-code", prefs.getGCodeFolderPath(), "Fichiers G-code (*.nc *.gcode *.tap);;Tous les fichiers (*)")
+
+        ext = getattr(module, 'Ext', "nc,gcode")
+        filename, _ = QtGui.QFileDialog.getSaveFileName(self, "Enregistrer le G-code", prefs.getGCodeFolderPath(), f"Fichiers G-code (*.{ext});;Tous les fichiers (*)")
         if not filename:
             return
         try:

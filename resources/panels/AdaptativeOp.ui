@@ -7,13 +7,13 @@
     <x>0</x>
     <y>0</y>
     <width>335</width>
-    <height>450</height>
+    <height>581</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Fraisage Adaptatif</string>
   </property>
-  <layout class="QGridLayout" name="gridLayout">
+  <layout class="QGridLayout" name="gridLayout_2">
    <item row="0" column="0">
     <widget class="QToolBox" name="toolBox">
      <property name="currentIndex">
@@ -25,13 +25,13 @@
         <x>0</x>
         <y>0</y>
         <width>317</width>
-        <height>402</height>
+        <height>533</height>
        </rect>
       </property>
       <attribute name="label">
        <string>Paramètres</string>
       </attribute>
-      <layout class="QGridLayout" name="gridLayout_2">
+      <layout class="QGridLayout" name="gridLayout">
        <item row="0" column="0">
         <widget class="QLabel" name="label_toolDiam">
          <property name="text">
@@ -151,6 +151,56 @@
        </item>
        <item row="6" column="1">
         <widget class="QComboBox" name="plungeCombo"/>
+       </item>
+       <item row="7" column="0">
+        <widget class="QLabel" name="label_stepDown_2">
+         <property name="text">
+          <string>Entree</string>
+         </property>
+        </widget>
+       </item>
+       <item row="7" column="1">
+        <widget class="Gui::QuantitySpinBox" name="entreeSpin" native="true">
+         <property name="statusTip">
+          <string>Diamètre</string>
+         </property>
+         <property name="minimum" stdset="0">
+          <double>-999999999.000000000000000</double>
+         </property>
+         <property name="maximum" stdset="0">
+          <double>999999999.000000000000000</double>
+         </property>
+        </widget>
+       </item>
+       <item row="8" column="0">
+        <widget class="QLabel" name="label_sortie">
+         <property name="text">
+          <string>Sortie</string>
+         </property>
+        </widget>
+       </item>
+       <item row="8" column="1">
+        <widget class="Gui::QuantitySpinBox" name="sortieSpin" native="true">
+         <property name="statusTip">
+          <string>Diamètre</string>
+         </property>
+         <property name="minimum" stdset="0">
+          <double>-999999999.000000000000000</double>
+         </property>
+         <property name="maximum" stdset="0">
+          <double>999999999.000000000000000</double>
+         </property>
+        </widget>
+       </item>
+       <item row="9" column="0">
+        <widget class="QLabel" name="label_BaseGeom">
+         <property name="text">
+          <string>BaseGeom</string>
+         </property>
+        </widget>
+       </item>
+       <item row="9" column="1">
+        <widget class="QComboBox" name="plungeCombo_2"/>
        </item>
       </layout>
      </widget>

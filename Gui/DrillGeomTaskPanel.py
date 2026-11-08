@@ -1,7 +1,7 @@
-from tkinter.filedialog import Open
 import BaptUtilities
 import FreeCAD as App
 import FreeCADGui as Gui
+from Op import DrillOp, SpiraleOp
 from PySide import QtCore, QtGui
 
 
@@ -141,7 +141,7 @@ class DrillGeometryTaskPanel:
         if not ops and not hasattr(ops, "Group"):
             return
         for op in ops.Group:
-            if hasattr(op, "Proxy") and hasattr(op.Proxy, "Type") and op.Proxy.Type == "DrillOperation":
+            if hasattr(op, "Proxy") and isinstance(op.Proxy, (DrillOp.DrillOperation, SpiraleOp.SpiraleOp)):
                 row = self.optable.rowCount()
                 self.optable.insertRow(row)
                 self.optable.setItem(row, 0, QtGui.QTableWidgetItem(op.Label))
@@ -256,8 +256,8 @@ class DrillGeometryTaskPanel:
         # Mettre à jour les positions
         if not self.updateDrillPositions():
             return False
-
         self.obj.SelectedPosition = -1
+        self.obj.recompute()
         App.ActiveDocument.commitTransaction()
         # Fermer la tâche
         Gui.Control.closeDialog()
@@ -266,15 +266,24 @@ class DrillGeometryTaskPanel:
     def reject(self):
         """Appelé quand l'utilisateur clique sur Cancel"""
 
-        self.obj.SelectedPosition = -1
         App.ActiveDocument.abortTransaction()
+        self.obj.SelectedPosition = -1
         Gui.Control.closeDialog()
         return False
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
         return (QtGui.QDialogButtonBox.Ok
+                | QtGui.QDialogButtonBox.Apply
                 | QtGui.QDialogButtonBox.Cancel)
+
+    def clicked(self, button):
+        """clicked(button) ... callback invoked when the user presses any of the task panel buttons."""
+        if button == QtGui.QDialogButtonBox.Apply:
+            # self.panelGetFields()
+            # self.setClean()
+            self.obj.recompute()
+            # App.ActiveDocument.recompute()
 
     def moveUp(self):
         """Déplacer la position sélectionnée vers le haut"""
@@ -363,7 +372,7 @@ class DrillGeometryTaskPanel:
                 item_z = self.drillTable.item(row, 2)
 
                 if not item_x or not item_y or not item_z:
-                    App.Console.PrintError(f"Élément manquant à la ligne {row+1}\n")
+                    App.Console.PrintError(f"Élément manquant à la ligne {row + 1}\n")
                     return False
 
                 x = float(item_x.text())
@@ -371,7 +380,7 @@ class DrillGeometryTaskPanel:
                 z = float(item_z.text())
                 positions.append(App.Vector(x, y, z))
             except (ValueError, AttributeError) as e:
-                App.Console.PrintError(f"Position invalide à la ligne {row+1}: {str(e)}\n")
+                App.Console.PrintError(f"Position invalide à la ligne {row + 1}: {str(e)}\n")
                 return False
 
         # Mettre à jour les positions dans l'objet
@@ -388,7 +397,7 @@ class DrillGeometryTaskPanel:
         """Mettre à jour les opérations de perçage enfants"""
         # Parcourir tous les objets enfants de type DrillOperation
         for child in self.obj.Group:
-            if hasattr(child, "Proxy") and hasattr(child.Proxy, "Type") and child.Proxy.Type == "DrillOperation":
+            if hasattr(child, "Proxy") and isinstance(child.Proxy, DrillOp.DrillOperation):
                 # Forcer la mise à jour de l'opération
                 if hasattr(child, "touch"):
                     child.touch()

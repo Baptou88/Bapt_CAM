@@ -6,5 +6,6 @@ import unittest
 
 import TestApp
 
-from tests.BaptTestPocket import TestNode
-from tests.BaptTestPocket import TestShiftWire
+# from tests.BaptTestPocket import TestNode
+# from tests.BaptTestPocket import TestShiftWire
+from tests.test_offset import TestOffset

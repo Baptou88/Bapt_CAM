@@ -12,29 +12,46 @@ class GcodeWriter:
         self.lines = []
         self.current_position = {'X': None, 'Y': None, 'Z': None}
         self.current_feed = None
+        self.labels = []
         prefs = BaptPreferences()
         self.DEBUG = prefs.debugGcode
+
+        """in seconds, estimated machining time"""
+        self.time_estimate = 0.0
 
     def _caller():
         """internal function to determine the calling module."""
         filename, line, func, text = traceback.extract_stack(limit=3)[0]
         return os.path.splitext(os.path.basename(filename))[0], line, func
 
-    def linearMove(self, arg, feed: float = None, rapid=False):
+    def setPosition(self, x, y, z):
+        self.current_position = {'X': x, 'Y': y, 'Z': z}
+
+    def linearMove(self, arg, feed: float = None, rapid=False, force=False):
         line = 'G0' if rapid else 'G1'
 
         if 'comp' in arg:
             line += f" {arg['comp']}"
 
+        distance = {'X': 0, 'Y': 0, 'Z': 0}
         for axis in ['X', 'Y', 'Z']:
             if axis in arg:
-                if self.current_position[axis] is None or arg[axis] != self.current_position[axis]:
+                if force or self.current_position[axis] is None or arg[axis] != self.current_position[axis]:
                     line += f" {axis}{arg[axis]:.3f}"
+                    distance[axis] = abs(arg[axis] - (self.current_position[axis] or 0))
                 self.current_position[axis] = arg[axis]
 
         if feed is not None and feed != self.current_feed:
             line += f" F{feed:.1f}"
             self.current_feed = feed
+
+        if rapid is False and self.current_feed is not None:
+            # Estimation du temps pour ce déplacement
+            feed_mm_per_sec = self.current_feed / 60.0  # Convertir de mm/min à mm/s
+            d = (distance['X'] ** 2 + distance['Y'] ** 2 + distance['Z'] ** 2) ** 0.5
+            if feed_mm_per_sec > 0:
+                move_time = d / feed_mm_per_sec
+                self.time_estimate += move_time
 
         if self.DEBUG:
             module, line_num, func = GcodeWriter._caller()
@@ -71,3 +88,17 @@ class GcodeWriter:
         if self.DEBUG:
             module, line_num, func = GcodeWriter._caller()
             self.lines[-1] += f" (at {module}:{line_num} in {func})"
+
+    def addLabel(self, label):
+        if label in self.labels:
+            raise ValueError(f"Label '{label}' already exists.")
+        self.labels.append(label)
+
+        self.lines.append(f"{label}:")
+
+    def endLabel(self):
+        label = self.labels.pop()
+        self.lines.append(f"{label}_FIN:")
+
+    def raw(self, line):
+        self.lines.append(line)

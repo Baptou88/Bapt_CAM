@@ -19,12 +19,12 @@ class cuttingConditionTaskPanel:
 
         # Rotations par minute
         self.Speed = BQuantitySpinBox.BQuantitySpinBox(obj, "SpindleSpeed")
-        self.Speed.setValue(obj.SpindleSpeed)
+        # self.Speed.setValue(obj.SpindleSpeed)
         self.layout.addRow("Speed:", self.Speed.getWidget())
 
         # Avance
         self.Feed = BQuantitySpinBox.BQuantitySpinBox(obj, "FeedRate")
-        self.Feed.setValue(obj.FeedRate)
+        # self.Feed.setValue(obj.FeedRate)
         self.layout.addRow("Feed:", self.Feed.getWidget())
 
         # lubrification
@@ -63,3 +63,7 @@ class cuttingConditionTaskPanel:
             App.Console.PrintMessage(f'Using tool settings: Speed={self.obj.Tool.Speed}, Feed={self.obj.Tool.Feed}\n')
         else:
             App.Console.PrintMessage('No tool assigned to the operation.\n')
+
+    def setFields(self, obj):
+        self.Speed.updateWidget()
+        self.Feed.updateWidget()

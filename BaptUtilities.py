@@ -1,4 +1,5 @@
 import os
+from BaptCamProject import CamProject
 import FreeCAD as App
 import FreeCADGui
 
@@ -46,6 +47,19 @@ def getPostProPath(postPro: str):
     return os.path.join(get_module_path(), "PostPro", postPro)
 
 
+def getAvailablePostProcessors():
+    '''
+    Returns a sorted list of available post-processor names
+    by scanning Python files in the PostPro directory.
+    '''
+    postpro_dir = os.path.join(get_module_path(), "PostPro")
+    result = []
+    for filename in os.listdir(postpro_dir):
+        if filename.endswith(".py") and filename != "__init__.py":
+            result.append(filename[:-3])
+    return sorted(result)
+
+
 def getExamplesPath():
     '''
     Returns the examples path.
@@ -72,7 +86,7 @@ def find_cam_project(o):
 
         proxy = getattr(parent, "Proxy", None)
 
-        if proxy is not None and hasattr(proxy, "Type") and proxy.Type == "CamProject":
+        if proxy is not None and isinstance(proxy, CamProject):
             return parent
         if hasattr(parent, "InList"):
             queue.extend(parent.InList)
@@ -87,7 +101,7 @@ def getActiveCamProject():
 
     sel = FreeCADGui.Selection.getSelection()
     if sel and len(sel) <= 1:
-        if hasattr(sel[0], "Proxy") and sel[0].Proxy.Type == "CamProject":
+        if hasattr(sel[0], "Proxy") and isinstance(sel[0].Proxy, CamProject):
             return sel[0]
 
     obj = FreeCADGui.activeView().getActiveObject("camproject")
@@ -97,7 +111,7 @@ def getActiveCamProject():
     cam_projects = []
     for obj in App.ActiveDocument.Objects:
         proxy = getattr(obj, "Proxy", None)
-        if proxy is not None and hasattr(proxy, "Type") and proxy.Type == "CamProject":
+        if proxy is not None and isinstance(proxy, CamProject):
             cam_projects.append(obj)
     if len(cam_projects) == 1:
         return cam_projects[0]

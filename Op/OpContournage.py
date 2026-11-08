@@ -1,28 +1,33 @@
 import enum
-from BaptPath import GcodeEditorTaskPanel
-from Op.BaseOp import baseOpViewProviderProxy
-import BaptUtilities
+import sys
+import math
+
 import FreeCAD as App
 import FreeCADGui as Gui
-from Op.BaseOp import baseOp
-import Part
-from utils import Contour, GcodeWriter
-import PySide.QtGui as QtGui
-import PySide.QtCore as QtCore
+import Part  # type: ignore
 
-import math
-import sys
+import PySide.QtGui as QtGui  # type: ignore
+import PySide.QtCore as QtCore  # type: ignore
+
+from BaptPath import GcodeEditorTaskPanel
+import BaptUtilities
+from utils import Contour, GcodeWriter, Log, formatFloat
+from Op.offset import Side, material_side_to_tool_side, offsetWire, is_conventional
+from Op.Gui.ContournageTaskPanel import ContournageTaskPanel
+from Op.BaseOp import baseOp, baseOpViewProviderProxy
+
 
 # compensation = ["Ordinateur", "Machine", "Ordinateur + G41/G42", "Aucune"]
 
 
-class compensation(enum.Enum):
+class Compensation(enum.Enum):
     Ordinateur = 0
     Machine = 1
     Ordinateur_G41_G42 = 2
     Aucune = 3
 
-    def __repr__(self): return f"{self.name}"
+    def __repr__(self):
+        return f"{self.name}"
 
 
 approach_types = ["Tangentielle", "Perpendiculaire", "Perp+Arc", "Hélicoïdale"]
@@ -57,9 +62,16 @@ class ContournageCycle(baseOp):
             obj.Direction = ["Climb", "Conventional"]
             obj.Direction = "Climb"
 
-        # Utiliser PropertyString au lieu de PropertyLink pour éviter la dépendance circulaire
-        if not hasattr(obj, "ContourGeometryName"):
-            obj.addProperty("App::PropertyString", "ContourGeometryName", "Contour", "Nom de la géométrie du contour")
+        # Lien vers la géométrie du contour
+        if not hasattr(obj, "ContourGeometry"):
+            obj.addProperty("App::PropertyLink", "ContourGeometry", "Contour", "Géométrie du contour")
+        # Migration : convertir l'ancien PropertyString en PropertyLink
+        if hasattr(obj, "ContourGeometryName"):
+            if obj.ContourGeometryName and not obj.ContourGeometry:
+                old_geom = obj.Document.getObject(obj.ContourGeometryName)
+                if old_geom:
+                    obj.ContourGeometry = old_geom
+            obj.removeProperty("ContourGeometryName")
 
         # Ajout des types d'approche et de sortie
         if not hasattr(obj, "ApproachType"):
@@ -78,8 +90,8 @@ class ContournageCycle(baseOp):
 
         if not hasattr(obj, "Compensation"):
             obj.addProperty("App::PropertyEnumeration", "Compensation", "Toolpath", "Type de compensation d'outil")
-            obj.Compensation = list(compensation.__members__.keys())
-            obj.Compensation = compensation.Ordinateur.name
+            obj.Compensation = list(Compensation.__members__.keys())
+            obj.Compensation = Compensation.Ordinateur.name
 
         if not hasattr(obj, "SurepAxiale"):
             obj.addProperty("App::PropertyFloat", "SurepAxiale", "Toolpath", "Surépaisseur axiale")
@@ -91,9 +103,6 @@ class ContournageCycle(baseOp):
 
         super().installToolProp(obj)
 
-        if int(App.Version()[0]) >= 1 and int(App.Version()[1]) >= 1:
-            obj.setExpression('ToolDiameter', u'.Tool ? .Tool.Radius * 2 : 6')
-
         obj.Proxy = self
 
     def onDocumentRestored(self, obj):
@@ -102,324 +111,468 @@ class ContournageCycle(baseOp):
 
     def onChanged(self, obj, prop):
         """Gérer les changements de propriétés"""
-        if prop in ["ToolDiameter", "CutDepth", "StepDown", "Direction", "ContourGeometryName", "ApproachType", "RetractType", "ApproachRetractLength", "ApproachRetractLength", "desactivated", "Compensation", "SurepAxiale", "SurepRadiale"]:
+        if prop in ["ToolDiameter", "CutDepth", "StepDown", "Direction", "ContourGeometry", "ApproachType", "RetractType", "ApproachRetractLength", "ApproachRetractLength", "desactivated", "Compensation", "SurepAxiale", "SurepRadiale"]:
             self.execute(obj)
 
     def execute(self, obj):
-        """Mettre à jour la représentation visuelle"""
+        """Calcule le parcours outil de contournage et génère le G-code.
+
+        Algorithme :
+        1. Récupérer le wire de base depuis ContourGeometry à Z=Zref
+        2. Pour chaque passe Z :
+           a. Copier le wire à Z courant
+           b. Appliquer makeOffset2D pour décaler du rayon outil (+surep)
+           c. Détecter GÉOMÉTRIQUEMENT le côté outil (gauche/droite du parcours)
+           d. Construire approche / sortie du bon côté
+           e. Générer le G-code
+
+        Conventions offset :
+          makeOffset2D(+d) = GAUCHE du sens de parcours du wire
+          makeOffset2D(-d) = DROITE du sens de parcours du wire
+        Signe de l'offset :
+          CoteMatiere=Droite → matière à droite → outil à gauche → +R
+          CoteMatiere=Gauche → matière à gauche → outil à droite → -R
+          Climb → signe inchangé   |   Conventional → signe inversé
+        """
         if App.ActiveDocument.Restoring:
             return
         super().execute(obj)
 
-        obj.Shape = Part.Shape()  # Initialize shape
-        all_pass_shapes_collected = []  # To collect all edges/wires from all passes
-        gcodeWriter = GcodeWriter.GcodeWriter()
+        all_shapes = []
+        gcode = GcodeWriter.GcodeWriter()
 
-        passes_z_values = self.calculatePasse(obj)
+        # ── 1. Récupérer la géométrie de base ──────────────────────────────
 
         contour_geom = self.getContourGeometry(obj)
         if not contour_geom:
-            App.Console.PrintError("ContourGeometry not found.\n")
             return
 
-        if not hasattr(contour_geom, "Shape") or not contour_geom.Shape or not contour_geom.Shape.Wires:
-            App.Console.PrintError("ContourGeometry Shape or Wires not found or empty.\n")
+        if not getattr(contour_geom, "Shape", None) or not contour_geom.Shape.Wires:
+            App.Console.PrintError("[Contournage] Pas de wire dans la géométrie.\n")
             return
 
-        # Find the Zref wire from ContourGeometry.Shape.Wires
-        zref_wire_from_contour = None
-        contour_zref = contour_geom.Zref if hasattr(contour_geom, "Zref") else 0.0
-        for wire_in_geom in contour_geom.Shape.Wires:
-            if wire_in_geom.Edges and abs(wire_in_geom.Edges[0].Vertexes[0].Point.z - contour_zref) < 1e-3:
-                zref_wire_from_contour = wire_in_geom
+        depth = contour_geom.Proxy.getDepths()
+        zref = depth[0]
+
+        # Trouver le wire à Zref
+        base_wire = None
+        for w in contour_geom.Shape.Wires:
+            if w.Edges and abs(w.Edges[0].Vertexes[0].Point.z - zref) < 1e-3:
+                base_wire = w
                 break
-
-        if not zref_wire_from_contour:
-            App.Console.PrintError("Zref wire not found in ContourGeometry.Shape.\n")
-            # Fallback: try to use the first wire if any
+        if not base_wire:
             if contour_geom.Shape.Wires:
-                zref_wire_from_contour = contour_geom.Shape.Wires[0]
-                App.Console.PrintWarning("Using the first available wire as Zref wire fallback.\n")
+                base_wire = contour_geom.Shape.Wires[0]
             else:
                 return
 
-        # --- Calculations needed once ---
-        tool_offset_radius = obj.ToolDiameter.Value / 2.0
-        direction_contour = contour_geom.Direction if hasattr(contour_geom, "Direction") else "Horaire"
-        direction_usinage = obj.Direction
+        # ── 2. Paramètres d'usinage ────────────────────────────────────────
 
-        is_offset_inward = (direction_contour == "Horaire" and direction_usinage == "Climb") or \
-                           (direction_contour == "Anti-horaire" and direction_usinage == "Conventional")
-        actual_offset_value = -tool_offset_radius if is_offset_inward else tool_offset_radius
+        tool_radius = obj.ToolDiameter.Value / 2.0
+        cote_matiere = getattr(contour_geom, "CoteMatiere", "NC")
+        direction_usinage = obj.Direction  # Climb / Conventional
+        is_closed = base_wire.isClosed()
+        rapid_z = zref + 2.0
+        feed = float(obj.FeedRate.getValueAs('mm/min'))
+        passes = self.calculatePasse(obj)
 
-        is_contour_closed = contour_geom.IsClosed if hasattr(contour_geom, "IsClosed") else False
-        approach_length = obj.ApproachRetractLength
-        approach_type = obj.ApproachType
-        retract_type = obj.RetractType
+        if cote_matiere == "NC":
+            App.Console.PrintWarning("CoteMatiere is not defined for contour geometry, defaulting to 'Droite'.\n")
+            cote_matiere = "Droite"
 
-        # use Part.sortEdges to sort the edges of the wire
-        # zref_wire_from_contour = Part.sortEdges(zref_wire_from_contour)
-        # --- End of once-off calculations ---
+        # ── 3. Calcul du signe d'offset ────────────────────────────────────
 
-        previous_pass_actual_end_point = None
-        rapid_traverse_z = contour_zref + 2.0
+        offset_value = tool_radius
+        machining_side = material_side_to_tool_side(cote_matiere)
+        _is_conventional = is_conventional(direction_usinage)
+        self._tool_side_is_left = not _is_conventional
 
-        for p, pass_z in enumerate(passes_z_values):
-            App.Console.PrintMessage(f"Processing pass at Z = {pass_z}\n")
-            # current_pass_toolpath_segments list is removed as segments are added directly to all_pass_shapes_collected
+        reverse_path = (_is_conventional and machining_side == Side.LEFT) or (not _is_conventional and machining_side == Side.RIGHT)
 
-            # 1. Create wire at current pass_z by transforming zref_wire_from_contour
-            edges_for_current_pass_z = zref_wire_from_contour.Edges
+        App.Console.PrintMessage(
+            f"[Contournage] CoteMatiere={cote_matiere} {machining_side}, Dir={direction_usinage}, "
+            f"{'fermé' if is_closed else 'ouvert'}, "
+            f"({offset_value:.3f}) {'reverse' if reverse_path else 'normal'}\n")
 
-            if not edges_for_current_pass_z:
-                App.Console.PrintWarning(f"No edges created for wire at Z={pass_z}. Skipping pass.\n")
+        App.Console.PrintMessage(
+            f"[Contournage] outil côté "
+            f"{'GAUCHE' if self._tool_side_is_left else 'DROITE'} \n")
+
+        # ── 4. Boucle sur les passes ───────────────────────────────────────
+
+        prev_end_pt = None
+
+        for p, pass_z in enumerate(passes):
+            # Utiliser base_wire directement — NE PAS reconstruire avec Part.Wire()
+            # car Part.Wire() peut inverser la direction du wire pour les contours ouverts.
+            # base_wire vient de ContourGeometry qui respecte déjà la Direction.
+
+            # Obtenir le wire à la profondeur de passe via polymorphisme
+            wire_z = contour_geom.Proxy.getWireAtZ(contour_geom, pass_z)
+            # if reverse_path:
+            #     # Inverser le sens du wire pour cette passe si nécessaire
+            #     wire_z = Part.Wire(reversed(wire_z.Edges))
+            #     _orientEdges(wire_z.Edges)  # Réorienter les edges pour que les Vertexes soient dans le bon ordre
+            if wire_z is None:
+                Log.baptError(f"Pas de wire à Z={pass_z}")
                 continue
-            wire_at_pass_z = Part.Wire(edges_for_current_pass_z)
+            is_closed = wire_z.isClosed()
 
-            # 2. Apply tool offset to wire_at_pass_z
-            offset_toolpath_wire = None
+            # Règle de sens effective pour cette passe.
+            reverse_path_pass = reverse_path
+
+            # ── 4a. Appliquer l'offset outil ───────────────────────────────
+
+            if offset_value > 0:
+                offset_with_surep = offset_value + obj.SurepRadiale
+            else:
+                offset_with_surep = offset_value - obj.SurepRadiale
+
+            def _to_wire(shape):
+                if getattr(shape, "Wires", None):
+                    return shape.Wires[0]
+                if getattr(shape, "Edges", None):
+                    return Part.Wire(shape.Edges)
+                return None
+
+            offset_wire = None
+
+            # Utiliser la nouvelle méthode d'offset en priorité quand possible.
+
+            side_for_offset = machining_side
+
+            if side_for_offset == Side.NONE:
+                App.Console.PrintWarning(f'No machining side specified, using default based on offset: {offset_with_surep}\n')
+                side_for_offset = Side.LEFT if offset_with_surep >= 0 else Side.RIGHT
+
             try:
-                if actual_offset_value > 0:
-                    actual_offset_value_surep = actual_offset_value + obj.SurepRadiale
-                else:
-                    actual_offset_value_surep = actual_offset_value - obj.SurepRadiale
+                # App.Console.PrintMessage(f'Applying compensation offset dist {offset_with_surep} forward={not reverse_path_pass}\n')
 
-                if is_contour_closed and False:
-                    face_for_offset = Part.Face(wire_at_pass_z)
-                    offset_shape_result = face_for_offset.makeOffsetShape(actual_offset_value, 0.1, fill=False)
-                    if offset_shape_result.Wires:
-                        offset_toolpath_wire = offset_shape_result.Wires[0]
-                    elif offset_shape_result.Edges:  # Sometimes returns a compound of edges
-                        offset_toolpath_wire = Part.Wire(offset_shape_result.Edges)
-                else:
+                offset_wire = offsetWire(
+                    wire_z,
+                    offset_with_surep,
+                    not reverse_path_pass,
+                    side=side_for_offset,
 
-                    offset_shape_result = wire_at_pass_z.makeOffset2D(actual_offset_value_surep, openResult=not is_contour_closed)  # join=0, fill=False,
+                )
 
-                    if obj.Compensation == compensation.Machine.name:
-                        offset_shape_result = offset_shape_result.Wires[0].makeOffset2D(-actual_offset_value, openResult=not is_contour_closed)  # join=0, fill=False,
+                if offset_wire is None:
+                    Log.baptError(f"Pas de résultat d'offset Z={pass_z}")
+                    continue
 
-                    if offset_shape_result.Wires:
-                        offset_toolpath_wire = offset_shape_result.Wires[0]
-                        offset_toolpath_edges = offset_toolpath_wire.Edges
-                        if obj.Compensation == compensation.Machine.name:
-                            # offset_shape_result = offset_shape_result.reversed()
-                            offset_toolpath_edges.reverse()
-
-                            pass
-
-                    elif offset_shape_result.Edges:
-                        offset_toolpath_wire = Part.Wire(offset_shape_result.Edges)
+                if obj.Compensation == Compensation.Machine.name:
+                    # Compensation machine : offset complet puis contre-offset du rayon.
+                    # La CNC appliquera G41/G42 pour le rayon outil.
+                    # comp_result = offset_wire.makeOffset2D(
+                    #     -offset_value,
+                    #     openResult=not is_closed)
+                    App.Console.PrintMessage(f'Applying machine compensation offset dist {offset_value}\n')
+                    comp_result = offsetWire(
+                        offset_wire,
+                        offset_value,
+                        forward=True,
+                        # side=Side.LEFT if machining_side == Side.RIGHT else Side.RIGHT,
+                        side=material_side_to_tool_side(cote_matiere),
+                    )
+                    offset_wire = _to_wire(comp_result)
+                    if offset_wire is None:
+                        Log.baptError(f"Pas de résultat de compensation machine Z={pass_z}")
+                        continue
 
             except Exception as e:
-
-                App.Console.PrintError(f"Error during offset for pass Z={pass_z}: {e}. Skipping pass.\n")
-                exc_type, exc_value, exc_traceback = sys.exc_info()
-                line_number = exc_traceback.tb_lineno
-                App.Console.PrintError(f"Erreur à la ligne {line_number}\n")
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                Log.baptError(
+                    f"Erreur offset Z={pass_z}: ligne {exc_tb.tb_lineno} - {e}")
                 continue
 
-            # 2.b if is closed, remove the first half of the first edge and place it at the end
-            if is_contour_closed:
-                import FreeCAD
-                translate = FreeCAD.Qt.translate
+            offset_edges = list(offset_wire.Edges)
 
-                App.Console.PrintMessage(translate("op_Contournage", "Closed contour detected, adjusting first edge for continuity.") + "\n")
-                first_edge = offset_toolpath_edges[0]
-                mid_param = (first_edge.FirstParameter + first_edge.LastParameter) / 2.0
-                # Trim the underlying curve and convert back to edges
-                first_trimmed_curve = first_edge.Curve.trim(first_edge.FirstParameter, mid_param)
-                second_trimmed_curve = first_edge.Curve.trim(mid_param, first_edge.LastParameter)
-                first_half_edge = first_trimmed_curve.toShape()
-                second_half_edge = second_trimmed_curve.toShape()
+            # ── 4b. Contour fermé : décaler le point de départ ─────────────
+            #   Couper le 1er edge au milieu et placer la 1re moitié à la fin
+            #   pour que approche et sortie soient au milieu d'un segment.
 
-                new_edges = [second_half_edge] + offset_toolpath_wire.Edges[1:] + [first_half_edge]
-                # offset_toolpath_wire = Part.Wire(new_edges)
-                # offset_toolpath_edges = offset_toolpath_wire.Edges
-                offset_toolpath_edges = new_edges
+            if is_closed and len(offset_edges) > 0:
+                first = offset_edges[0]
+                mid = (first.FirstParameter + first.LastParameter) / 2.0
+                try:
+                    half_a = first.Curve.toShape(first.FirstParameter, mid)
+                    half_b = first.Curve.toShape(mid, first.LastParameter)
+                except Exception:
+                    half_a = first.Curve.trim(first.FirstParameter, mid).toShape()
+                    half_b = first.Curve.trim(mid, first.LastParameter).toShape()
+                offset_edges = [half_b] + offset_edges[1:] + [half_a]
 
-            # 3. Generate Approach and Retract for offset_toolpath_wire
+            # ── 4b2. Conventional : inverser le sens de parcours ───────────
 
-            # if offset_toolpath_wire.Orientation == "Forward":
-            if True:  # is_offset_inward:
-                indexOfFirstPoint = Contour.getFirstPoint(offset_toolpath_edges)
-                indexOfLastPoint = Contour.getLastPoint(offset_toolpath_edges)
-                first_toolpath_edge = offset_toolpath_edges[0]
-                last_toolpath_edge = offset_toolpath_edges[-1]
+            # if is_conventional:
+            #     offset_edges.reverse()
+
+            # ── 4c. Points de départ/fin et tangentes ──────────────────────
+
+            if len(offset_edges) == 1:
+                # Cas mono-arête: forcer l'inversion des points en Conventional.
+                if False and reverse_path_pass:
+                    idx_first, idx_last = -1, 0
+                else:
+                    idx_first, idx_last = 0, -1
             else:
-                indexOfFirstPoint = Contour.getLastPoint(offset_toolpath_edges)
-                indexOfLastPoint = Contour.getFirstPoint(offset_toolpath_edges)
-                first_toolpath_edge = offset_toolpath_edges[-1]
-                last_toolpath_edge = offset_toolpath_edges[0]
+                idx_first = Contour.getFirstPoint(offset_edges)
+                idx_last = Contour.getLastPoint(offset_edges)
 
-            core_toolpath_start_pt = first_toolpath_edge.Vertexes[indexOfFirstPoint].Point
-            core_toolpath_end_pt = last_toolpath_edge.Vertexes[indexOfLastPoint].Point
+            first_edge = offset_edges[0]
+            last_edge = offset_edges[-1]
+            start_pt = first_edge.Vertexes[idx_first].Point
+            end_pt = last_edge.Vertexes[idx_last].Point
 
-            pass_approach_edges = []
-            pass_retract_edges = []
+            # Tangente au départ (dans le sens de parcours)
+            if idx_first == 0:
+                tangent_start = first_edge.tangentAt(first_edge.FirstParameter)
+            else:
+                tangent_start = first_edge.tangentAt(first_edge.LastParameter) * -1.0
+            tangent_start.z = 0
+            tangent_start.normalize()
 
-            App.Console.PrintMessage(f"first point: {core_toolpath_start_pt}, last point: {core_toolpath_end_pt}\n")
-            # start_pt and end_pt are now core_toolpath_start_pt and core_toolpath_end_pt
+            # Tangente à la fin (dans le sens de parcours)
+            if idx_last == -1:
+                tangent_end = last_edge.tangentAt(last_edge.LastParameter)
+            else:
+                tangent_end = last_edge.tangentAt(last_edge.FirstParameter) * -1.0
+            tangent_end.z = 0
+            if tangent_end.Length > 1e-6:
+                tangent_end.normalize()
+            else:
+                tangent_end = App.Vector(tangent_start)
 
-            gcodeWriter.comment(f"Pass at Z={pass_z}")
-            # Approach
+            # # En Conventional mono-arête, l'orientation interne de l'edge peut rester
+            # # opposée au sens d'usinage utilisé pour le G-code. On réaligne ici
+            # # uniquement les vecteurs d'approche/sortie.
+            # if len(offset_edges) == 1 and reverse_path_pass:
+            #     tangent_start = tangent_start * -1.0
+            #     tangent_end = tangent_end * -1.0
 
-            tangent_start_vec = first_toolpath_edge.tangentAt(first_toolpath_edge.FirstParameter)
-            if tangent_start_vec.Length < 1e-6:
-                raise ValueError("Tangent length at start is too small.")
+            # ── 4d. Détection géométrique du côté outil ────────────────────
+            #   distToShape(vertex) → (dist, [(pt_sur_self, pt_sur_other), ...], ...)
+            #     [1][0][0] = point le plus proche sur self (= wire_z)
+            #     [1][0][1] = point le plus proche sur other (= le vertex passé)
+            if False:
+                dist_info = wire_z.distToShape(Part.Vertex(start_pt))
+                closest_on_wire = dist_info[1][0][0]  # Point sur le wire original
+                toward_tool = App.Vector(
+                    start_pt.x - closest_on_wire.x,
+                    start_pt.y - closest_on_wire.y, 0)
+                left_normal = App.Vector(-tangent_start.y, tangent_start.x, 0)
+                tool_is_left = toward_tool.dot(left_normal) > 0
 
-            tangent_start = tangent_start_vec.normalize()
-            if approach_type == "Tangentielle":
-                if is_offset_inward:
-                    approachPoint = core_toolpath_start_pt - tangent_start.multiply(approach_length)
-                else:
-                    approachPoint = core_toolpath_start_pt + tangent_start.multiply(approach_length)
-                pass_approach_edges.append(Part.makeLine(approachPoint, core_toolpath_start_pt))
+                self._tool_side_is_left = tool_is_left
 
-            elif approach_type in ["Perpendiculaire", "Perp+Arc"]:
-                if is_offset_inward:
-                    approachPoint = core_toolpath_start_pt + App.Vector(-tangent_start.y, tangent_start.x, 0).normalize().multiply(approach_length)
-                else:
-                    approachPoint = core_toolpath_start_pt - App.Vector(-tangent_start.y, tangent_start.x, 0).normalize().multiply(approach_length)
-                perp_start = App.Vector(-tangent_start.y, tangent_start.x, 0).normalize()  # Assuming XY plane
-                pass_approach_edges.append(Part.makeLine(core_toolpath_start_pt + perp_start.multiply(approach_length), core_toolpath_start_pt))
-            elif approach_type == "Perp+Arc":
-                pass  # TODO: Implement Perp+Arc approach.
+            # ── 4e. Approche ───────────────────────────────────────────────
 
-            gcodeWriter.linearMove({'X': approachPoint.x, 'Y': approachPoint.y, 'Z': rapid_traverse_z}, rapid=True)
-            gcodeWriter.linearMove({'X': approachPoint.x, 'Y': approachPoint.y, 'Z': pass_z + 2}, rapid=True)
-            gcodeWriter.linearMove({'Z': pass_z}, feed=float(obj.FeedRate.getValueAs('mm/min')), rapid=False)
+            approach_pt, approach_edges = self._build_approach(
+                obj, start_pt, tangent_start)
+
+            gcode.comment(f"Pass at Z={formatFloat.format_float(pass_z, 3)}")
+            gcode.linearMove({'X': approach_pt.x, 'Y': approach_pt.y}, rapid=True)
+            gcode.linearMove({'Z': rapid_z}, rapid=True)
+            gcode.linearMove({'Z': pass_z + 2}, rapid=True)
+            gcode.linearMove({'Z': pass_z}, feed=feed, rapid=False)
 
             comp = "G40"
-            if obj.Compensation in [compensation.Machine.name, compensation.Ordinateur_G41_G42.name]:
-                if is_offset_inward:
-                    comp = "G41"
-                else:
-                    comp = "G42"
-            if p == 0:
-                gcodeWriter.lines.append(f"{obj.Label}_start:")
+            if obj.Compensation in [Compensation.Machine.name,
+                                    Compensation.Ordinateur_G41_G42.name]:
+                comp = "G41" if self._tool_side_is_left else "G42"
 
-            if approach_type == "Perp+Arc":
+            if p == 0:
+                gcode.lines.append(f"{obj.Label}_start:")
+
+            if obj.ApproachType == "Perp+Arc":
                 r = 1
-                a = approach_length.Value - r
-                angle = math.asin(r/a)
-                D = App.Vector(((a*a-r*r)/a)*math.cos(angle), -((r/a)*math.sqrt(a*a-r*r))*math.sin(angle), 0)
-                gcodeWriter.linearMove({'X': approachPoint.x + D.x, 'Y': approachPoint.y + D.y}, feed=float(obj.FeedRate.getValueAs('mm/min')))
-                gcodeWriter.arcMove({'X': core_toolpath_start_pt.x, 'Y': core_toolpath_start_pt.y, 'R': r, 'CCW': True}, feed=float(obj.FeedRate.getValueAs('mm/min')))
-                pass  # TODO: Implement Perp+Arc G-code
+                a = float(obj.ApproachRetractLength) - r
+                angle = math.asin(r / a)
+                D = App.Vector(
+                    ((a * a - r * r) / a) * math.cos(angle),
+                    -((r / a) * math.sqrt(a * a - r * r)) * math.sin(angle), 0)
+                gcode.linearMove(
+                    {'X': approach_pt.x + D.x, 'Y': approach_pt.y + D.y},
+                    feed=feed)
+                gcode.arcMove(
+                    {'X': start_pt.x, 'Y': start_pt.y, 'R': r, 'CCW': True},
+                    feed=feed)
             else:
+                gcode.linearMove(
+                    {'X': start_pt.x, 'Y': start_pt.y, 'comp': comp},
+                    feed=feed)
 
-                gcodeWriter.linearMove({'X': core_toolpath_start_pt.x, 'Y': core_toolpath_start_pt.y, 'comp': comp}, feed=float(obj.FeedRate.getValueAs('mm/min')))
-            # TODO: Add Helicoidal approach if needed, ensuring Z movement relative to pass_z
+            # ── 4f. Parcours des edges ─────────────────────────────────────
 
-            current_edge = None
-            for i, edge in enumerate(offset_toolpath_edges):
-                current_edge = edge
-                bon_sens = None
-                if i < len(offset_toolpath_edges)-1:
-                    next_edge = offset_toolpath_edges[i+1]
-                    if current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[0].Point) < 1e-6:
-                        bon_sens = True
-
-                    elif current_edge.Vertexes[-1].Point.distanceToPoint(next_edge.Vertexes[-1].Point) < 1e-6:
-                        bon_sens = True
-
-                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[-1].Point) < 1e-6:
-                        bon_sens = False
-
-                    elif current_edge.Vertexes[0].Point.distanceToPoint(next_edge.Vertexes[0].Point) < 1e-6:
-                        bon_sens = False
-
-                    else:
-                        pass
+            for i, edge in enumerate(offset_edges):
+                if len(offset_edges) == 1:
+                    bon_sens = self._edge_direction(offset_edges, i)
+                    # if reverse_path_pass:
+                    #     bon_sens = not bon_sens
                 else:
-                    prev_edge = offset_toolpath_edges[i-1]
+                    # Pour les wires multi-arêtes, conserver l'orientation native
+                    # du wire offseté est plus robuste que la détection locale.
+                    bon_sens = True
+                try:
+                    Contour.edgeToGcode(edge, bonSens=bon_sens, current_z=pass_z,
+                                        rapid=False, gcodeWriter=gcode)
+                except Exception as e:
+                    App.Console.PrintError(f"message {str(e)}\n")
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    App.Console.PrintMessage(f'{exc_tb.tb_lineno}\n')
+                    Log.baptDebug(f"message {str(e)}")
+                    continue
 
-                    if prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[0].Point) < 1e-6:
-                        bon_sens = True
+            # ── 4g. Sortie ─────────────────────────────────────────────────
 
-                    elif prev_edge.Vertexes[-1].Point.distanceToPoint(current_edge.Vertexes[-1].Point) < 1e-6:
-                        bon_sens = False
+            retract_pt, retract_edges = self._build_retract(
+                obj, end_pt, tangent_end)
 
-                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[-1].Point) < 1e-6:
-                        bon_sens = False
+            if retract_edges:
+                gcode.linearMove(
+                    {'X': retract_pt.x, 'Y': retract_pt.y, 'comp': 'G40'},
+                    feed=feed)
 
-                    elif prev_edge.Vertexes[0].Point.distanceToPoint(current_edge.Vertexes[0].Point) < 1e-6:
-                        bon_sens = True
-
-                    else:
-                        pass
-
-                Contour.edgeToGcode(edge, bonSens=bon_sens, current_z=pass_z, rapid=False, gcodeWriter=gcodeWriter)
-
-            # Retract
-
-            tangent_end_vec = last_toolpath_edge.tangentAt(last_toolpath_edge.LastParameter)
-            if tangent_end_vec.Length > 1e-6:
-                tangent_end = tangent_end_vec.normalize()
-                if retract_type == "Tangentielle":
-                    if is_offset_inward:
-                        SortiePt = core_toolpath_end_pt + tangent_end.multiply(approach_length)
-                    else:
-                        SortiePt = core_toolpath_end_pt - tangent_end.multiply(approach_length)
-                    pass_retract_edges.append(Part.makeLine(core_toolpath_end_pt, SortiePt))
-
-                elif retract_type == "Perpendiculaire":
-                    if is_offset_inward:
-                        perp_end = App.Vector(-tangent_end.y, tangent_end.x, 0).normalize()
-                        SortiePt = core_toolpath_end_pt + perp_end.multiply(approach_length)
-                    else:
-                        perp_end = App.Vector(-tangent_end.y, tangent_end.x, 0).normalize()
-                        SortiePt = core_toolpath_end_pt - perp_end.multiply(approach_length)
-                    pass_retract_edges.append(Part.makeLine(core_toolpath_end_pt, SortiePt))
-
-                gcodeWriter.linearMove({'X': SortiePt.x, 'Y': SortiePt.y, 'comp': 'G40'}, feed=float(obj.FeedRate.getValueAs('mm/min')))
-
-            gcodeWriter.linearMove({'Z': rapid_traverse_z}, rapid=True)
+            gcode.linearMove({'Z': rapid_z}, rapid=True)
 
             if p == 0:
-                gcodeWriter.lines.append(f"{obj.Label}_end:")
+                gcode.lines.append(f"{obj.Label}_end:")
 
-            # Determine the actual start point of this pass's full trajectory (including approach)
-            current_pass_trajectory_start_point = core_toolpath_start_pt  # Default to core path start
-            if pass_approach_edges:
-                current_pass_trajectory_start_point = pass_approach_edges[0].Vertexes[0].Point
+            # ── 4h. Shapes pour visualisation ──────────────────────────────
 
-            # LINKING LOGIC: Add rapid move from previous pass end to current pass start
-            if previous_pass_actual_end_point:  # If there was a previous pass
-                link_p1 = previous_pass_actual_end_point
-                link_p2 = App.Vector(link_p1.x, link_p1.y, rapid_traverse_z)
-                link_p3 = App.Vector(current_pass_trajectory_start_point.x, current_pass_trajectory_start_point.y, rapid_traverse_z)
-                link_p4 = current_pass_trajectory_start_point
+            traj_start = (approach_edges[0].Vertexes[0].Point
+                          if approach_edges else start_pt)
 
-                all_pass_shapes_collected.append(Part.makeLine(link_p1, link_p2))  # Retract to rapid_traverse_z
-                if link_p2.distanceToPoint(link_p3) > 1e-6:
+            if prev_end_pt:
+                p1 = prev_end_pt
+                p2 = App.Vector(p1.x, p1.y, rapid_z)
+                p3 = App.Vector(traj_start.x, traj_start.y, rapid_z)
+                p4 = traj_start
+                all_shapes.append(Part.makeLine(p1, p2))
+                if p2.distanceToPoint(p3) > 1e-6:
+                    all_shapes.append(Part.makeLine(p2, p3))
+                all_shapes.append(Part.makeLine(p3, p4))
 
-                    all_pass_shapes_collected.append(Part.makeLine(link_p2, link_p3))  # Traverse at rapid_traverse_z
-                all_pass_shapes_collected.append(Part.makeLine(link_p3, link_p4))  # Plunge to current pass start
+            all_shapes.extend(approach_edges)
+            all_shapes.extend(offset_wire.Edges)
+            all_shapes.extend(retract_edges)
 
-            # Add current pass's trajectory segments (approach, core path, retract)
-            all_pass_shapes_collected.extend(pass_approach_edges)
-            all_pass_shapes_collected.extend(offset_toolpath_wire.Edges)
-            all_pass_shapes_collected.extend(pass_retract_edges)
+            prev_end_pt = (retract_edges[-1].Vertexes[-1].Point
+                           if retract_edges else end_pt)
 
-            # Determine the actual end point of this pass's full trajectory (including retract) for the next iteration's link
-            current_pass_trajectory_end_point = core_toolpath_end_pt  # Default to core path end
-            if pass_retract_edges:
-                current_pass_trajectory_end_point = pass_retract_edges[-1].Vertexes[-1].Point
-            previous_pass_actual_end_point = current_pass_trajectory_end_point
+        # ── 5. Finalisation ────────────────────────────────────────────────
 
-        if all_pass_shapes_collected:
+        if all_shapes:
             try:
-                obj.Shape = Part.makeCompound(all_pass_shapes_collected)
-                App.Console.PrintMessage(f"Multi-pass toolpath generated with {len(passes_z_values)} passes.\n")
-            except Exception as e_compound:
-                App.Console.PrintError(f"Failed to create final compound shape: {e_compound}\n")
-                obj.Shape = Part.Shape()  # Fallback to empty shape
+                obj.Shape = Part.makeCompound(all_shapes)
+            except Exception as e:
+                App.Console.PrintError(f"[Contournage] Erreur compound: {e}\n")
+                obj.Shape = Part.Shape()
         else:
-            App.Console.PrintWarning("No toolpath segments generated for any pass.\n")
             obj.Shape = Part.Shape()
 
-        obj.Gcode = '\n'.join(gcodeWriter.lines)
+        obj.Gcode = '\n'.join(gcode.lines)
+        obj.TimeEstimate = gcode.time_estimate
+        obj.LastCoordinate = App.Vector(
+            gcode.current_position['X'],
+            gcode.current_position['Y'],
+            gcode.current_position['Z'])
+
+    # ── Helpers ────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _edge_direction(edges, index):
+        """Détermine si l'edge[index] doit être parcourue en sens direct (True)
+        ou inverse (False), en comparant la connectivité avec l'edge adjacente."""
+        TOL = 1e-6
+        edge = edges[index]
+
+        if len(edges) == 1:
+            return True
+
+        if index < len(edges) - 1:
+            other = edges[index + 1]
+            if edge.Vertexes[-1].Point.distanceToPoint(other.Vertexes[0].Point) < TOL:
+                return True
+            if edge.Vertexes[-1].Point.distanceToPoint(other.Vertexes[-1].Point) < TOL:
+                return True
+            if edge.Vertexes[0].Point.distanceToPoint(other.Vertexes[-1].Point) < TOL:
+                return False
+            if edge.Vertexes[0].Point.distanceToPoint(other.Vertexes[0].Point) < TOL:
+                return False
+        else:
+            other = edges[index - 1]
+            if other.Vertexes[-1].Point.distanceToPoint(edge.Vertexes[0].Point) < TOL:
+                return True
+            if other.Vertexes[-1].Point.distanceToPoint(edge.Vertexes[-1].Point) < TOL:
+                return False
+            if other.Vertexes[0].Point.distanceToPoint(edge.Vertexes[-1].Point) < TOL:
+                return False
+            if other.Vertexes[0].Point.distanceToPoint(edge.Vertexes[0].Point) < TOL:
+                return True
+
+        return None
+
+    def _build_approach(self, obj, entry_point, travel_direction):
+        """Construit le mouvement d'approche vers le contour.
+
+        L'approche part du côté outil (côté libre) et se dirige vers le contour.
+        Le côté outil est déterminé par self._tool_side_is_left.
+        """
+        approach_type = obj.ApproachType
+        length = float(obj.ApproachRetractLength)
+        t = travel_direction
+        tool_left = getattr(self, '_tool_side_is_left', 'NC')
+        # App.Console.PrintMessage(f'_build_approach travel_direction {travel_direction}, tool_left={tool_left}\n')
+
+        if tool_left == 'NC':
+            App.Console.PrintWarning('Tool side is not defined, defaulting to left for approach.\n')
+            tool_left = True
+        # App.Console.PrintMessage(f'Building approach: type={approach_type}, length={length}, tool_left={tool_left}\n')
+        if approach_type == "Tangentielle":
+            pt = entry_point - t * length
+            return pt, [Part.makeLine(pt, entry_point)]
+
+        elif approach_type in ["Perpendiculaire", "Perp+Arc"]:
+            if tool_left:
+                perp = App.Vector(-t.y, t.x, 0)
+            else:
+                perp = App.Vector(t.y, -t.x, 0)
+            perp.normalize()
+            pt = entry_point + perp * length
+            return pt, [Part.makeLine(pt, entry_point)]
+
+        return entry_point, []
+
+    def _build_retract(self, obj, exit_point, travel_direction):
+        """Construit le mouvement de sortie du contour.
+
+        La sortie part du contour vers le côté outil (côté libre).
+        Le côté outil est déterminé par self._tool_side_is_left.
+        """
+        retract_type = obj.RetractType
+        length = float(obj.ApproachRetractLength)
+        t = travel_direction
+        tool_left = getattr(self, '_tool_side_is_left', True)
+        # App.Console.PrintMessage(f'_build_retract travel_direction {travel_direction}, tool_left={tool_left}\n')
+
+        if retract_type == "Tangentielle":
+            pt = exit_point + t * length
+            return pt, [Part.makeLine(exit_point, pt)]
+
+        elif retract_type == "Perpendiculaire":
+            if tool_left:
+                perp = App.Vector(-t.y, t.x, 0)
+            else:
+                perp = App.Vector(t.y, -t.x, 0)
+            perp.normalize()
+            pt = exit_point + perp * length
+            return pt, [Part.makeLine(exit_point, pt)]
+
+        elif retract_type == "Verticale":
+            return exit_point, []
+
+        return exit_point, []
 
     def reorder_wire(self, shape):
         """
@@ -439,73 +592,66 @@ class ContournageCycle(baseOp):
             return wire
         return shape
 
-    def calculatePasse(self, obj):
+    def calculatePasse(self, obj, passeEquilibre=True):
         geom = self.getContourGeometry(obj)
         if not geom:
             return []
 
-        Zref = geom.Zref
-        depth = geom.depth
+        depths = geom.Proxy.getDepths()
+        Zref = depths[0]
+        Zfinal = depths[1]
         prise = obj.StepDown
+        surep = obj.SurepAxiale
+        dz = Zref - (Zfinal + surep)
 
         passes = []
 
-        if geom.DepthMode == "Relatif":
-            depth = geom.Zref + geom.depth + obj.SurepAxiale
-        else:
-            depth = geom.depth + obj.SurepAxiale
+        # if geom.DepthMode == "Relatif":
+        #     depth = geom.Zref + geom.depth + obj.SurepAxiale
+        # else:
+        #     depth = geom.depth + obj.SurepAxiale
 
-        if Zref < depth:  # TODO
-            App.Console.PrintError("La hauteur de référence est inférieure à la profondeur de coupe.\n")
+        if Zref < Zfinal:  # TODO
+            App.Console.PrintError(f"La hauteur de référence ({Zref}) est inférieure à la profondeur de coupe ({Zfinal}).\n")
             return []
 
-        passeEquilibre = True
-
         if passeEquilibre:
-            nbPasses = math.ceil(math.fabs(depth - Zref) / prise)
-            prise = math.fabs(depth - Zref) / nbPasses
+            nbPasses = math.ceil(math.fabs(dz) / prise)
+            prise = math.fabs(dz) / nbPasses
             for i in range(nbPasses):
                 passes.append(Zref - (i + 1) * prise)
         else:
             while True:
-                if Zref - prise >= depth + prise:
-                    passes.append(depth)
-                    depth -= prise
+                if dz >= Zfinal + prise:
+                    passes.append(Zfinal)
+                    Zfinal -= prise
                     break
                 else:
-                    passes.append(depth)
+                    passes.append(Zfinal)
 
         return passes
 
     def getContourGeometry(self, obj):
         """Récupérer la géométrie du contour associée"""
-        if not hasattr(obj, "ContourGeometryName") or not obj.ContourGeometryName:
-            # App.Console.PrintError("Aucune géométrie de contour associée.\n")
+        if not hasattr(obj, "ContourGeometry") or not obj.ContourGeometry:
             return None
+        return obj.ContourGeometry
 
-        doc = obj.Document
-        for o in doc.Objects:
-            if o.Name == obj.ContourGeometryName:
-                return o
+    # def __getstate__(self):
+    #     """Appelé lors de la sauvegarde"""
+    #     return None
+    #     # return {
+    #     #     "Type": self.Type,
+    #     #     "ContourGeometryName": getattr(self.Object, "ContourGeometryName", "")
+    #     # }
 
-        App.Console.PrintError(f"Impossible de trouver la géométrie du contour '{obj.ContourGeometryName}'.\n")
-        return None
+    # def __setstate__(self, state):
+    #     """Appelé lors du chargement"""
+    #     return None
 
-    def __getstate__(self):
-        """Appelé lors de la sauvegarde"""
-        return None
-        # return {
-        #     "Type": self.Type,
-        #     "ContourGeometryName": getattr(self.Object, "ContourGeometryName", "")
-        # }
-
-    def __setstate__(self, state):
-        """Appelé lors du chargement"""
-        return None
-
-        # if state:
-        #     self.Type = state.get("Type", "ContournageCycle")
-        # return None
+    #     # if state:
+    #     #     self.Type = state.get("Type", "ContournageCycle")
+    #     # return None
 
 
 class ViewProviderContournageCycle(baseOpViewProviderProxy):
@@ -514,10 +660,10 @@ class ViewProviderContournageCycle(baseOpViewProviderProxy):
     def __init__(self, vobj):
         """Initialise le ViewProvider"""
         super().__init__(vobj)
-
+        self.deleteOnReject = True
         vobj.Proxy = self
         self.Object = vobj.Object
-
+        self.panel = None
         # Ajouter des propriétés pour l'affichage
         if not hasattr(vobj, "ShowToolPath"):
             vobj.addProperty("App::PropertyBool", "ShowToolPath", "Display", "Afficher la trajectoire d'outil")
@@ -541,7 +687,7 @@ class ViewProviderContournageCycle(baseOpViewProviderProxy):
     def attach(self, vobj):
         """Appelé lors de l'attachement du ViewProvider"""
         self.Object = vobj.Object
-
+        self.panel = None
         # Configuration de l'affichage
         vobj.LineColor = (0.0, 0.0, 1.0)  # Bleu
         vobj.PointColor = (0.0, 0.0, 1.0)  # Bleu
@@ -558,9 +704,12 @@ class ViewProviderContournageCycle(baseOpViewProviderProxy):
     #     action2 = menu.addAction("Activate" if vobj.Object.desactivated else "Desactivate")
     #     action2.triggered.connect(lambda: self.setDesactivate(vobj))
     #     return True
+    def deleteObjectOnReject(self):
+        return hasattr(self, "deleteOnReject") and self.deleteOnReject
 
     def onChanged(self, vobj, prop):
         """Appelé lorsqu'une propriété du ViewProvider est modifiée"""
+        super().onChanged(vobj, prop)
         # Mettre à jour l'affichage si une propriété d'affichage change
         if prop in ["ShowToolPath", "PathColor", "PathWidth"]:
             # Appliquer les nouvelles propriétés d'affichage
@@ -570,16 +719,16 @@ class ViewProviderContournageCycle(baseOpViewProviderProxy):
             if hasattr(vobj, "LineWidth") and hasattr(vobj, "PathWidth"):
                 vobj.LineWidth = vobj.PathWidth
 
-    def claimChildren(self):
-        """Retourne les enfants de cet objet"""
-        # Ne pas réclamer la géométrie du contour comme enfant
-        # car c'est le contour qui doit être l'enfant de la géométrie
-        return []
+    # def claimChildren(self):
+    #     """Retourne les enfants de cet objet"""
+    #     # Ne pas réclamer la géométrie du contour comme enfant
+    #     # car c'est le contour qui doit être l'enfant de la géométrie
+    #     return []
 
     def setupContextMenu(self, vobj, menu):
         super().setupContextMenu(vobj, menu)
 
-        viewGcode = QtGui.QAction(Gui.getIcon("Std_TransformManip.svg"), "View G-code", menu)
+        viewGcode = QtGui.QAction(QtGui.QIcon(BaptUtilities.getIconPath("GcodeFile.svg")), "View G-code", menu)
         QtCore.QObject.connect(viewGcode, QtCore.SIGNAL("triggered()"), lambda: self.viewGcode(vobj))
         menu.addAction(viewGcode)
         return True
@@ -591,27 +740,43 @@ class ViewProviderContournageCycle(baseOpViewProviderProxy):
 
     def setEdit(self, vobj, mode=0):
         """Ouvre le panneau de tâche pour l'édition"""
-        import BaptContournageTaskPanel
-        taskd = BaptContournageTaskPanel.ContournageTaskPanel(self.Object)
-        Gui.Control.showDialog(taskd)
-        return True
+        if mode == 0:
+            self.panel = ContournageTaskPanel(self.Object, self.deleteObjectOnReject)
+            Gui.Control.showDialog(self.panel)
+            self.deleteOnReject = False
+            # self.panel.setupUi()
+            return True
+        return False
 
     def unsetEdit(self, vobj, mode=0):
         """Ferme le panneau de tâche"""
+        if self.panel:
+            self.panel.reject()
+            self.panel = None
         Gui.Control.closeDialog()
         return True
 
-    def getDisplayModes(self, vobj):
-        """Retourne les modes d'affichage disponibles"""
-        return ["Flat Lines", "Shaded", "Wireframe", "Path"]
+    def closeTaskPanel(self):
+        """Ferme le panneau de tâche si ouvert."""
+        if self.panel:
+            self.panel = None
 
-    def getDefaultDisplayMode(self):
-        """Retourne le mode d'affichage par défaut"""
-        return "Flat Lines"
+    # def getDisplayModes(self, vobj):
+    #     """Retourne les modes d'affichage disponibles"""
+    #     return ["Flat Lines", "Shaded", "Wireframe", "Path"]
 
-    def setDisplayMode(self, mode):
-        """Définit le mode d'affichage"""
-        return mode
+    # def getDefaultDisplayMode(self):
+    #     """Retourne le mode d'affichage par défaut"""
+    #     return "Flat Lines"
+
+    # def setDisplayMode(self, mode):
+    #     """Définit le mode d'affichage"""
+    #     return mode
+    def updateData(self, fp_object, prop):
+        """Forwards property changes from the object to the active TaskPanel."""
+        super().updateData(fp_object, prop)
+        if self.panel:
+            self.panel.updateData(fp_object, prop)
 
     def __getstate__(self):
         """Appelé lors de la sauvegarde"""

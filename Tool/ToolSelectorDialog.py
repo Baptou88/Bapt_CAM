@@ -1,7 +1,6 @@
-import FreeCADGui as Gui
 import FreeCAD as App
-from PySide import QtCore, QtGui
-from BaptTools import ToolDatabase, Tool
+from PySide import QtGui  # type: ignore
+from Tool.tool_utils import get_tool_repository
 
 
 class ToolSelectorDialog(QtGui.QDialog):
@@ -82,7 +81,7 @@ class ToolSelectorDialog(QtGui.QDialog):
         """Charge les outils depuis la base de données"""
         try:
             # Récupérer les outils
-            db = ToolDatabase()
+            db = get_tool_repository()
             self.tools = db.get_all_tools()
 
             # Ajouter les types d'outils au combobox
@@ -142,14 +141,14 @@ class ToolSelectorDialog(QtGui.QDialog):
 
     def add_tool(self):
         """Ouvre le dialogue pour ajouter un nouvel outil"""
-        from BaptTools import ToolDialog
+        from Tool.ToolsGUI import ToolDialog
         dialog = ToolDialog(parent=self)
         result = dialog.exec_()
 
         if result == QtGui.QDialog.Accepted:
             # Ajouter l'outil à la base de données
             try:
-                db = ToolDatabase()
+                db = get_tool_repository()
                 db.add_tool(dialog.tool)
 
                 # Recharger la liste des outils
@@ -172,7 +171,7 @@ class ToolSelectorDialog(QtGui.QDialog):
             row = selected_items[0].row()
             self.selected_tool_id = int(self.tool_table.item(row, 0).text())
             self.selected_tool_name = self.tool_table.item(row, 1).text()
-            db = ToolDatabase()
+            db = get_tool_repository()
             self.selected_tool = db.get_tool_by_id(self.selected_tool_id)
             super(ToolSelectorDialog, self).accept()
         else:

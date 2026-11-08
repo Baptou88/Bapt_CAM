@@ -8,7 +8,7 @@ from PySide import QtWidgets
 import PySide.QtCore as QtCore
 import PySide.QtGui as QtGui
 import Draft
-import CamProjectTaskPanel
+import Gui.CamProjectTaskPanel as CamProjectTaskPanel
 
 
 class Stock:
@@ -86,11 +86,6 @@ class Stock:
             obj.WorkPlane = ["XY", "XZ", "YZ"]
             obj.WorkPlane = "XY"
 
-        if not hasattr(obj, "Material"):
-            obj.addProperty("App::PropertyMaterial", "Material",
-                            "Stock", "Matériau du brut")
-            obj.Material = App.Material()
-
         if not hasattr(obj, "testShape"):
             obj.addProperty("Part::PropertyPartShape", "testShape",
                             "Subsection", "Description for tooltip")
@@ -166,17 +161,18 @@ class Stock:
         if hasattr(obj, "Length") and hasattr(obj, "Width") and hasattr(obj, "Height"):
             # Créer la boîte en fonction du plan de travail
             # App.Console.PrintMessage(f'plac 1 {obj.Placement}\n')
-            if obj.WorkPlane == "XY":
-                box = Part.makeBox(obj.Length, obj.Width, obj.Height)
-            elif obj.WorkPlane == "XZ":
-                box = Part.makeBox(obj.Length, obj.Height, obj.Width)
-            else:  # YZ
-                box = Part.makeBox(obj.Height, obj.Length, obj.Width)
+            if obj.Length > 0 and obj.Width > 0 and obj.Height > 0:
+                if obj.WorkPlane == "XY":
+                    box = Part.makeBox(obj.Length, obj.Width, obj.Height)
+                elif obj.WorkPlane == "XZ":
+                    box = Part.makeBox(obj.Length, obj.Height, obj.Width)
+                else:  # YZ
+                    box = Part.makeBox(obj.Height, obj.Length, obj.Width)
 
-            # Assigner la forme
-            obj.Shape = box
-            # App.Console.PrintMessage(f'plac 2 {obj.Placement}\n')
-            obj.Placement = placement
+                # Assigner la forme
+                obj.Shape = box
+                # App.Console.PrintMessage(f'plac 2 {obj.Placement}\n')
+                obj.Placement = placement
         elif hasattr(obj, "XNeg") and hasattr(obj, "YNeg") and hasattr(obj, "ZNeg") and hasattr(obj, "XPos") and hasattr(obj, "YPos") and hasattr(obj, "ZPos"):
             # Créer la boîte centrée sur le modèle avec les extensions
             xMin = modelBbox.XMin - obj.XNeg
@@ -190,6 +186,17 @@ class Stock:
                                App.Vector(xMin, yMin, zMin))
             obj.Shape = box
             # obj.Placement =  App.Placement(App.Vector(modelBbox.XMin, modelBbox.YMin, modelBbox.ZMin), App.Rotation(App.Vector(0,0,1),0))
+        elif hasattr(obj, "Diam") and hasattr(obj, "CylHeight"):
+            # Créer un cylindre centré sur le modèle
+            radius = obj.Diam.Value / 2.0
+            height = obj.CylHeight.Value
+            if radius > 0 and height > 0 and modelBbox is not None:
+                cx = modelBbox.Center.x
+                cy = modelBbox.Center.y
+                zMin = modelBbox.ZMin
+                cyl = Part.makeCylinder(
+                    radius, height, App.Vector(cx, cy, zMin))
+                obj.Shape = cyl
         obj.testShape = obj.Shape
 
     def onChanged(self, obj, prop):
@@ -200,6 +207,8 @@ class Stock:
         if prop in ["Length", "Width", "Height", "WorkPlane"]:
             self.updateShape(obj)
         elif prop in ["XNeg", "YNeg", "ZNeg", "XPos", "YPos", "ZPos"]:
+            self.updateShape(obj)
+        elif prop in ["Diam", "CylHeight"]:
             self.updateShape(obj)
 
     def __getstate__(self):
@@ -385,14 +394,15 @@ class CamProject:
             obj.PostProcessor = ["Siemens828"]  # Valeur par défaut
 
         if not hasattr(obj, "toolChangePos"):
-            obj.addProperty("App::PropertyVector", "toolChangePos", "Project", "Origine de la pièce")
+            obj.addProperty("App::PropertyVector", "toolChangePos",
+                            "Project", "Origine de la pièce")
             obj.toolChangePos = App.Vector(0, 0, 250)
-
-        # Créer le groupe Operations
-        self.getOperationsGroup(obj)
 
         # Créer le groupe Geometry
         self.getGeometryGroup(obj)
+
+        # Créer le groupe Operations
+        self.getOperationsGroup(obj)
 
         self.getModel(obj)
 
@@ -407,6 +417,8 @@ class CamProject:
         # Créer ou obtenir l'objet Tools
         self.getToolsGroup()
 
+        self.getExprSet()
+
         # Assigner le proxy à la fin pour éviter les problèmes de récursion
         obj.Proxy = self
 
@@ -418,9 +430,6 @@ class CamProject:
         """Obtenir ou créer l'objet Model pour le projet"""
         if hasattr(obj, "Model") and obj.Model:
             return obj.Model
-
-        App.Console.PrintMessage(
-            "Model not found in project. Creating new model.\n")
 
         dlg = ObjSelector()
         if dlg.exec_():
@@ -435,11 +444,6 @@ class CamProject:
                 obj.Model = clone
                 obj.addObject(clone)
                 clone.recompute()
-                bbox = selected_obj.Shape.BoundBox
-                # App.Console.PrintMessage(f"Dimensions: X={bbox.XLength} Y={bbox.YLength} Z={bbox.ZLength}\n")
-                # print(f"X Range: {bbox.XMin} to {bbox.XMax}")
-                # print(f"Y Range: {bbox.YMin} to {bbox.YMax}")
-                # print(f"Z Range: {bbox.ZMin} to {bbox.ZMax}")
 
     def getOperationsGroup(self, obj):
         """Obtenir ou créer le groupe Operations"""
@@ -501,7 +505,6 @@ class CamProject:
         origin.Label = "WCS_G54"
         self.Object.addObject(origin)
         # obj.Origin = origin
-        App.Console.PrintMessage("Origin created: " + origin.Name + "\n")
         return origin
 
     def getStock(self, obj):
@@ -590,6 +593,37 @@ class CamProject:
 
         return tools_group
 
+    def getExprSet(self):
+        """Obtenir ou créer l'objet ExpressionSet pour le projet"""
+        expr_set = None
+
+        # Vérifier si l'objet existe déjà
+        for child in self.Object.Group:
+            if child.Name.startswith("VarSet"):
+                expr_set = child
+                break
+
+        # Créer l'objet s'il n'existe pas
+        if not expr_set:
+
+            expr_set = App.ActiveDocument.addObject('App::VarSet', 'VarSet')
+
+            expr_set.Label = "Expressions"
+            self.Object.addObject(expr_set)
+
+            expr_set.addProperty("App::PropertyFloat", "safeZ", "Expressions",
+                                 "Hauteur de sécurité pour les déplacements rapides")
+            expr_set.addProperty("App::PropertyFloat", "clearanceZ", "Expressions",
+                                 "Hauteur de sécurité pour les déplacements rapides")
+            if hasattr(expr_set, "ExpressionEngine"):
+                expr_set.setExpression("safeZ", "2mm")
+                stock = self.getStock(self.Object)
+                if stock and hasattr(stock, "ZPos") and hasattr(stock, "ZNeg"):
+                    expr_set.setExpression(
+                        "clearanceZ", f"<<{stock.Label}>>.Shape.BoundBox.ZMax + 10")
+
+        return expr_set
+
     def execute(self, obj):
         """Mettre à jour le projet"""
         # Rien à faire ici, le stock gère sa propre mise à jour
@@ -609,6 +643,12 @@ class CamProject:
 
     def __setstate__(self, state):
         """Désérialisation"""
+        return None
+
+    def dumps(self):
+        return None
+
+    def loads(self, state):
         return None
 
     def onDelete(self, obj, subelements):
@@ -666,19 +706,6 @@ class ViewProviderCamProject:
         self.setEdit(vobj)
         return True
 
-    def updateData(self, obj, prop):
-        """Appelé quand une propriété de l'objet est modifiée"""
-        pass
-
-    def onChanged(self, vobj, prop):
-        """Appelé quand une propriété du ViewProvider est modifiée"""
-        pass
-
-    def doubleClicked(self, vobj):
-        """Gérer le double-clic"""
-        self.setEdit(vobj)
-        return True
-
     def deleteObjectsOnReject(self):
         """Indique si l'objet doit être supprimé si l'édition est annulée"""
         return hasattr(self, "deleteOnReject") and self.deleteOnReject
@@ -691,7 +718,6 @@ class ViewProviderCamProject:
             for sub in subelements:
                 if hasattr(sub, "Group"):
                     deleteSubelements(sub.Group)
-                App.Console.PrintMessage(f'Deleting subelement: {sub.Name}\n')
                 App.ActiveDocument.removeObject(sub.Name)
         deleteSubelements(vobj.Object.Group)
         return True
@@ -710,11 +736,6 @@ class ViewProviderCamProject:
         Gui.Control.closeDialog()
         return True
 
-    def doubleClicked(self, vobj):
-        """Gérer le double-clic"""
-        self.setEdit(vobj)
-        return True
-
     def __getstate__(self):
         """Sérialisation"""
         return None
@@ -726,7 +747,7 @@ class ViewProviderCamProject:
 
 class operationGroupViewProviderProxy():
     def __init__(self, vobj):
-        App.Console.PrintMessage("Initializing operation group view provider proxy for: {}\n".format(__class__.__name__))
+
         vobj.Proxy = self
         self.Object = vobj.Object
 
@@ -757,24 +778,28 @@ class operationGroupViewProviderProxy():
 
     def simulateAllOperations(self, vobj):
         """Simuler toutes les opérations dans le groupe"""
-        from BaptPath import GcodeAnimationControl, GcodeAnimator
+        from BaptPath import GcodeAnimationControl
 
-        App.Console.PrintMessage("Simulating all operations in group: {}\n".format(vobj.Object.Name))
+        App.Console.PrintMessage(
+            "Simulating all operations in group: {}\n".format(vobj.Object.Name))
 
         # Collecter toutes les opérations actives
         operations = []
         for child in vobj.Object.Group:
             # Gérer les liens
-            actual_obj = child.LinkedObject if hasattr(child, 'LinkedObject') else child
+            actual_obj = child.LinkedObject if hasattr(
+                child, 'LinkedObject') else child
 
             # Vérifier que l'objet a un ViewObject et est actif
             if hasattr(actual_obj, "ViewObject") and hasattr(actual_obj, "Active"):
                 if actual_obj.Active:
                     operations.append(actual_obj)
-                    App.Console.PrintMessage(f"  Adding operation: {actual_obj.Label}\n")
+                    App.Console.PrintMessage(
+                        f"  Adding operation: {actual_obj.Label}\n")
 
         if not operations:
-            App.Console.PrintWarning("Aucune opération active trouvée dans le groupe\n")
+            App.Console.PrintWarning(
+                "Aucune opération active trouvée dans le groupe\n")
             return False
 
         # Afficher le panneau de contrôle avec toutes les opérations

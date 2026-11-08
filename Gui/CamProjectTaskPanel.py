@@ -1,8 +1,13 @@
-import BaptUtilities
+
 import FreeCAD as App
 import FreeCADGui as Gui
-from PySide import QtCore, QtGui
-from utils import PointSelectionObserver
+from PySide import QtCore, QtGui, QtWidgets
+import MatGui
+import Materials
+
+import BaptUtilities
+
+from utils.PointSelectionObserver import PointSelectionObserver
 from utils.BQuantitySpinBox import BQuantitySpinBox
 
 
@@ -156,7 +161,7 @@ class BoundBoxSphereManager:
             Gui.Selection.clearSelection()
 
             # Différer la suppression de toutes les sphères
-            QtCore.QTimer.singleShot(100, lambda: self._remove_all_spheres_deferred())
+            QtCore.QTimer.singleShot(100, self._remove_all_spheres_deferred)
 
     def _remove_all_spheres_deferred(self):
         """Supprimer toutes les sphères de manière différée pour éviter les violations d'accès"""
@@ -170,7 +175,6 @@ class BoundBoxSphereManager:
         for sphere in self.spheres:
             sphere.remove()
         self.spheres = []
-        App.Console.PrintMessage("Toutes les sphères ont été supprimées\n")
 
 
 class BBoxSelectionObserver:
@@ -187,10 +191,15 @@ class BBoxSelectionObserver:
 
 
 class CamProjectTaskPanel:
+    """Panneau de tâches pour éditer les paramètres du projet CAM"""
+
     def __init__(self, obj, deleteOnReject):
         # Garder une référence à l'objet
         self.obj = obj
         self.deleteOnReject = deleteOnReject
+        self.orient = None
+        self.observer = None
+        App.activeDocument().openTransaction("Edit CAM Project Parameters")
         # Obtenir l'objet Stock
         self.stock = self.getStockObject(obj)
 
@@ -205,7 +214,7 @@ class CamProjectTaskPanel:
 
         self.ui1.model.addItems([obj.Name for obj in App.ActiveDocument.Objects if obj.isDerivedFrom("Part::Feature")])
 
-        self.ui1.stockMode.addItems(["box", "Extend Bounding Box"])
+        self.ui1.stockMode.addItems(["box", "Extend Bounding Box", "Cylinder"])
 
         self.stockLength = BQuantitySpinBox(self.stock, "Length", self.ui1.stockLength)
         self.stockWidth = BQuantitySpinBox(self.stock, "Width", self.ui1.stockWidth)
@@ -224,31 +233,99 @@ class CamProjectTaskPanel:
         self.stockZNeg = BQuantitySpinBox(self.stock, "ZNeg", self.ui1.stockZNeg)
         self.stockZPos = BQuantitySpinBox(self.stock, "ZPos", self.ui1.stockZPos)
 
+        self.stockDiam = BQuantitySpinBox(self.stock, "Diam", self.ui1.stockDiam)
+        self.stockCylHeight = BQuantitySpinBox(self.stock, "CylHeight", self.ui1.stockHeight_2)
+
         if hasattr(self.stock, "Length"):
             self.ui1.stackedWidget.setCurrentIndex(0)
             self.ui1.stockMode.setCurrentText("box")
         elif hasattr(self.stock, "XNeg"):
             self.ui1.stackedWidget.setCurrentIndex(1)
             self.ui1.stockMode.setCurrentText("Extend Bounding Box")
+        elif hasattr(self.stock, "Diam"):
+            self.ui1.stackedWidget.setCurrentIndex(2)
+            self.ui1.stockMode.setCurrentText("Cylinder")
 
         # Initialiser les valeurs
             self.ui1.workPlane.setCurrentText(obj.WorkPlane)
         if obj.Model:
             self.ui1.model.setCurrentText(obj.Model.Name)
 
-        # Connecter les signaux
-        self.ui1.workPlane.currentIndexChanged.connect(lambda: self.updateVisual())
-        self.ui1.model.currentIndexChanged.connect(lambda: self.updateVisual())
-        self.ui1.stockMode.currentIndexChanged.connect(lambda: self.stockModeChanged())
+        if self.stock:
+            self.ui1.matName.setText(self.stock.ShapeMaterial.Name if self.stock.ShapeMaterial else "None")
 
-        self.ui1.placeModel.clicked.connect(lambda: self.placeModel())
+        # Connecter les signaux
+        self.ui1.workPlane.currentIndexChanged.connect(self.updateVisual)
+        self.ui1.model.currentIndexChanged.connect(self.updateVisual)
+        self.ui1.stockMode.currentIndexChanged.connect(self.stockModeChanged)
+
+        self.ui1.orientFaceX.clicked.connect(lambda: self.orientFace("X"))
+        self.ui1.orientFaceZ.clicked.connect(lambda: self.orientFace("Z"))
+
+        self.ui1.placeModel.clicked.connect(self.placeModel)
+        self.ui1.assignMaterial.clicked.connect(self.assignMaterial)
 
         # Initialiser le gestionnaire de sphères pour le positionnement du modèle
         self.sphere_manager = BoundBoxSphereManager(self)
         self.sphere_manager_active = False
 
+    def assignMaterial(self):
+        App.Console.PrintMessage('assignMaterial\n')
+        dialog = MaterialDialog()
+        result = dialog.exec_()
+
+        if result == QtWidgets.QDialog.Accepted:
+            App.Console.PrintMessage("Material assigned\n")
+            if dialog.uuid is not None:
+                material_manager = Materials.MaterialManager()
+                material = material_manager.getMaterial(dialog.uuid)
+                App.Console.PrintMessage(f"Material assigned: {material}\n")
+                self.stock.ShapeMaterial = material
+                self.ui1.matName.setText(material.Name if material else "None")
+
+    def orientFace(self, axis):
+        """Orienter la face sélectionnée vers l'axe spécifié"""
+
+        self.orient = PointSelectionObserver(lambda point, doc, obj, element: self.faceSelected(point, doc, obj, element, axis))
+        self.orient.enable()
+
+    def faceSelected(self, point, doc, obj, element, axis):
+        """Appelé quand une face est sélectionnée pour l'orientation"""
+        # Vérifier que l'élément sélectionné est une face
+        sub = App.getDocument(doc).getObject(obj).getSubObject(element)
+
+        if axis == "X":
+            target = App.Vector(1, 0, 0)
+        elif axis == "Y":
+            target = App.Vector(0, 1, 0)
+        else:
+            # axis == "Z":
+            target = App.Vector(0, 0, 1)
+
+        if hasattr(sub, 'Surface') and sub.Surface.TypeId == 'Part::GeomCylinder':
+            pass
+        elif hasattr(sub, 'Surface') and sub.Surface.TypeId == 'Part::GeomPlane':
+            # Récupérer la normale de la face
+            normal = sub.Surface.Axis
+        elif hasattr(sub, 'Curve') and sub.Curve.TypeId == 'Part::GeomLine':
+            # Récupérer la direction de la ligne
+            normal = sub.Curve.Direction
+
+        # Calculer la rotation nécessaire pour aligner la cible
+        rotation = App.Rotation(normal, target)
+
+        # Appliquer la rotation au placement du model
+        model = self.obj.Model
+        if model:
+            current = model.Placement
+            new_rotation = rotation.multiply(current.Rotation)
+            model.Placement = App.Placement(current.Base, new_rotation)
+
+        self.orient.disable()
+        self.orient = None
+
     def placeModel(self):
-        App.Console.PrintMessage(f'placeModel\n')
+        App.Console.PrintMessage('placeModel\n')
         if self.sphere_manager_active:
             # Désactiver le mode de positionnement
             self.sphere_manager.clear_spheres()
@@ -284,12 +361,15 @@ class CamProjectTaskPanel:
             if hasattr(self.stock, "XNeg"):
                 for prop in ["XNeg", "YNeg", "ZNeg", "XPos", "YPos", "ZPos"]:
                     self.stock.removeProperty(prop)
+            if hasattr(self.stock, "Diam"):
+                for prop in ["Diam", "CylHeight"]:
+                    self.stock.removeProperty(prop)
             if not hasattr(self.stock, "Length"):
 
                 bbox = self.stock.Shape.BoundBox
                 # self.stockLength.setValue(bbox.XLength)
-                self.stockWidth.setValue(bbox.YLength)
-                self.stockHeight.setValue(bbox.ZLength)
+                # self.stockWidth.setValue(bbox.YLength)
+                # self.stockHeight.setValue(bbox.ZLength)
                 self.stock.addProperty("App::PropertyLength", "Length", "Stock", "Length of the stock").Length = bbox.XLength
                 self.stock.addProperty("App::PropertyLength", "Width", "Stock", "Width of the stock").Width = bbox.YLength
                 self.stock.addProperty("App::PropertyLength", "Height", "Stock", "Height of the stock").Height = bbox.ZLength
@@ -304,7 +384,7 @@ class CamProjectTaskPanel:
             self.ui1.stackedWidget.setCurrentIndex(1)
 
             # supprimer les propriétés Length, Width, Height de l'objet stock et ajouter Xneg...
-            for prop in ["Length", "Width", "Height"]:
+            for prop in ["Length", "Width", "Height", "Diam", "CylHeight"]:
                 if hasattr(self.stock, prop):
                     self.stock.removeProperty(prop)
             if not hasattr(self.stock, "XNeg"):
@@ -320,6 +400,34 @@ class CamProjectTaskPanel:
             self.stockYPos.attach(self.stock, "YPos")
             self.stockZNeg.attach(self.stock, "ZNeg")
             self.stockZPos.attach(self.stock, "ZPos")
+        elif mode == "Cylinder":
+            self.ui1.stackedWidget.setCurrentIndex(2)
+
+            # Supprimer les propriétés box
+            for prop in ["Length", "Width", "Height"]:
+                if hasattr(self.stock, prop):
+                    self.stock.removeProperty(prop)
+            # Supprimer les propriétés extend bounding box
+            for prop in ["XNeg", "YNeg", "ZNeg", "XPos", "YPos", "ZPos"]:
+                if hasattr(self.stock, prop):
+                    self.stock.removeProperty(prop)
+
+            if not hasattr(self.stock, "Diam"):
+                # Initialiser depuis la bounding box du modèle
+                model = self.obj.Model
+                if model and hasattr(model, "Shape"):
+                    import math
+                    bbox = model.Shape.BoundBox
+                    diam = math.sqrt(bbox.XLength**2 + bbox.YLength**2)
+                    height = bbox.ZLength
+                else:
+                    diam = 100.0
+                    height = 50.0
+                self.stock.addProperty("App::PropertyLength", "Diam", "Stock", "Diameter of the cylindrical stock").Diam = diam
+                self.stock.addProperty("App::PropertyLength", "CylHeight", "Stock", "Height of the cylindrical stock").CylHeight = height
+
+            self.stockDiam.attach(self.stock, "Diam")
+            self.stockCylHeight.attach(self.stock, "CylHeight")
         self.updateVisual()
 
     def getStockObject(self, obj):
@@ -338,10 +446,10 @@ class CamProjectTaskPanel:
         self.ui1.clickOnPartBtn.setEnabled(False)
 
         # Créer et activer l'observer
-        self.observer = PointSelectionObserver.PointSelectionObserver(self.pointSelected)
+        self.observer = PointSelectionObserver(self.pointSelected)
         self.observer.enable()
 
-    def pointSelected(self, point):
+    def pointSelected(self, point, _):
         """Appelé quand l'utilisateur a cliqué sur un point"""
         # Mettre à jour les coordonnées du stock origin
         self.stockOriginX.setValue(point.x)
@@ -358,8 +466,6 @@ class CamProjectTaskPanel:
 
     def updateVisual(self):
         """Met à jour la représentation visuelle"""
-        App.Console.PrintMessage(f'updateVisual\n')
-        # Mettre à jour les propriétés du projet
 
         self.obj.WorkPlane = self.ui1.workPlane.currentText()
         model = self.ui1.model.currentText()
@@ -391,28 +497,35 @@ class CamProjectTaskPanel:
 
         # Fermer la tâche
         Gui.Control.closeDialog()
+        App.activeDocument().commitTransaction()
         return True
 
     def reject(self):
         """Appelé quand l'utilisateur clique sur Cancel"""
-
+        App.activeDocument().abortTransaction()
         # Nettoyer les sphères de positionnement
         if hasattr(self, 'sphere_manager'):
             self.sphere_manager.clear_spheres()
 
         Gui.Control.closeDialog()
-        self.obj.Document.recompute()
+        App.activeDocument().recompute()
         if self.deleteOnReject:
             # Supprimer l'objet CAM Project
-
-            App.ActiveDocument.removeObject(self.obj.Name)
+            pass
+            # App.ActiveDocument.removeObject(self.obj.Name)
 
         return False
 
     def getStandardButtons(self):
         """Définir les boutons standard"""
         return (QtGui.QDialogButtonBox.Ok
+                | QtGui.QDialogButtonBox.Apply
                 | QtGui.QDialogButtonBox.Cancel)
+
+    def clicked(self, button):
+        """clicked(button) ... callback invoked when the user presses any of the task panel buttons."""
+        if button == QtGui.QDialogButtonBox.Apply:
+            self.obj.recompute()
 
 
 class PostProcessorTaskPanel:
@@ -424,8 +537,9 @@ class PostProcessorTaskPanel:
 
         label = QtGui.QLabel("Post Processor specific settings can be configured here.")
         layout.addWidget(label)
-        # Liste des PostProcessors disponibles
-        self.postProcessors = ["Siemens828", "ITnc530", "Fanuc"]  # TODO : récupérer dynamiquement la liste des postprocessors disponibles
+        # Liste des PostProcessors disponibles (découverte dynamique)
+        from BaptUtilities import getAvailablePostProcessors
+        self.postProcessors = getAvailablePostProcessors()
 
         # Groupe PostProcessors
         postProcGroup = QtGui.QGroupBox("PostProcessors")
@@ -492,3 +606,47 @@ class PostProcessorTaskPanel:
             elif not isChecked and PostProcessorName in selected:
                 selected.remove(PostProcessorName)
             self.obj.PostProcessor = list(selected)
+
+
+class MaterialDialog(QtWidgets.QDialog):
+    """Dialog for selecting a machining material."""
+
+    def __init__(self, parent=None):
+        super(MaterialDialog, self).__init__(parent)
+
+        self.setWindowTitle("Assign Material")
+        self.uuid = None
+
+        self.materialTree = Gui.UiLoader().createWidget("MatGui::MaterialTreeWidget")
+        self.materialTreeWidget = MatGui.MaterialTreeWidget(self.materialTree)
+
+        material_filter = Materials.MaterialFilter()
+        material_filter.Name = "Machining Materials"
+        material_filter.RequiredModels = [Materials.UUIDs().Machinability]
+        self.materialTreeWidget.setFilter(material_filter)
+        self.materialTreeWidget.selectFilter("Machining Materials")
+
+        self.okButton = QtWidgets.QPushButton("OK")
+        self.cancelButton = QtWidgets.QPushButton("Cancel")
+
+        self.okButton.clicked.connect(self.accept)
+        self.cancelButton.clicked.connect(self.reject)
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self.materialTree)
+
+        buttonLayout = QtWidgets.QHBoxLayout()
+        buttonLayout.addStretch()
+        buttonLayout.addWidget(self.okButton)
+        buttonLayout.addWidget(self.cancelButton)
+
+        layout.addLayout(buttonLayout)
+        self.setLayout(layout)
+        self.materialTree.onMaterial.connect(self.onMaterial)
+
+    def onMaterial(self, uuid):
+        try:
+            print("Selected '{0}'".format(uuid))
+            self.uuid = uuid
+        except Exception as e:
+            print(e)

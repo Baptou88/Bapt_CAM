@@ -5,7 +5,7 @@
 
   <description>Bapt workbench provide functionality to prepare job and generate Gcode for 4 or 5 axis (2 axis in first time will be nice :)) cnc .</description>
 
-  <version>0.1.2</version>
+  <version>0.3.0</version>
 
   <date>2026-01-21</date>
 
@@ -28,6 +28,11 @@
       <name>HighlightCollisions</name>
       <subdirectory>./</subdirectory>
       <file>macros/HighlightCollisions.FCMacro</file>
+    </macro>
+    <macro>
+      <name>HorizontalConnectedEdges</name>
+      <subdirectory>./</subdirectory>
+      <file>macros/HorizontalConnectedEdges.FCMacro</file>
     </macro>
     <workbench>
       <classname>BaptWorkbench</classname>

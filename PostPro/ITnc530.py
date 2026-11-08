@@ -1,23 +1,28 @@
 import math
 from BasePostPro import BasePostPro
-import FreeCAD as App
+
+from utils.formatFloat import format_float
+
+Ext = "h"
+Name = "ITnc530"
 
 
 class PostPro(BasePostPro):
-    Name = "ITnc530"
-    Ext = "h"
 
     def __init__(self):
         super().__init__()
+        self.labels: dict[str, [int, int]] = {}  # Dictionary to store label name, positions, and index
+        self.lastLabelInt = 10
 
     def writeHeader(self):
         header = ""
         header += "BEGIN PGM ITNC530 MM\n"
+        # header += "CYCLE DEF 7\n"
 
         return header
 
     def writeFooter(self):
-        footer = ""
+        footer = "M30\n"
         footer += "END PGM ITNC530 MM\n"
 
         return footer
@@ -27,23 +32,23 @@ class PostPro(BasePostPro):
 
     def blockForm(self, stock):
         bb = stock.Shape.BoundBox
-        blk = f"BLK FORM 01 X{bb.XMin:.3f} Y{bb.YMin:.3f} Z{bb.ZMin:.3f}\n"
-        blk += f"BLK FORM 02 X{bb.XMax:.3f} Y{bb.YMax:.3f} Z{bb.ZMax:.3f}\n"
+        blk = f"BLK FORM 01 X{bb.XMin:+.3f} Y{bb.YMin:+.3f} Z{bb.ZMin:+.3f}\n"
+        blk += f"BLK FORM 02 X{bb.XMax:+.3f} Y{bb.YMax:+.3f} Z{bb.ZMax:+.3f}\n"
         return blk
 
     def transformGCode(self, gcode):
-        current_move = None
         current_pos = {'X': 0.0, 'Y': 0.0, 'Z': 0.0}
         lines = gcode.split('\n')
         retour = []
 
         def linear_move(line: str, rapid: bool = None):
+            current_move = 'G1'
             if rapid is not None:
                 current_move = 'G0' if rapid else 'G1'
 
             if line.startswith('G'):
                 space = line.index(' ')
-                new_line = line[space+1:]
+                new_line = line[space + 1:]
             else:
                 new_line = line
 
@@ -79,8 +84,65 @@ class PostPro(BasePostPro):
                 new_line += f' F{feed}'
 
             if current_move == 'G0':
-                new_line += ' FMAX'
+                # place Fmax before ';'
+                if ';' in new_line:
+                    semicolon_index = new_line.index(';')
+                    new_line = new_line[:semicolon_index] + ' FMAX ' + new_line[semicolon_index:]
+
             return 'L ' + new_line
+
+        def circular_move(line: str, clockwise: bool = True):
+            current_move = 'R-' if clockwise else 'R+'
+            cc_pos = {'X': None, 'Y': None, 'Z': None}
+
+            for axis in ['I', 'J', 'K']:
+                if axis in line:
+                    parts = line.split(axis)
+                    coord_part = parts[1]
+                    coord_str = ''
+                    for c in coord_part:
+                        if c in ' XYZIJKFMGR':
+                            break
+                        coord_str += c
+                    if coord_str != '':
+
+                        if axis == 'I':
+                            cc_pos['X'] = current_pos['X'] + float(coord_str)
+                        elif axis == 'J':
+                            cc_pos['Y'] = current_pos['Y'] + float(coord_str)
+                        elif axis == 'K':
+                            cc_pos['Z'] = current_pos['Z'] + float(coord_str)
+            new_line = "CC "
+            for axis in cc_pos:
+                if cc_pos[axis] is not None:
+                    new_line += f"{axis}{cc_pos[axis]:+.3f} "
+            new_line += "\nC "
+            for axis in ['X', 'Y', 'Z']:
+                if axis in line:
+                    parts = line.split(axis)
+                    coord_part = parts[1]
+                    coord_str = ''
+                    for c in coord_part:
+                        if c in ' XYZIJKFMGR':
+                            break
+                        coord_str += c
+                    if coord_str != '':
+                        current_pos[axis] = float(coord_str)
+                        new_line += f"{axis}{current_pos[axis]:+.3f} "
+            new_line += f"{current_move} "
+            if 'F' in line:
+                parts = line.split('F')
+                # remove feed from line
+
+                feed_part = parts[1]
+                feed_str = ''
+                for c in feed_part:
+                    if c in ' XYZIJKFMGR':
+                        break
+                    feed_str += c
+                new_line += f' F{feed_str}'
+
+            return new_line
 
         for i in range(len(lines)):
             if lines[i].startswith('(') and lines[i].endswith(')'):
@@ -90,59 +152,109 @@ class PostPro(BasePostPro):
                 lines[i] = linear_move(lines[i], rapid=True)
             elif lines[i].startswith(('G1', 'G01')):
                 lines[i] = linear_move(lines[i], rapid=False)
-                # current_move = 'G1'
-                # lines[i] = lines[i].replace('G1', 'L ')
-                # feed = None
-                # if 'F' in lines[i]:
-                #     parts = lines[i].split('F')
-                #     # remove feed from line
-                #     lines[i] = parts[0]
-                #     feed = parts[1]
-                # if 'G40' in lines[i]:
-                #     lines[i] = lines[i].replace('G40', '')
-                #     lines[i] += ' R0'
-                # if 'G41' in lines[i]:
-                #     # parts = lines[i].split('F')
-                #     # lines[i] = parts[0] + ' F' + parts[1]
-                #     lines[i] = lines[i].replace('G41', '')
-                #     lines[i] += ' RL'
-                # if 'G42' in lines[i]:
-                #     lines[i] = lines[i].replace('G42', '')
-                #     lines[i] += ' RR'
-                # if feed is not None:
-                #    lines[i] += f' F{feed}'
+            elif lines[i].startswith(('G2', 'G02')):
+                lines[i] = circular_move(lines[i], clockwise=True)
+            elif lines[i].startswith(('G3', 'G03')):
+                lines[i] = circular_move(lines[i], clockwise=False)
             elif lines[i].startswith(('X', 'Y', 'Z')):
                 lines[i] = linear_move(lines[i], rapid=None)
 
+            elif lines[i].endswith(':'):
+                label_name = lines[i][:-1].strip()
+                if label_name.endswith("_FIN"):
+                    lines[i] = "LBL 0"
+                    continue
+                if label_name in self.labels:
+                    raise ValueError(f"Duplicate label found: {label_name} ")
+                self.lastLabelInt += 1
+                self.labels[label_name] = (i, self.lastLabelInt)
+                if not self.useLabel:
+                    lines[i] = ''  # Remove the label line if not using labels
+                else:
+                    lines[i] = f"LBL {self.lastLabelInt}"
+            elif lines[i].startswith('REPEAT'):
+                # example: REPEAT LabelStart LabelEnd P=1
+                a = lines[i].split()
+                if len(a) >= 4 and a[0] == 'REPEAT':
+                    label_start = a[1]
+                    label_end = a[2]
+                    p_value = 1
+                    for part in a[3:]:
+                        if part.startswith('P='):
+                            try:
+                                p_value = int(part.split('=')[1])
+                            except ValueError:
+                                p_value = 1
+                    if not self.useLabel and label_start in self.labels and label_end in self.labels:
+                        start_index = self.labels[label_start]
+                        end_index = self.labels[label_end]
+                        # remove the REPEAT line and insert the repeated lines
+                        if start_index < end_index:
+                            repeat_lines = lines[start_index + 1:end_index]
+                            for _ in range(p_value):
+                                # retour.extend(repeat_lines) #maybe reuse transformGCode on repeat_lines to handle nested repeats
+                                retour.extend(self.transformGCode('\n'.join(repeat_lines)).split('\n'))
+                            continue  # Skip appending the original REPEAT line
+                    else:
+                        lines[i] = f"CALL {self.labels[label_start][1]}" + (f" REP {p_value}" if p_value > 1 else "")
             retour.append(lines[i])
         return '\n'.join(retour)
 
     def toolChange(self, tool, cam_project):
         tool_id = getattr(tool, 'Id', None)
-        tool_name = getattr(tool, 'Label', None)
         spindle = getattr(tool, 'Speed', None).Value
         Feed = getattr(tool, 'Feed', None).Value
-        return f"TOOL CALL {tool_id} Z S{spindle} DL+0 DR+0\nL R0 F{Feed} M3\n"
+        return f"TOOL CALL {tool_id} Z S{spindle:.1f} DL+0 DR+0\nL R0 F{format_float(Feed)} M3\n"
 
     def G81(self, obj):
-        doc = App.ActiveDocument
-        geom = doc.getObject(obj.DrillGeometryName)
+        geom = obj.DrillGeometry
+        points = []
         if geom and hasattr(geom, 'DrillPositions'):
             points = geom.DrillPositions
         safe_z = getattr(obj, 'SafeHeight', 5.0).Value
         final_z = getattr(obj, 'FinalDepth', -5.0).Value
+        Feed = getattr(obj.tool, 'Feed', None).Value
 
         gcode_lines = ""
         gcode_lines += (f"CYCL DEF 200 PERCAGE \n\
-            Q200={safe_z};DISTANCE D'APPROCHE\n\
-            Q201={final_z};PROFONDEUR\n\
-            Q206=250;AVANCE PLONGÉE PROF.\n\
-            Q202={math.fabs(final_z)};PROFONDEUR DE PASSE\n\
-            Q210=0;TEMPO. EN HAUT\n\
-            Q203=+0;COORD. SURFACE PIÈCE\n\
-            Q204=100;SAUT DE BRID\n\
-            Q211=0.1;TEMPO. AU FOND\n")
+            Q200={safe_z};DISTANCE D'APPROCHE ~\n\
+            Q201={final_z};PROFONDEUR ~\n\
+            Q206={Feed};AVANCE PLONGÉE PROF. ~\n\
+            Q202={math.fabs(final_z)};PROFONDEUR DE PASSE ~\n\
+            Q210=0;TEMPO. EN HAUT ~\n\
+            Q203=+0;COORD. SURFACE PIÈCE ~\n\
+            Q204=100;SAUT DE BRID ~\n\
+            Q211={getattr(obj, 'DwellTime', 0.1).Value};TEMPO. AU FOND ~\n")
         for pt in points:
-            gcode_lines += (f"L X{pt.x:.3f} Y{pt.y:.3f} FMAX M99\n")
+            gcode_lines += (f"L X{pt.x:+.3f} Y{pt.y:+.3f} FMAX M99\n")
+
+        return gcode_lines
+
+    def G83(self, obj):
+        geom = obj.DrillGeometry
+        points = []
+        if geom and hasattr(geom, 'DrillPositions'):
+            points = geom.DrillPositions
+        safe_z = getattr(obj, 'SafeHeight', 5.0).Value
+        final_z = getattr(obj, 'FinalDepth', -5.0).Value
+        Feed = getattr(obj.tool, 'Feed', None).Value
+
+        gcode_lines = ""
+        gcode_lines += (f"CYCL DEF 203 PERCAGE \n\
+            Q200={safe_z};DISTANCE D'APPROCHE ~\n\
+            Q201={final_z};PROFONDEUR ~\n\
+            Q206={Feed};AVANCE PLONGÉE PROF. ~\n\
+            Q202={math.fabs(final_z)};PROFONDEUR DE PASSE ~\n\
+            Q210=0;TEMPO. EN HAUT ~\n\
+            Q203=+0;COORD. SURFACE PIÈCE ~\n\
+            Q204=100;SAUT DE BRID ~\n\
+            Q212=0.2;VALEUR REDUCTION ~\n\
+            Q213=3;BRISE COPEAUX ~\n\
+            Q205=3;PROF. PASSE MIN. ~\n\
+            Q211={getattr(obj, 'DwellTime', 0.1).Value};TEMPO. AU FOND ~\n\
+            Q208=500;AVANCE RETRAIT ~\n\
+            Q256=0.2;RETR. BRISE-COPAUX ~\n")
+        for pt in points:
+            gcode_lines += (f"L X{pt.x:+.3f} Y{pt.y:+.3f} FMAX M99\n")
 
         return gcode_lines

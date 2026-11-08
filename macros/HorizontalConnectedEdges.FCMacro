@@ -1,0 +1,83 @@
+import FreeCAD as App
+import FreeCADGui as Gui
+
+
+def get_edge_plane_z(edge, tol=1e-4):
+    z1 = edge.Vertexes[0].Point.z
+    z2 = edge.Vertexes[1].Point.z
+    if abs(z1 - z2) < tol:
+        return (z1 + z2) / 2.0
+    return None
+
+
+def edge_on_plane_z(edge, target_z, tol=1e-4):
+    z1 = edge.Vertexes[0].Point.z
+    z2 = edge.Vertexes[1].Point.z
+    return abs(z1 - target_z) < tol and abs(z2 - target_z) < tol
+
+
+def are_edges_connected(e1, e2, tol=1e-4):
+    for v1 in e1.Vertexes:
+        for v2 in e2.Vertexes:
+            if v1.Point.distanceToPoint(v2.Point) < tol:
+                return True
+    return False
+
+
+def find_connected_edges(start_edge, candidate_edges):
+    to_check = [start_edge]
+    connected = set()
+
+    while to_check:
+        edge = to_check.pop()
+        if edge in connected:
+            continue
+        connected.add(edge)
+        for other in candidate_edges:
+            if other not in connected and are_edges_connected(edge, other):
+                to_check.append(other)
+
+    return connected
+
+
+def get_edge_index_by_geometry(target_edge, all_edges, tol=1e-4):
+    tp1 = [v.Point for v in target_edge.Vertexes]
+    for i, e in enumerate(all_edges):
+        ep = [v.Point for v in e.Vertexes]
+        if (tp1[0].isEqual(ep[0], tol) and tp1[1].isEqual(ep[1], tol)) or \
+           (tp1[0].isEqual(ep[1], tol) and tp1[1].isEqual(ep[0], tol)):
+            return i
+    return -1
+
+
+def run_macro():
+    sel = Gui.Selection.getSelectionEx()
+    if not sel or not sel[0].SubObjects:
+        App.Console.PrintError("Please select a single edge.\n")
+        return
+
+    selected_obj = sel[0].Object
+    selected_edge = sel[0].SubObjects[0]
+    shape = selected_obj.Shape
+    all_edges = shape.Edges
+
+    z_plane = get_edge_plane_z(selected_edge)
+    if z_plane is None:
+        App.Console.PrintError("Selected edge is not horizontal (not flat on one Z plane).\n")
+        return
+
+    # Step 1: Filter edges that are on the same horizontal plane
+    candidate_edges = [e for e in all_edges if edge_on_plane_z(e, z_plane)]
+
+    # Step 2: Flood-fill for connected edges (on same plane)
+    connected_edges = find_connected_edges(selected_edge, candidate_edges)
+
+    # Step 3: Select them in FreeCAD
+    Gui.Selection.clearSelection()
+    for edge in connected_edges:
+        idx = get_edge_index_by_geometry(edge, all_edges)
+        if idx >= 0:
+            Gui.Selection.addSelection(selected_obj, f"Edge{idx + 1}")
+
+
+run_macro()
