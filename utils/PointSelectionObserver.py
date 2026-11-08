@@ -28,8 +28,8 @@ class PointSelectionObserver:
         point = App.Vector(position[0], position[1], position[2])
         App.Console.PrintMessage(f"Point sélectionné: {point.x}, {point.y}, {point.z}\n")
 
+        # Désactiver l'observer après la sélection
+        # self.disable()
+
         # Appeler le callback avec le point
         self.callback(point, document, object, element)
-
-        # Désactiver l'observer après la sélection
-        self.disable()

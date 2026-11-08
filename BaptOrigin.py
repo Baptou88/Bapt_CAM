@@ -1,6 +1,7 @@
 import FreeCAD
 import FreeCAD as App
 import FreeCADGui
+import BaptUtilities
 from PySide import QtGui
 from pivy import coin  # pyright: ignore[reportMissingImports]
 from utils import PointSelectionObserver
@@ -17,9 +18,12 @@ class Origin:
         self.initProperties(obj)
 
     def initProperties(self, obj):
-        obj.addProperty("App::PropertyString", "OriginName", "Origin", "Nom de l'origine").OriginName = "Origine pièce"
-        obj.addProperty("App::PropertyString", "OriginNumber", "Origin", "Numéro d'origine (G54, G55...)").OriginNumber = "G54"
-        obj.addProperty("App::PropertyPlacement", "Placement", "Origin", "Placement de l'origine").Placement = App.Placement(App.Vector(0, 0, 0), App.Rotation(0, 0, 0, 1))
+        if not hasattr(obj, "OriginName"):
+            obj.addProperty("App::PropertyString", "OriginName", "Origin", "Nom de l'origine").OriginName = "Origine pièce"
+        if not hasattr(obj, "OriginNumber"):
+            obj.addProperty("App::PropertyString", "OriginNumber", "Origin", "Numéro d'origine (G54, G55...)").OriginNumber = "G54"
+        if not hasattr(obj, "Placement"):
+            obj.addProperty("App::PropertyPlacement", "Placement", "Origin", "Placement de l'origine").Placement = App.Placement(App.Vector(0, 0, 0), App.Rotation(0, 0, 0, 1))
 
     def execute(self, obj):
         # Pas de géométrie calculée, juste l'affichage
@@ -131,11 +135,36 @@ class ViewProviderOrigin:
     def onDelete(self, vobj, subelements):
         return True
 
+    def getIcon(self):
+        """Retourne l'icône"""
+
+        return BaptUtilities.getIconPath("Origin.svg")
+
     def __getstate__(self):
         return None
 
     def __setstate__(self, state):
         return None
+
+
+class CreateOriginCommand:
+    """Commande pour créer une origine d'usinage (G54, G55, ...)."""
+
+    def GetResources(self):
+        return {'Pixmap': BaptUtilities.getIconPath("Origin.svg"),
+                'MenuText': "Nouvelle Origine",
+                'ToolTip': "Créer une nouvelle origine d'usinage (G54, G55, ...)."}
+
+    def IsActive(self):
+        return App.ActiveDocument is not None
+
+    def Activated(self):
+        doc = App.ActiveDocument
+        doc.openTransaction('Create Origin')
+        obj = createOrigin()
+        doc.recompute()
+        doc.commitTransaction()
+        App.Console.PrintMessage(f"Origine créée : {obj.OriginName} ({obj.OriginNumber})\n")
 
 
 class OriginTaskPanel:
@@ -232,7 +261,7 @@ class OriginTaskPanel:
 # Fonction de création utilitaire
 def createOrigin(origin_name="Origine pièce", origin_number="G54", placement=None):
     doc = FreeCAD.ActiveDocument
-    obj = doc.addObject("App::FeaturePython", "Origin")
+    obj = doc.addObject("Part::FeaturePython", "Origin")
     Origin(obj)
     ViewProviderOrigin(obj.ViewObject)
     obj.OriginName = origin_name

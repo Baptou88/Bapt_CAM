@@ -718,7 +718,6 @@ class ViewProviderCamProject:
             for sub in subelements:
                 if hasattr(sub, "Group"):
                     deleteSubelements(sub.Group)
-                App.Console.PrintMessage(f'Deleting subelement: {sub.Name}\n')
                 App.ActiveDocument.removeObject(sub.Name)
         deleteSubelements(vobj.Object.Group)
         return True

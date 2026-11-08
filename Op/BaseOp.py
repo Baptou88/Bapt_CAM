@@ -215,7 +215,7 @@ class baseOpViewProviderProxy:
         # App.Console.PrintMessage("Attaching view provider proxy to object: {}\n".format(__class__.__name__))
 
         self.cam_proj = BaptUtilities.find_cam_project(obj.Object)
-        # Log.baptDebug(f"Found cam project: {self.cam_proj}")
+        Log.baptDebug(f"Found cam project: {self.cam_proj}")
 
         self.pick_radius = 5
         self.Path = coin.SoGroup()

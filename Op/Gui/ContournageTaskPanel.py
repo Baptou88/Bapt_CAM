@@ -23,8 +23,8 @@ class ContournageTaskPanel:
         self.ui1 = QtGui.QWidget()
         self.ui1.setWindowTitle("Paramètres de contournage")
 
-        ui2 = ToolTaskPanel(obj)
-        self.form = [self.ui1, ui2.getForm(), self.cuttingConditionPanel.getForm()]
+        self.ui2 = ToolTaskPanel(obj)
+        self.form = [self.ui1, self.ui2.getForm(), self.cuttingConditionPanel.getForm()]
 
         layout = QtGui.QFormLayout(self.ui1)
 

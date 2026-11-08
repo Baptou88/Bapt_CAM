@@ -37,11 +37,11 @@ class PostPro(BasePostPro.BasePostPro):
 
         def circular_move(line: str, clockwise: bool = True):
 
-            cc_pos = {'I': None, 'J': None, 'K': None}
+            param = {'I': None, 'J': None, 'K': None, 'R': None}
 
-            for axis in ['I', 'J', 'K']:
-                if axis in line:
-                    parts = line.split(axis)
+            for p in param.keys():
+                if p in line:
+                    parts = line.split(p)
                     coord_part = parts[1]
                     coord_str = ''
                     for c in coord_part:
@@ -50,20 +50,22 @@ class PostPro(BasePostPro.BasePostPro):
                         coord_str += c
                     if coord_str != '':
                         if coordonnee_abs:
-                            if axis == 'I':
-                                cc_pos[axis] = current_pos['X'] + float(coord_str)
-                            elif axis == 'J':
-                                cc_pos[axis] = current_pos['Y'] + float(coord_str)
-                            elif axis == 'K':
-                                cc_pos[axis] = current_pos['Z'] + float(coord_str)
+                            if p == 'I':
+                                param[p] = current_pos['X'] + float(coord_str)
+                            elif p == 'J':
+                                param[p] = current_pos['Y'] + float(coord_str)
+                            elif p == 'K':
+                                param[p] = current_pos['Z'] + float(coord_str)
+                            elif p == 'R':
+                                param[p] = float(coord_str)
                         else:
-                            cc_pos[axis] = float(coord_str)
+                            param[p] = float(coord_str)
 
             new_line = "G2 " if clockwise else "G3 "
 
-            for axis in ['X', 'Y', 'Z']:
-                if axis in line:
-                    parts = line.split(axis)
+            for p in ['X', 'Y', 'Z']:
+                if p in line:
+                    parts = line.split(p)
                     coord_part = parts[1]
                     coord_str = ''
                     for c in coord_part:
@@ -71,12 +73,17 @@ class PostPro(BasePostPro.BasePostPro):
                             break
                         coord_str += c
                     if coord_str != '':
-                        current_pos[axis] = float(coord_str)
-                        new_line += f"{axis}{current_pos[axis]:.3f} "
-
-            for axis in cc_pos:
-                if cc_pos[axis] is not None:
-                    new_line += f"{axis}{cc_pos[axis]:.3f} "
+                        current_pos[p] = float(coord_str)
+                        new_line += f"{p}{current_pos[p]:.3f} "
+            # check at least one of I, J, K or R is present for circular move
+            if all(param[p] is None for p in ['I', 'J', 'K', 'R']):
+                raise ValueError("Circular move must have at least one of I, J, K, or R specified.")
+            # check if R and not I, J, K
+            if param['R'] is not None and any(param[p] is not None for p in ['I', 'J', 'K']):
+                raise ValueError("Circular move with R specified must also not have one of I, J, or K.")
+            for p in param:
+                if param[p] is not None:
+                    new_line += f"{p}{param[p]:.3f} "
             new_line += " "
 
             if 'F' in line:

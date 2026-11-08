@@ -836,7 +836,7 @@ class ToolTaskPanel:
             self.toolComboBox.addItem(t.Name)
         if hasattr(self.obj, "Tool") and self.obj.Tool is not None:
             idx = self.toolComboBox.findText(self.obj.Tool.Name)
-            Log.baptDebug(f'Finding tool {self.obj.Tool.Name} in tool group idx {idx}')
+            # Log.baptDebug(f'Finding tool {self.obj.Tool.Name} in tool group idx {idx}')
             if idx >= 0:
                 self.toolComboBox.setCurrentIndex(idx)
         else:

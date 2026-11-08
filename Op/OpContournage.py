@@ -246,7 +246,7 @@ class ContournageCycle(baseOp):
                 side_for_offset = Side.LEFT if offset_with_surep >= 0 else Side.RIGHT
 
             try:
-                App.Console.PrintMessage(f'Applying compensation offset dist {offset_with_surep} forward={not reverse_path_pass}\n')
+                # App.Console.PrintMessage(f'Applying compensation offset dist {offset_with_surep} forward={not reverse_path_pass}\n')
 
                 offset_wire = offsetWire(
                     wire_z,
@@ -523,7 +523,7 @@ class ContournageCycle(baseOp):
         length = float(obj.ApproachRetractLength)
         t = travel_direction
         tool_left = getattr(self, '_tool_side_is_left', 'NC')
-        App.Console.PrintMessage(f'_build_approach travel_direction {travel_direction}, tool_left={tool_left}\n')
+        # App.Console.PrintMessage(f'_build_approach travel_direction {travel_direction}, tool_left={tool_left}\n')
 
         if tool_left == 'NC':
             App.Console.PrintWarning('Tool side is not defined, defaulting to left for approach.\n')
@@ -554,7 +554,7 @@ class ContournageCycle(baseOp):
         length = float(obj.ApproachRetractLength)
         t = travel_direction
         tool_left = getattr(self, '_tool_side_is_left', True)
-        App.Console.PrintMessage(f'_build_retract travel_direction {travel_direction}, tool_left={tool_left}\n')
+        # App.Console.PrintMessage(f'_build_retract travel_direction {travel_direction}, tool_left={tool_left}\n')
 
         if retract_type == "Tangentielle":
             pt = exit_point + t * length
