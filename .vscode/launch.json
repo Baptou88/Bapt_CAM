@@ -16,7 +16,7 @@
                 {
                     "localRoot": "${workspaceFolder}",
                     // "remoteRoot": "."
-                    "remoteRoot": "C:/Users/Baptou88/AppData/Roaming/FreeCAD/Mod/Bapt"
+                    "remoteRoot": "d:/FreeCad_Dev/Bapt_CAM"
                 }
             ]
         },

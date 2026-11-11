@@ -92,8 +92,8 @@ class PostPro(BasePostPro):
             return 'L ' + new_line
 
         def circular_move(line: str, clockwise: bool = True):
-            current_move = 'R-' if clockwise else 'R+'
-            cc_pos = {'X': None, 'Y': None, 'Z': None}
+            current_move = 'DR-' if clockwise else 'DR+'
+            cc_pos = {'X': None, 'Y': None, 'Z': None, 'R': None}
 
             for axis in ['I', 'J', 'K']:
                 if axis in line:
@@ -112,11 +112,19 @@ class PostPro(BasePostPro):
                             cc_pos['Y'] = current_pos['Y'] + float(coord_str)
                         elif axis == 'K':
                             cc_pos['Z'] = current_pos['Z'] + float(coord_str)
-            new_line = "CC "
-            for axis in cc_pos:
-                if cc_pos[axis] is not None:
-                    new_line += f"{axis}{cc_pos[axis]:+.3f} "
-            new_line += "\nC "
+                        elif axis == 'R':
+                            cc_pos['R'] = float(coord_str)
+            if any(axis in line for axis in ['I', 'J', 'K']) and cc_pos['R'] is None:
+                pass  # At least one of I, J, K is present, cc_pos has been updated accordingly
+                new_line = "CC "
+                for axis in cc_pos:
+                    if cc_pos[axis] is not None:
+                        new_line += f"{axis}{cc_pos[axis]:+.3f} "
+                new_line += "\nC "
+            elif cc_pos['R'] is not None:
+                new_line = "CR "
+            else:
+                raise ValueError("Invalid circular move: missing I, J, K or R")
             for axis in ['X', 'Y', 'Z']:
                 if axis in line:
                     parts = line.split(axis)

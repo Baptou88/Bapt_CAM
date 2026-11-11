@@ -5,12 +5,19 @@
     
     //"python.envFile": "${workspaceFolder}/.env",
     "python.autoComplete.extraPaths": [
-        "D:/Program Files/FreeCAD 1.0/bin",
-        "D:/Program Files/FreeCAD 1.0/lib",
-        "D:/Program Files/FreeCAD 1.0/Ext",
-        "D:/Program Files/FreeCAD 1.0/Gui",
-        "D:/Program Files/FreeCAD 1.0/Mod",
+        "C:/Program Files/FreeCAD 1.1/bin",
+        "C:/Program Files/FreeCAD 1.1/lib",
+        "C:/Program Files/FreeCAD 1.1/Ext",
+        "C:/Program Files/FreeCAD 1.1/Gui",
+        "C:/Program Files/FreeCAD 1.1/Mod",
 
+    ],
+    "python.analysis.extraPaths": [
+        "C:/Program Files/FreeCAD 1.1/bin",
+        "C:/Program Files/FreeCAD 1.1/lib",
+        "C:/Program Files/FreeCAD 1.1/Ext",
+        "C:/Program Files/FreeCAD 1.1/Gui",
+        "C:/Program Files/FreeCAD 1.1/Mod"
     ],
     "[python]": {
         "diffEditor.ignoreTrimWhitespace": false,

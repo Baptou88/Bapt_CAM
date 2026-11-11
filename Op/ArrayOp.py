@@ -71,7 +71,7 @@ class ArrayOp(baseOp):
                 "Rotation angle for the array operation"
             )
         if not hasattr(self, "omitt"):
-            self.omitt = []
+            self.omitt = [(0, 0)]
 
         super().installToolProp(obj)
         self.updateVisibleProperties(obj)
@@ -107,6 +107,7 @@ class ArrayOp(baseOp):
 
         if hasattr(obj, "baseOp") and obj.baseOp is None:
             return
+        self.gcode_source = obj.baseOp.Proxy.getGcode(obj.baseOp)
 
         if obj.Pattern == "Linear1D":
             self.generate_linear1D(obj)
@@ -128,48 +129,55 @@ class ArrayOp(baseOp):
         self.omitt = [(p[0], p[1]) for p in state[0]]
         App.Console.PrintMessage(f"Loaded omitt: {self.omitt}\n")
 
+    def transform(self, dx, dy, dz):
+        gcode_transformed = ""
+        distanceMode = "Absolute"
+        for line in self.gcode_source.splitlines():
+            if 'G90' in line:
+                distanceMode = "Absolute"
+            if 'G91' in line:
+                distanceMode = "Relative"
+            if line.startswith(("G0", "G1", "G2", "G3", "G81", "G82", "G83", "G84")):
+                # Apply spacing offset for linear 1D array
+                # regex to match XYZIJK coordinate
+                if distanceMode == "Relative":
+                    continue
+                import re
+                pattern = r"([XYZ])([-+]?\d*\.?\d+)"
+                matches = re.findall(pattern, line)
+                new_line = line
+                for axis, value in matches:
+                    if axis == "X":
+                        new_value = float(value) + dx
+                    elif axis == "Y":
+                        new_value = float(value) + dy
+                    elif axis == "Z":
+                        new_value = float(value) + dz
+                    else:
+                        new_value = float(value)
+                    new_line = new_line.replace(f"{axis}{value}", f"{axis}{new_value}")
+                gcode_transformed += new_line + "\n"
+
+            else:
+                gcode_transformed += line + "\n"
+
+        return gcode_transformed
+
     def generate_linear1D(self, obj):
         if not hasattr(obj, "CopiesX") or not hasattr(obj, "SpacingX"):
             return
         copies = obj.CopiesX
         spacingX = obj.SpacingX
-        gcode_source = obj.baseOp.Gcode
         gcode_transformed = ""
-        distanceMode = "Absolute"
+
         for i in range(0, copies + 1):
-            if i == 0:
-                continue
+
             if (i,) in self.omitt:
                 continue
             gcode_transformed += f"; Copy {i}\n"
-            for line in gcode_source.splitlines():
-                if 'G90' in line:
-                    distanceMode = "Absolute"
-                if 'G91' in line:
-                    distanceMode = "Relative"
-                if line.startswith(("G0", "G1", "G2", "G3")):
-                    # Apply spacing offset for linear 1D array
-                    # regex to match XYZIJK coordinate
-                    if distanceMode == "Relative":
-                        continue
-                    import re
-                    pattern = r"([XYZ])([-+]?\d*\.?\d+)"
-                    matches = re.findall(pattern, line)
-                    new_line = line
-                    for axis, value in matches:
-                        if axis == "X":
-                            new_value = float(value) + spacingX.x * i
-                        elif axis == "Y":
-                            new_value = float(value) + spacingX.y * i
-                        elif axis == "Z":
-                            new_value = float(value) + spacingX.z * i
-                        else:
-                            new_value = float(value)
-                        new_line = new_line.replace(f"{axis}{value}", f"{axis}{new_value}")
-                    gcode_transformed += new_line + "\n"
 
-                else:
-                    gcode_transformed += line + "\n"
+            gcode_transformed += self.transform(spacingX.x * i, spacingX.y * i, spacingX.z * i)
+
         obj.Gcode = gcode_transformed
 
     def generate_linear2D(self, obj):
@@ -179,45 +187,18 @@ class ArrayOp(baseOp):
         copiesY = obj.CopiesY
         spacingX = obj.SpacingX
         spacingY = obj.SpacingY
-        gcode_source = obj.baseOp.Gcode
+        self.gcode_source = obj.baseOp.Gcode
         gcode_transformed = ""
-        distanceMode = "Absolute"
 
         for i in range(0, copiesX + 1):
             for j in range(0, copiesY + 1):
-                if i == 0 and j == 0:
-                    continue
+
                 if (i, j) in self.omitt:
                     continue
                 gcode_transformed += f"; Copy {i},{j}\n"
-                for line in gcode_source.splitlines():
-                    if 'G90' in line:
-                        distanceMode = "Absolute"
-                    if 'G91' in line:
-                        distanceMode = "Relative"
-                    if line.startswith(("G0", "G1", "G2", "G3")):
-                        if distanceMode == "Relative":
-                            continue
-                        # Apply spacing offset for linear 1D array
-                        # regex to match XYZIJK coordinate
-                        import re
-                        pattern = r"([XYZ])([-+]?\d*\.?\d+)"
-                        matches = re.findall(pattern, line)
-                        new_line = line
-                        for axis, value in matches:
-                            if axis == "X":
-                                new_value = float(value) + spacingX.x * i + spacingY.x * j
-                            elif axis == "Y":
-                                new_value = float(value) + spacingX.y * i + spacingY.y * j
-                            elif axis == "Z":
-                                new_value = float(value) + spacingX.z * i + spacingY.z * j
-                            else:
-                                new_value = float(value)
-                            new_line = new_line.replace(f"{axis}{value}", f"{axis}{new_value}")
-                        gcode_transformed += new_line + "\n"
-
-                    else:
-                        gcode_transformed += line + "\n"
+                gcode_transformed += self.transform(spacingX.x * i + spacingY.x * j,
+                                                    spacingX.y * i + spacingY.y * j,
+                                                    spacingX.z * i + spacingY.z * j)
         obj.Gcode = gcode_transformed
 
     def generate_polar(self, obj):

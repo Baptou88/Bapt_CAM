@@ -5,7 +5,8 @@ Génère un programme G-code à partir des opérations du projet CAM
 """
 import importlib
 import os
-import re
+
+import BaptOrigin
 import FreeCAD as App  # type: ignore
 from PySide import QtGui, QtCore  # type: ignore
 
@@ -69,16 +70,18 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
     current_tool = None
     current_Coolant = None
     last_op = None  # Dernière opération traitée (pour la transition)
+    current_origin = None
 
     blockForm = Postpro.blockForm(cam_project.Proxy.getStock(cam_project))
     gcode_lines.append(blockForm)
 
-    App.Console.PrintMessage(f"Nombre d'opérations d'usinage sélectionnées: {len(ops)}\n")
     for obj in ops:
         if hasattr(obj, 'LinkedObject'):
             linked_obj = obj.LinkedObject
             if linked_obj and isOp(linked_obj):
                 obj = linked_obj
+
+        # Gestion Outils
         if not hasattr(obj, 'Proxy'):
             continue
         tool = getattr(obj, 'Tool', None)
@@ -93,7 +96,7 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             current_tool = tool
         elif last_op is not None:
             # Même outil, transition entre opérations : dégagement Z puis rapide XY
-            retract_z = 100
+            retract_z = 100  # TODO: remplacer par la hauteur de dégagement réelle du projet CAM
             gcode_lines.append(Postpro.writeComment(f"Transition vers {obj.Label}"))
             gcode_lines.append(f"G0 Z{retract_z}")
 
@@ -103,16 +106,18 @@ def generate_gcode_for_ops(ops, cam_project=None, Postpro=BasePostPro):
             gcode_lines.append(coolant_change_code)
             current_Coolant = coolantMode
 
-        Gcode = getattr(obj, 'Gcode', '')
+        # Gestion de l'origine
+        origin = getattr(obj, 'AttachmentSupport', None)
+        App.Console.PrintMessage(f"AttachmentSupport: {obj}\n")
+        App.Console.PrintMessage(f"AttachmentSupport: {origin[0]}\n")
+        if origin is not None:
+            origin = origin[0][0]
+            if current_origin != origin:
+                current_origin = origin
+                gcode_lines.append(Postpro.writeComment(f"Changement d'origine vers: {origin.Label}-{origin.OriginNumber}"))
+                gcode_lines.append(f"{origin.OriginNumber}")
 
-        def replace_var(match):
-            var_name = match.group(1)
-            attr = property.getProperty(obj, var_name)
-            if attr is not None:
-                return str(attr)
-            return var_name
-
-        Gcode = re.sub(REGEX_VAR, replace_var, Gcode)
+        Gcode = obj.Proxy.getGcode(obj)
 
         # --- Surfacage ---
         if isinstance(obj.Proxy, OpSurfacage.Surfacage) and hasattr(obj, 'Shape'):

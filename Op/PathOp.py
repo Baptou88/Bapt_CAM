@@ -1,7 +1,8 @@
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from BaptPath import GcodeAnimator, GcodeEditorTaskPanel
+from BaptPath import GcodeAnimator
+from Op.Gui.PathOpTaskPanel import PathOpTaskPanel
 import BaptUtilities
 from Op.BaseOp import baseOp, baseOpViewProviderProxy
 
@@ -12,7 +13,8 @@ class pathOp(baseOp):
         self.Type = "Path"
 
         self.installToolProp(obj)
-        self.installAttachment(obj)
+        if not hasattr(obj, "AttachmentSupport"):
+            self.installAttachment(obj)
         obj.Proxy = self
 
     def installAttachment(self, obj):
@@ -71,7 +73,7 @@ class pathOpViewProviderProxy(baseOpViewProviderProxy):
 
     def setEdit(self, vobj):
         # return super().setEdit(vobj)
-        taskPanel = GcodeEditorTaskPanel(vobj.Object)
+        taskPanel = PathOpTaskPanel(vobj.Object)
         Gui.Control.showDialog(taskPanel)
 
         return True

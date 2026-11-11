@@ -3,8 +3,10 @@ import FreeCADGui as Gui
 from PySide import QtCore, QtGui
 import Path.Base.Gui.Util as PathGuiUtil
 import Path.Op.Gui.Base as PathGuiBase
-from utils import Log
+from utils import ComboBox, Log
 from utils.BQuantitySpinBox import BQuantitySpinBox2
+
+OPTIONS = ["Option1", "Option2", "Option3"]
 
 
 class MyObjectProxy:
@@ -14,6 +16,9 @@ class MyObjectProxy:
         obj.Proxy = self
         self.Object = obj
         obj.addProperty("App::PropertyLength", "Length", "Data", "A length value synchronized across two views.")
+
+        obj.addProperty("App::PropertyEnumeration", "Options", "Data", "A combo box with predefined options.")
+        obj.Options = OPTIONS
 
     def opFeatures(self, obj):
         """
@@ -65,6 +70,10 @@ class MySinglePageTaskPanel(object):
         layout.addRow("Length (CAM):", self.length_widget1)
         layout.addRow("Placement.Base.x (CAM):", self.length_widget2)
         layout.addRow("Length (View 3):", self.length_widget3)
+        self.combo_box_widget = QtGui.QComboBox()
+        self.combo_box = ComboBox.ComboBox(self.obj, "Options", self.combo_box_widget, OPTIONS)
+
+        layout.addRow("Options:", self.combo_box_widget)
         if obj.isDerivedFrom("Part::FeaturePython"):
             self.length_widget4 = Gui.UiLoader().createWidget("Gui::QuantitySpinBox")
             self.length_sb4 = BQuantitySpinBox2(self.obj, "Placement.Base.x", self.length_widget4)
@@ -92,6 +101,7 @@ class MySinglePageTaskPanel(object):
         self.length_sb3.updateWidget()
         if hasattr(self, "length_sb4"):
             self.length_sb4.updateWidget()
+        self.combo_box.updateWidget()
 
     def getFields(self, obj):
         Log.baptDebug("getFields: Syncing UI -> Model")
@@ -102,7 +112,7 @@ class MySinglePageTaskPanel(object):
             self.length_sb4.updateProperty()
 
     def updateData(self, obj, prop):
-        if prop in ["Length", "Placement"]:
+        if prop in ["Length", "Placement", "Options"]:
             Log.baptDebug(f"updateData called for prop: {prop}")
             self.setFields(obj)
 

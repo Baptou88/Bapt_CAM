@@ -141,6 +141,26 @@ class baseOp:
         Log.baptDebug("No previous operation found → toolChangePos")
         return toolChangePos, False
 
+    def getGcode(self, obj):
+        def replace_var(match):
+            var_name = match.group(1)
+            o = obj
+            attr = property.getProperty(o, var_name)
+            if attr is None:
+                App.Console.PrintMessage(f"Variable {var_name} not found in object hierarchy\n")
+                return "<undefined>"
+            return str(attr)
+            if hasattr(self.Object, var_name):
+                return str(getattr(self.Object, var_name))
+            # App.Console.PrintMessage(f"Looking for variable {var_name} in {self.Object.Proxy}\n")
+            # if hasattr(self.Object.Proxy, var_name):
+            #     return str(getattr(self.Object.Proxy, var_name))
+            App.Console.PrintMessage(f"Variable {var_name} not found\n")
+            return "<undefined>"
+
+        ln = re.sub(REGEX_VAR, replace_var, obj.Gcode)
+        return ln
+
 
 class repeatGcodeException(Exception):
     def __init__(self, message):
@@ -457,7 +477,7 @@ class baseOpViewProviderProxy:
         if not hasattr(self.Object, "Gcode"):
             return
 
-        gcode_text = str(self.Object.Gcode or "")
+        gcode_text = str(self.Object.Proxy.getGcode(self.Object) or "")
         self.lines = [l.strip() for l in gcode_text.splitlines() if l.strip()]
 
         def parse_xyz(line: str, prev, absinc_mode=absinc.G90):
@@ -985,23 +1005,6 @@ class baseOpViewProviderProxy:
                 # App.Console.PrintMessage("Processing line {}: {}\n".format(self.line, ln))
                 self.line += 1
 
-                def replace_var(match):
-                    var_name = match.group(1)
-                    o = self.Object
-                    attr = property.getProperty(o, var_name)
-                    if attr is None:
-                        App.Console.PrintMessage(f"Variable {var_name} not found in object hierarchy\n")
-                        return "<undefined>"
-                    return str(attr)
-                    if hasattr(self.Object, var_name):
-                        return str(getattr(self.Object, var_name))
-                    # App.Console.PrintMessage(f"Looking for variable {var_name} in {self.Object.Proxy}\n")
-                    # if hasattr(self.Object.Proxy, var_name):
-                    #     return str(getattr(self.Object.Proxy, var_name))
-                    App.Console.PrintMessage(f"Variable {var_name} not found\n")
-                    return "<undefined>"
-
-                ln = re.sub(REGEX_VAR, replace_var, ln)
                 up = ln.upper()
 
                 # parse the line

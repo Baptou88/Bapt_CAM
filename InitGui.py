@@ -145,8 +145,28 @@ class BaptWorkbench (Workbench):
 
             def shouldShow(self):
                 return True
+
+        class Watcher2():
+            def __init__(self):
+                self.commands = ["Bapt_CreateContourGeometry"]
+                self.title = "Bapt Watcher 2"
+                pass
+
+            def shouldShow(self):
+                doc = App.ActiveDocument
+                if doc is None:
+                    return False
+                try:
+                    import BaptUtilities
+                    cam_project = BaptUtilities.getActiveCamProject()
+                except Exception as e:
+                    App.Console.PrintMessage(f"Error in Watcher2: {e}\n")
+                    return False
+
+                return cam_project is not None
         Watchers = [
-            Watcher()
+            Watcher(),
+            Watcher2()
         ]
         Gui.Control.addTaskWatcher(Watchers)
         pass

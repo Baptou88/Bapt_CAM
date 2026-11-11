@@ -36,11 +36,11 @@ class ViewProviderOrigin:
 
     def buildScene(self, vobj):
         root = coin.SoGroup()
-        pl = vobj.Object.Placement
-        pos = pl.Base
-        translation = coin.SoTranslation()
-        translation.translation.setValue(pos.x, pos.y, pos.z)
-        root.addChild(translation)
+        # pl = vobj.Object.Placement
+        # pos = pl.Base
+        # translation = coin.SoTranslation()
+        # translation.translation.setValue(pos.x, pos.y, pos.z)
+        # root.addChild(translation)
         axis_len = 8.0
         # X (rouge)
         x_line = coin.SoSeparator()

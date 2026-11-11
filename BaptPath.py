@@ -8,7 +8,6 @@ import FreeCAD as App
 import FreeCADGui
 
 
-from Tool.ToolsGUI import ToolTaskPanel
 from pivy import coin  # type: ignore
 from enum import Enum
 from PySide import QtGui, QtCore
@@ -119,9 +118,7 @@ class GcodeEditorTaskPanel:
         self.ui1.setWindowIcon(QtGui.QIcon(getIconPath("GcodeFile.svg")))
         layout = QtGui.QVBoxLayout(self.ui1)
 
-        ui2 = ToolTaskPanel(obj)
-
-        self.form = [self.ui1, ui2.getForm()]
+        self.form = self.ui1
         self.textEdit = QtGui.QPlainTextEdit()
         self.textEdit.setPlainText(self.obj.Gcode)
         self.textEdit.cursorPositionChanged.connect(self.onCursorPositionChanged)
@@ -145,6 +142,9 @@ class GcodeEditorTaskPanel:
         # col = cursor.columnNumber() + 1    # columnNumber est 0-based
         # App.Console.PrintMessage(f"Cursor position: Line {line}, Column {col}\n")
         self.obj.ViewObject.Cursor = line  # Mettre à jour la propriété Cursor de l'objet avec le numéro de ligne (1-based)
+
+    def getForm(self):
+        return self.form
 
     def accept(self):
         self.obj.ViewObject.Cursor = -1
